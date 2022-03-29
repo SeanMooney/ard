@@ -32,13 +32,16 @@ platforms:
     cpus: 8
     groups:
       - controller
+      - switch
   - name: compute-1
     memory: 8192
     cpus: 8
     groups:
       - compute
+      - peers
   - name: compute-2
     memory: 8192
     cpus: 8
     groups:
       - compute
+      - peers

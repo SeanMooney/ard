@@ -5,6 +5,8 @@ pip install bindep
 set -x
 which dpkg && bindep -b | xargs sudo apt install
 which rpm && bindep -b | xargs dnf apt install
-pip install ansible libvirt-python molecule molecule-vagrant python-vagrant
+#pip install ansible=2.9
+pip install ansible\<5 ansible-core\<2.12.0 \
+libvirt-python molecule molecule-vagrant python-vagrant netaddr
 vagrant plugin install vagrant-libvirt
 set +x

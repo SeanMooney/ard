@@ -2,5 +2,8 @@
 - name: Apply role devstack_common
   hosts: all
   roles:
-    - ensure-pip
     - devstack_common
+    - { role: validate-host, when:"validate_hosts | default(false) | bool" }
+    - multi-node-known-hosts
+    - multi-node-bridge
+    - ensure-pip
