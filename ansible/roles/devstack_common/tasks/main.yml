@@ -1,2 +1,113 @@
 ---
 # tasks file for devstack_common
+
+- name: update common packages debian
+  become: yes
+  when: ansible_facts.os_family == 'Debian'
+  block:
+    - name: update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install apt packages
+      package:
+        name: "{{ (debian_pkg_install | join(' ')).split() }}"
+        state: present
+
+    - name: remove apt packages
+      package:
+        name: "{{ (debian_pkg_remove | join(' ')).split() }}"
+        state: absent
+
+- name: install common packages debian
+  become: yes
+  when: ansible_facts.os_family == 'RedHat'
+  block:
+    - name: Install deltarpm packages
+      package:
+        name: drpm
+        state: present
+        update_cache: yes
+
+    - name: Install RPM packages
+      package:
+        name: "{{ (redhat_pkg_install | join(' ')).split() }}"
+        state: present
+        update_cache: yes
+
+    - name: remove RPM packages
+      package:
+        name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
+        state: absent
+
+- name: disable firewall
+  become: yes
+  when: disable_firewall | bool
+  block:
+    - name: Set firewall default policy
+      ufw:
+        state: disabled
+        policy: allow
+      when: ansible_facts.os_family == 'Debian'
+      ignore_errors: yes
+
+    - name: Check if firewalld is installed
+      command: rpm -q firewalld
+      register: firewalld_check
+      changed_when: false
+      failed_when: firewalld_check.rc > 1
+      args:
+        warn: false
+      when: ansible_facts.os_family == 'RedHat'
+
+    - name: Disable firewalld
+      service:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      with_items:
+        - firewalld
+      when:
+        - ansible_facts.os_family == 'RedHat'
+        - firewalld_check.rc == 0
+
+- name: create stack user as root
+  become: yes
+  block:
+    - name: stack group
+      group:
+        name: stack
+        state: present
+
+    - name: stack user
+      user:
+        name: stack
+        password: "{{ stack_user_password | password_hash('sha512','A512') }}"
+        shell: /bin/bash
+        group: stack
+        state: present
+
+    - name: grant stack user passwordless sudo privileges
+      copy:
+        dest: /etc/sudoers.d/50_stack_user
+        content: |
+          stack ALL=(ALL) NOPASSWD:ALL
+
+- name: create repo dir
+  become: yes
+  ansible.builtin.file:
+    path: '{{repo_dir}}'
+    state: directory
+    mode: '0777'
+    owner: stack
+    group: stack
+
+- name: clone repos
+  become_user: stack
+  become: yes
+  block:
+    - name: download devstack
+      ansible.builtin.git:
+        repo: 'https://opendev.org/openstack/devstack'
+        dest: '{{repo_dir}}/devstack'
+        version: '{{devstack_branch}}'

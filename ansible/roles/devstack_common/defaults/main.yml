@@ -1,2 +1,24 @@
 ---
 # defaults file for devstack_common
+devstack_branch: "master"
+repo_dir: "/opt/repos"
+stack_user_password: "tester"
+debian_pkg_install:
+  - git
+  - acl
+  - ca-certificates
+  - apt-transport-https
+  - gnupg
+  - sudo
+redhat_pkg_install:
+  - git
+  - sudo
+debian_pkg_remove:
+  - cloud-init
+  - python3-pyyaml
+  - python3-simplejson
+redhat_pkg_remove:
+  - cloud-init
+  - python3-pyyaml
+  - python3-simplejson
+disable_firewall: yes
