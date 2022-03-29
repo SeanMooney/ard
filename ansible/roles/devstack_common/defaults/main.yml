@@ -22,3 +22,4 @@ redhat_pkg_remove:
   - python3-pyyaml
   - python3-simplejson
 disable_firewall: yes
+ssh_key_filename: id_ed25519_stack
