@@ -1,0 +1,9 @@
+
+build-essential [platform:dpkg]
+libffi-dev [platform:dpkg]
+libffi-devel [platform:rpm]
+python3
+python3-dev [platform:dpkg]
+python3-devel [platform:rpm]
+libvirt-daemon
+vagrant

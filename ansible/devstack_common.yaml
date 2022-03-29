@@ -1,0 +1,5 @@
+---
+- name: Apply role devstack_common
+  hosts: all
+  roles:
+    - role: devstack_common

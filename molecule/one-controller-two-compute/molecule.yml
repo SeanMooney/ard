@@ -1,0 +1,41 @@
+---
+dependency:
+  name: galaxy
+provisioner:
+  name: ansible
+verifier:
+  name: ansible
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  # Run vagrant up with --provision.
+  # Defaults to --no-provision)
+  provision: no
+  # vagrant-cachier configuration
+  # Defaults to 'machine'
+  # Any value different from 'machine' or 'box' will disable it
+  cachier: machine
+  # If set to false, set VAGRANT_NO_PARALLEL to '1'
+  # Defaults to true
+  parallel: true
+  # vagrant box to use by default
+  # Defaults to 'generic/alpine310'
+  default_box: 'generic/ubuntu2004'
+
+platforms:
+  - name: controller-1
+    memory: 8192
+    cpus: 8
+    groups:
+      - controller
+  - name: compute-1
+    memory: 8192
+    cpus: 8
+    groups:
+      - compute
+  - name: compute-2
+    memory: 8192
+    cpus: 8
+    groups:
+      - compute

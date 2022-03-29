@@ -1,0 +1,6 @@
+---
+- name: Apply role devstack_compute
+  gather_facts: false
+  hosts: compute
+  roles:
+    - role: devstack_compute

@@ -1,0 +1,7 @@
+---
+- name: "execute devstack_common on all hosts"
+  import_playbook: ../../ansible/devstack_common.yaml 
+- name: "deploy devstack controller"
+  import_playbook: ../../ansible/devstack_controller.yaml
+- name: "deploy devstack compute(s)"
+  import_playbook: ../../ansible/devstack_compute.yaml
