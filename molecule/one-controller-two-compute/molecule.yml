@@ -3,6 +3,9 @@ dependency:
   name: galaxy
 provisioner:
   name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:./submodules/devstack/roles"
 verifier:
   name: ansible
 driver:
