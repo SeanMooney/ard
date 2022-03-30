@@ -1,2 +1,22 @@
 ---
 # tasks file for devstack_contoller
+- name: set nodepool facts
+  set_fact:
+    zuul:
+      projects: "{{ controller_projects }}"
+      project: "{{ controller_project }}"
+
+- name: template local.conf
+  include_role:
+    name: write-devstack-local-conf
+  vars:
+    devstack_base_dir: '{{repos_dir}}'
+    devstack_localrc: '{{controller_localrc}}'
+    devstack_local_conf: '{{controller_local_conf}}'
+    devstack_services: '{{controller_services}}'
+
+- name: Run devstack on the controller
+  include_role:
+    name: run-devstack
+  vars:
+    devstack_base_dir: '{{repos_dir}}'

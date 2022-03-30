@@ -4,3 +4,6 @@
 [submodule "submodules/zuul-jobs"]
 	path = submodules/zuul-jobs
 	url = https://opendev.org/zuul/zuul-jobs
+[submodule "submodules/openstack-zuul-jobs"]
+	path = submodules/openstack-zuul-jobs
+	url = https://opendev.org/openstack/openstack-zuul-jobs

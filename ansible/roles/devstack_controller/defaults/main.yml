@@ -1,2 +1,191 @@
 ---
 # defaults file for devstack_contoller
+repos_dir: /opt/repos
+devstack_libvirt_type: 'kvm'
+devstack_ip_version: 4
+controller_localrc:
+  DATABASE_PASSWORD: password
+  RABBIT_PASSWORD: password
+  ADMIN_PASSWORD: password
+  SERVICE_PASSWORD: password
+  NETWORK_GATEWAY: 10.1.0.1
+  FIXED_RANGE: 10.1.0.0/20
+  IPV4_ADDRS_SAFE_TO_USE: 10.1.0.0/20
+  FLOATING_RANGE: 172.24.5.0/24
+  PUBLIC_NETWORK_GATEWAY: 172.24.5.1
+  LOGFILE: /opt/stack/logs/devstacklog.txt
+  LOG_COLOR: true
+  VERBOSE: true
+  VERBOSE_NO_TIMESTAMP: true
+  NOVNC_FROM_PACKAGE: true
+  ERROR_ON_CLONE: false
+  LIBVIRT_TYPE: '{{ devstack_libvirt_type | default("qemu") }}'
+  # Multinode specific settings
+  SERVICE_HOST: "{{ hostvars[inventory_hostname]['nodepool']['private_ipv4'] }}"
+  HOST_IP: "{{ hostvars[inventory_hostname]['nodepool']['private_ipv4'] }}"
+  PUBLIC_BRIDGE_MTU: '{{ external_bridge_mtu }}'
+  # Common OpenStack services settings
+  SWIFT_REPLICAS: 1
+  SWIFT_START_ALL_SERVICES: false
+  SWIFT_HASH: 1234123412341234
+  DEBUG_LIBVIRT_COREDUMPS: true
+  NOVA_VNC_ENABLED: true
+  PUBLIC_BRIDGE: br-infra
+  # TODO(sean-k-mooney): fix ipv6
+  IP_VERSION: "{{ devstack_ip_version }}"
+controller_services:
+  # Ignore any default set by devstack. Emit a "disable_all_services".
+  base: false
+  # Shared services
+  etcd3: true
+  mysql: true
+  rabbit: true
+  tls-proxy: true
+  # Keystone services
+  key: true
+  # Glance services
+  g-api: true
+  # Nova services
+  n-api: true
+  n-api-meta: true
+  n-cond: true
+  n-cpu: true
+  n-novnc: true
+  n-sch: true
+  # Placement service
+  placement-api: true
+  # OVN services
+  ovn-controller: true
+  ovn-northd: true
+  ovs-vswitchd: true
+  ovsdb-server: true
+  # Neutron services
+  q-svc: true
+  q-ovn-metadata-agent: true
+  # Swift services
+  s-account: true
+  s-container: true
+  s-object: true
+  s-proxy: true
+  # Cinder services
+  c-api: true
+  c-bak: true
+  c-sch: true
+  c-vol: true
+  horizon: true
+  tempest: true
+  # Test matrix emits ceilometer but ceilomenter is not installed in the
+  # integrated gate, so specifying the services has not effect.
+  # ceilometer-*: false
+controller_local_conf:
+  post-config:
+    $NEUTRON_CONF:
+      DEFAULT:
+        global_physnet_mtu: '{{ external_bridge_mtu }}'
+controller_project:
+  canonical_hostname: opendev.org
+  canonical_name: opendev.org/openstack/nova
+  name: openstack/nova
+  short_name: nova
+  src_dir: src/opendev.org/openstack/nova
+controller_projects:
+  opendev.org/openstack/cinder:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/cinder
+    checkout: master
+    checkout_description: zuul branch
+    commit: 0d9076383c0a987b5382ee6423ca13c593f06263
+    name: openstack/cinder
+    required: true
+    short_name: cinder
+    src_dir: src/opendev.org/openstack/cinder
+  opendev.org/openstack/devstack:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/devstack
+    checkout: master
+    checkout_description: zuul branch
+    commit: aac6b6c7912b3feae4b68789508bee4bf1544731
+    name: openstack/devstack
+    required: true
+    short_name: devstack
+    src_dir: src/opendev.org/openstack/devstack
+  opendev.org/openstack/glance:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/glance
+    checkout: master
+    checkout_description: zuul branch
+    commit: c99c3af4ff6a642417846852d5b7d89f9607782b
+    name: openstack/glance
+    required: true
+    short_name: glance
+    src_dir: src/opendev.org/openstack/glance
+  opendev.org/openstack/keystone:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/keystone
+    checkout: master
+    checkout_description: zuul branch
+    commit: c141e6164e77f5ebb1369016d06de23a308ef510
+    name: openstack/keystone
+    required: true
+    short_name: keystone
+    src_dir: src/opendev.org/openstack/keystone
+  opendev.org/openstack/neutron:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/neutron
+    checkout: master
+    checkout_description: zuul branch
+    commit: a903fd20efe9b40c3c718b37d9490396379bf376
+    name: openstack/neutron
+    required: true
+    short_name: neutron
+    src_dir: src/opendev.org/openstack/neutron
+  opendev.org/openstack/nova:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/nova
+    checkout: master
+    checkout_description: zuul branch
+    commit: a2c74f405ecf00b6be79544e10b6cd7edc036a3e
+    name: openstack/nova
+    required: true
+    short_name: nova
+    src_dir: src/opendev.org/openstack/nova
+  opendev.org/openstack/placement:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/placement
+    checkout: master
+    checkout_description: zuul branch
+    commit: ffca1ebd9bcc10f59a2458ea6597d43cc0f608a1
+    name: openstack/placement
+    required: true
+    short_name: placement
+    src_dir: src/opendev.org/openstack/placement
+  opendev.org/openstack/requirements:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/requirements
+    checkout: master
+    checkout_description: zuul branch
+    commit: 9b1ac9e7aa617fcccf2ce75488a350d7622a436f
+    name: openstack/requirements
+    required: true
+    short_name: requirements
+    src_dir: src/opendev.org/openstack/requirements
+  opendev.org/openstack/swift:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/swift
+    checkout: master
+    checkout_description: zuul branch
+    commit: ec964b23bb0025737c12ba2addafc94b69d671eb
+    name: openstack/swift
+    required: true
+    short_name: swift
+    src_dir: src/opendev.org/openstack/swift
+  opendev.org/openstack/tempest:
+    canonical_hostname: opendev.org
+    canonical_name: opendev.org/openstack/tempest
+    checkout: master
+    checkout_description: zuul branch
+    commit: 5ff90d4bd50077434552c7b6921ee4ee0251dd02
+    name: openstack/tempest
+    required: true
+    short_name: tempest
+    src_dir: src/opendev.org/openstack/tempest

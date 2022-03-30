@@ -5,7 +5,7 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
-    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:./submodules/devstack/roles"
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:../../submodules/devstack/roles:../../submodules/openstack-zuul-jobs/roles"
 verifier:
   name: ansible
 driver:
@@ -39,9 +39,11 @@ platforms:
     groups:
       - compute
       - peers
+      - subnode
   - name: compute-2
     memory: 8192
     cpus: 8
     groups:
       - compute
       - peers
+      - subnode

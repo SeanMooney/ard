@@ -7,3 +7,4 @@
     - multi-node-known-hosts
     - multi-node-bridge
     - ensure-pip
+    - configure-swap
