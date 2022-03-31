@@ -4,18 +4,18 @@
 - name: "deploy devstack controller"
   import_playbook: ../../ansible/devstack_controller.yaml
 
-#- name: sync controller data to subnodes
-#  hosts: all
-#  tasks:
-#    - name: set nodepool facts
-#      set_fact:
-#        nodepool:
-#          private_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
-#          public_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
-#        zuul:
-#          executor:
-#            log_root: /tmp/zuul_logs
-#            work_root: /tmp/work_root
+- name: sync controller data to subnodes
+  hosts: all
+  tasks:
+    - name: set nodepool facts
+      set_fact:
+        nodepool:
+          private_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
+          public_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
+        zuul:
+          executor:
+            log_root: /tmp/zuul_logs
+            work_root: /tmp/work_root
 
 - name: sync controller data to subnodes
   hosts: all

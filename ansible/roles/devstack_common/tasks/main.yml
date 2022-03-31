@@ -1,6 +1,5 @@
 ---
 # tasks file for devstack_common
-
 - name: set nodepool facts
   set_fact:
     nodepool:
@@ -183,6 +182,7 @@
       copy:
         src: "~/.ssh/{{ssh_key_filename}}"
         dest: "~/.ssh/id_ed25519"
+        mode: '0600'
     - name: copy public key
       copy:
         src: "~/.ssh/{{ssh_key_filename}}.pub"

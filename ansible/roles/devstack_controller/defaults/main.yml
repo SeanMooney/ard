@@ -1,9 +1,11 @@
 ---
 # defaults file for devstack_contoller
 repos_dir: /opt/repos
+git_base: "https://github.com"
 devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
 controller_localrc:
+  GIT_BASE: "{{ git_base }}"
   DATABASE_TYPE: mysql
   DATABASE_PASSWORD: password
   RABBIT_PASSWORD: password
