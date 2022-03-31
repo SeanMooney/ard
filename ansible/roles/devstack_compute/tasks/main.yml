@@ -1,2 +1,31 @@
 ---
 # tasks file for devstack_compute
+- name: set nodepool facts
+  set_fact:
+    zuul:
+      projects: "{{ compute_projects }}"
+      project: "{{ compute_project }}"
+
+- name: template local.conf
+  include_role:
+    name: write-devstack-local-conf
+  vars:
+    devstack_base_dir: '{{repos_dir}}'
+    devstack_localrc: '{{compute_localrc}}'
+    devstack_local_conf: '{{compute_local_conf}}'
+    devstack_services: '{{compute_services}}'
+
+- name: Run devstack on the compute
+  include_role:
+    name: run-devstack
+  vars:
+    devstack_base_dir: '{{repos_dir}}'
+
+- name: Discover hosts
+  become: yes
+  become_user: stack
+  shell: ./tools/discover_hosts.sh
+  args:
+    chdir: "{{ repos_dir }}/devstack"
+  delegate_to: "{{ groups['controller'][0] }}"
+  run_once: true

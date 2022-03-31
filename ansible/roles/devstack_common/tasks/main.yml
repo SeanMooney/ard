@@ -9,6 +9,21 @@
     zuul:
       executor:
         log_root: /tmp/zuul_logs
+        work_root: /tmp/work_root
+
+- name: clean work_root
+  delegate_to: localhost
+  run_once: yes
+  file:
+    path: '/tmp/work_root'
+    state: absent
+
+- name: create work_root
+  delegate_to: localhost
+  run_once: yes
+  file:
+    path: '/tmp/work_root'
+    state: directory
 
 - name: manage /etc/hosts
   become: yes
@@ -148,10 +163,12 @@
 
 - name: generate stack user ssh key "{{ssh_key_filename}}"
   delegate_to: 127.0.0.1
+  run_once: yes
   openssh_keypair:
     path: "~/.ssh/{{ssh_key_filename}}"
     type: ed25519
     state: present
+    mode: '0600'
     force: no
 
 - name: setup ssh keys
