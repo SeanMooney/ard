@@ -1,8 +1,8 @@
 ---
 - name: "execute devstack_common on all hosts"
-  import_playbook: ../../ansible/devstack_common.yaml 
+  import_playbook: devstack_common.yaml 
 - name: "deploy devstack controller"
-  import_playbook: ../../ansible/devstack_controller.yaml
+  import_playbook: devstack_controller.yaml
 
 - name: sync controller data to subnodes
   hosts: all
@@ -29,4 +29,4 @@
 #      ignore_errors: yes
 
 - name: "deploy devstack compute(s)"
-  import_playbook: ../../ansible/devstack_compute.yaml
+  import_playbook: devstack_compute.yaml
