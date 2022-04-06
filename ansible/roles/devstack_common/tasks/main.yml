@@ -193,11 +193,17 @@
         state: present
         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
 
-- name: template ssh config
+- name: disable host key checking in sshd config
   become: yes
-  template:
-    src: "ssh_config"
-    dest: "/etc/ssh/ssh_config.d/no-ssh-host-key-checking.conf"
+  block:
+    - name: create ssh_config.d
+      file:
+        path: '/etc/ssh/ssh_config.d'
+        state: directory
+    - name: template sshd_config
+      template:
+        src: "ssh_config"
+        dest: "/etc/ssh/ssh_config.d/no-ssh-host-key-checking.conf"
 
 - name: Gather minimum local MTU
   set_fact:
