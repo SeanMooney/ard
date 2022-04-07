@@ -7,6 +7,7 @@ devstack_ip_version: 4
 controller_localrc_extra: {}
 controller_localrc:
   GIT_BASE: "{{ git_base }}"
+  RECLONE: true
   DATABASE_TYPE: mysql
   DATABASE_PASSWORD: password
   RABBIT_PASSWORD: password

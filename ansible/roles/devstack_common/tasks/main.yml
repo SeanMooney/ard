@@ -160,6 +160,15 @@
         dest: '{{repo_dir}}/devstack'
         version: '{{devstack_branch}}'
 
+- name: create /opt/stack
+  become: yes
+  ansible.builtin.file:
+    path: '/opt/stack'
+    state: directory
+    mode: '0777'
+    owner: stack
+    group: stack
+
 - name: generate stack user ssh key "{{ssh_key_filename}}"
   delegate_to: 127.0.0.1
   run_once: yes

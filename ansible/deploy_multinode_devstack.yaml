@@ -1,10 +1,93 @@
 ---
+# TODO: factor this out into a caching role
+- name: ensure local cache dirs
+  hosts: localhost
+  tasks:
+    - block:
+        - name: ensure local cache
+          file:
+            path: '~/.cache/ard'
+            state: directory
+        - name: ensure local pip cache
+          file:
+            path: '~/.cache/ard/pip'
+            state: directory
+        - name: ensure local pip cache
+          file:
+            path: '~/.cache/ard/apt'
+            state: directory
+        - name: ensure local pip cache
+          file:
+            path: '~/.cache/ard/repos'
+            state: directory
+      when: "use_local_cache | default(false) | bool"
+
 - name: "execute devstack_common on all hosts"
-  import_playbook: devstack_common.yaml 
+  import_playbook: devstack_common.yaml
+
+- name: push remote cache dirs
+  hosts: all
+  tasks:
+    - block:
+        - name: push apt cache
+          become: yes
+          synchronize:
+            src: '~/.cache/ard/apt'
+            dest: /var/cache/
+        - name: delete pip cache
+          become: yes
+          ansible.builtin.file:
+            path: '/opt/pip'
+            state: absent
+        - name: create pip cache
+          become: yes
+          ansible.builtin.file:
+            path: '/opt/pip'
+            state: directory
+            mode: '0777'
+            owner: stack
+            group: stack
+        - name: push pip cache
+          become_user: stack
+          become: yes
+          synchronize:
+            src: '~/.cache/ard/pip'
+            dest: /opt/
+        - name: set pip cache permissions
+          become: yes
+          ansible.builtin.file:
+            path: '/opt/pip'
+            state: directory
+            mode: '0777'
+            recurse: yes
+            owner: root
+            group: root
+        - name: enable global pip cache
+          become: yes
+          copy:
+            dest: /etc/pip.conf
+            content: |
+              [global]
+              download-cache=/opt/pip
+              cache-dir=/opt/pip
+        - name: find git dirs
+          shell: "ls ~/.cache/ard/repos/*/.git | awk -F '/' '/.git:/ {print $7}'"
+          register: repo_names
+          delegate_to: localhost
+          run_once: yes
+        - name: push repos
+          become_user: stack
+          become: yes
+          synchronize:
+            dest: '/opt/stack/'
+            src: '~/.cache/ard/repos/{{item}}'
+          with_items: "{{repo_names.stdout_lines}}"
+      when: "use_local_cache | default(false) | bool"
+
 - name: "deploy devstack controller"
   import_playbook: devstack_controller.yaml
 
-- name: sync controller data to subnodes
+- name: export facts
   hosts: all
   tasks:
     - name: set nodepool facts
@@ -30,3 +113,36 @@
 
 - name: "deploy devstack compute(s)"
   import_playbook: devstack_compute.yaml
+
+# TODO: factor this out into a caching role
+- name: pull remote cache dirs
+  hosts: controller
+  tasks:
+    - block:
+        - name: pull apt cache
+          become: yes
+          synchronize:
+            mode: pull
+            src: /var/cache/apt
+            dest: '~/.cache/ard/'
+            rsync_opts:
+              - "--exclude=/var/cache/apt/archives/lock"
+        - name: pull pip cache
+          become: yes
+          synchronize:
+            mode: pull
+            src: /opt/pip
+            dest: '~/.cache/ard'
+        - name: find git dirs
+          shell: "ls /opt/stack/*/.git | awk -F '/' '/.git:/ {print $4}'"
+          register: repo_names
+        - name: pull repos
+          become_user: stack
+          become: yes
+          synchronize:
+            mode: pull
+            src: '/opt/stack/{{ item }}'
+            dest: '~/.cache/ard/repos/'
+          with_items: "{{repo_names.stdout_lines}}"
+
+      when: "use_local_cache | default(false) | bool"
