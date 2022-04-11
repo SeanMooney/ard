@@ -6,6 +6,12 @@
       projects: "{{ compute_projects }}"
       project: "{{ compute_project }}"
 
+- name:  enable_ceph
+  when: "compute_enable_ceph | bool"
+  set_fact:
+    compute_devstack_plugins:
+      devstack-plugin-ceph: "{{ git_base }}/openstack/devstack-plugin-ceph"
+
 - name: template local.conf
   include_role:
     name: write-devstack-local-conf
@@ -14,8 +20,10 @@
     devstack_localrc: '{{compute_localrc}}'
     devstack_local_conf: '{{compute_local_conf}}'
     devstack_services: '{{compute_services}}'
+    devstack_plugins: '{{compute_devstack_plugins}}'
 
 - name: Run devstack on the compute
+  when: "run_devstack | default(true) | bool" 
   include_role:
     name: run-devstack
   vars:

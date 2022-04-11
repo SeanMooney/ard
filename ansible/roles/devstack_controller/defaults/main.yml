@@ -4,6 +4,8 @@ repos_dir: /opt/repos
 git_base: "https://github.com"
 devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
+controller_enable_ceph: false
+controller_devstack_plugins: {}
 controller_localrc_extra: {}
 controller_localrc:
   GIT_BASE: "{{ git_base }}"
@@ -38,6 +40,7 @@ controller_localrc:
   PUBLIC_BRIDGE: br-infra
   # TODO(sean-k-mooney): fix ipv6
   IP_VERSION: "{{ devstack_ip_version }}"
+  CINDER_CEPH_UUID: d531d2d4-3937-429c-b0c2-658fe41e82aa
 controller_services_extra: {}
 controller_services:
   # Ignore any default set by devstack. Emit a "disable_all_services".

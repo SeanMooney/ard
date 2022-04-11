@@ -6,16 +6,24 @@
       projects: "{{ controller_projects }}"
       project: "{{ controller_project }}"
 
+- name:  enable_ceph
+  when: "controller_enable_ceph | bool"
+  set_fact:
+    controller_devstack_plugins:
+      devstack-plugin-ceph: "{{ git_base }}/openstack/devstack-plugin-ceph"
+
 - name: template local.conf
   include_role:
     name: write-devstack-local-conf
   vars:
-    devstack_base_dir: '{{repos_dir}}'
-    devstack_localrc: '{{controller_localrc | combine(controller_localrc_extra) }}'
-    devstack_local_conf: '{{controller_local_conf | combine(controller_local_conf_extra) }}'
-    devstack_services: '{{controller_services | combine(controller_services_extra) }}'
+    devstack_base_dir: '{{ repos_dir }}'
+    devstack_localrc: '{{ controller_localrc | combine(controller_localrc_extra) }}'
+    devstack_local_conf: '{{ controller_local_conf | combine(controller_local_conf_extra) }}'
+    devstack_services: '{{ controller_services | combine(controller_services_extra) }}'
+    devstack_plugins:  '{{ controller_devstack_plugins }}'
 
 - name: Run devstack on the controller
+  when: "run_devstack | default(true) | bool" 
   include_role:
     name: run-devstack
   vars:

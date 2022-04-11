@@ -105,11 +105,11 @@
   roles:
     - role:  sync-devstack-data
 
-#- name: sync ceph configs to subnodes
-#  hosts: subnode
-#  roles:
-#    - role: sync-controller-ceph-conf-and-keys
-#      ignore_errors: yes
+- name: sync ceph configs to subnodes
+  hosts: subnode
+  roles:
+    - { role: sync-controller-ceph-conf-and-keys, when: "controller_enable_ceph | default(false) | bool"}
+
 
 - name: "deploy devstack compute(s)"
   import_playbook: devstack_compute.yaml
