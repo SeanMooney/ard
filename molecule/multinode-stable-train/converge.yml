@@ -5,3 +5,25 @@
     devstack_branch: stable/train
     controller_services_extra:
       g-reg: true
+      # on stable branches we default to ml2/ovs
+      # OVN services
+      ovn-controller: false
+      ovn-northd: false
+      ovs-vswitchd: false
+      ovsdb-server: false
+      # Neutron services
+      q-ovn-metadata-agent: false
+      q-agt: true
+      q-dhcp: true
+      q-l3: true
+      q-meta: true
+      q-metering: true
+      q-svc: true
+    compute_services_extra:
+      # OVN services
+      ovn-controller: false
+      ovn-northd: false
+      ovs-vswitchd: false
+      ovsdb-server: false
+      # Neutron services
+      q-agt: true

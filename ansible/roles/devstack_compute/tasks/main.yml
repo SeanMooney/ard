@@ -17,9 +17,9 @@
     name: write-devstack-local-conf
   vars:
     devstack_base_dir: '{{repos_dir}}'
-    devstack_localrc: '{{compute_localrc}}'
-    devstack_local_conf: '{{compute_local_conf}}'
-    devstack_services: '{{compute_services}}'
+    devstack_localrc: '{{ compute_localrc | combine(compute_localrc_extra) }}'
+    devstack_local_conf: '{{ compute_local_conf | combine(compute_local_conf_extra) }}'
+    devstack_services: '{{ compute_services | combine(compute_services_extra) }}'
     devstack_plugins: '{{compute_devstack_plugins}}'
 
 - name: Run devstack on the compute

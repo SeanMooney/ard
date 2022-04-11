@@ -6,6 +6,7 @@ devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
 compute_devstack_plugins: {}
 compute_enable_ceph: false
+compute_localrc_extra: {}
 compute_localrc:
   GIT_BASE: "{{ git_base }}"
   RECLONE: true
@@ -45,6 +46,7 @@ compute_localrc:
   # add ceph options note this will not enable ceph by itself
   CINDER_CEPH_UUID: d531d2d4-3937-429c-b0c2-658fe41e82aa
   REMOTE_CEPH: true
+compute_services_extra: {}
 compute_services:
   # Ignore any default set by devstack. Emit a "disable_all_services".
   base: false
@@ -63,6 +65,7 @@ compute_services:
   q-ovn-metadata-agent: true
   # Cinder
   c-vol: true
+compute_local_conf_extra: {}
 compute_local_conf:
   post-config:
     $NEUTRON_CONF:

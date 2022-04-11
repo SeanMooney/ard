@@ -3,3 +3,26 @@
   import_playbook: ../../ansible/deploy_multinode_devstack.yaml
   vars:
     devstack_branch: stable/wallaby
+    # on stable branches we default to ml2/ovs
+    controller_services_extra:
+      # OVN services
+      ovn-controller: false
+      ovn-northd: false
+      ovs-vswitchd: false
+      ovsdb-server: false
+      # Neutron services
+      q-ovn-metadata-agent: false
+      q-agt: true
+      q-dhcp: true
+      q-l3: true
+      q-meta: true
+      q-metering: true
+      q-svc: true
+    compute_services_extra:
+      # OVN services
+      ovn-controller: false
+      ovn-northd: false
+      ovs-vswitchd: false
+      ovsdb-server: false
+      # Neutron services
+      q-agt: true
