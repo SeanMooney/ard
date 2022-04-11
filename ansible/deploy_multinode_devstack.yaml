@@ -108,7 +108,7 @@
 - name: sync ceph configs to subnodes
   hosts: subnode
   roles:
-    - { role: sync-controller-ceph-conf-and-keys, when: "controller_enable_ceph | default(false) | bool"}
+    - { role: sync-controller-ceph-conf-and-keys, when: "enable_ceph | default(false) | bool"}
 
 
 - name: "deploy devstack compute(s)"

@@ -7,7 +7,7 @@
       project: "{{ controller_project }}"
 
 - name:  enable_ceph
-  when: "controller_enable_ceph | bool"
+  when: "enable_ceph | bool"
   set_fact:
     controller_devstack_plugins:
       devstack-plugin-ceph: "{{ git_base }}/openstack/devstack-plugin-ceph"

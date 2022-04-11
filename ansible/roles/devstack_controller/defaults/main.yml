@@ -4,7 +4,7 @@ repos_dir: /opt/repos
 git_base: "https://github.com"
 devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
-controller_enable_ceph: false
+enable_ceph: false
 controller_devstack_plugins: {}
 controller_localrc_extra: {}
 controller_localrc:
