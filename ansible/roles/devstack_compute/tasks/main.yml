@@ -20,12 +20,3 @@
     name: run-devstack
   vars:
     devstack_base_dir: '{{repos_dir}}'
-
-- name: Discover hosts
-  become: yes
-  become_user: stack
-  shell: ./tools/discover_hosts.sh
-  args:
-    chdir: "{{ repos_dir }}/devstack"
-  delegate_to: "{{ groups['controller'][0] }}"
-  run_once: true

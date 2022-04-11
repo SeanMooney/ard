@@ -114,6 +114,17 @@
 - name: "deploy devstack compute(s)"
   import_playbook: devstack_compute.yaml
 
+- name: Discover hosts
+  hosts: controller
+  tasks:
+    - name: run discover hosts once on controller
+      become: yes
+      become_user: stack
+      run_once: true
+      shell: ./tools/discover_hosts.sh
+      args:
+        chdir: "{{ repos_dir | default('/opt/repos') }}/devstack"
+
 # TODO: factor this out into a caching role
 - name: pull remote cache dirs
   hosts: controller
