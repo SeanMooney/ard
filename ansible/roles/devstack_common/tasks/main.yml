@@ -57,36 +57,31 @@
       apt:
         update_cache: yes
 
-    - name: Install apt packages
-      package:
-        name: "{{ (debian_pkg_install | join(' ')).split() }}"
-        state: present
-
     - name: remove apt packages
       package:
         name: "{{ (debian_pkg_remove | join(' ')).split() }}"
         state: absent
 
+    - name: Install apt packages
+      package:
+        name: "{{ (debian_pkg_install | join(' ')).split() }}"
+        state: present
+
+
 - name: install common packages debian
   become: yes
   when: ansible_facts.os_family == 'RedHat'
   block:
-    - name: Install deltarpm packages
+    - name: remove RPM packages
       package:
-        name: drpm
-        state: present
-        update_cache: yes
+        name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
+        state: absent
 
     - name: Install RPM packages
       package:
         name: "{{ (redhat_pkg_install | join(' ')).split() }}"
         state: present
         update_cache: yes
-
-    - name: remove RPM packages
-      package:
-        name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
-        state: absent
 
 - name: disable firewall
   become: yes

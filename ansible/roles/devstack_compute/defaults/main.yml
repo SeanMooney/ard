@@ -64,7 +64,7 @@ compute_services:
   ovsdb-server: true
   q-ovn-metadata-agent: true
   # Cinder
-  c-vol: true
+  c-vol: false
 compute_local_conf_extra: {}
 compute_local_conf:
   post-config:

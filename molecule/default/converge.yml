@@ -1,0 +1,11 @@
+---
+- name: "execute deploy multi-node devstack"
+  import_playbook: ../../ansible/deploy_multinode_devstack.yaml
+  vars:
+    devstack_branch: master
+    controller_services_extra:
+      # Shared services
+      tls-proxy: false
+    compute_services_extra:
+      # Shared services
+      tls-proxy: false

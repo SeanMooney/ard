@@ -3,6 +3,9 @@
 devstack_branch: "master"
 repo_dir: "/opt/repos"
 stack_user_password: "tester"
+# devstack ensure that git is install on debian systems and
+# git-core on rpm systems so we need to match that to not cause
+# conflicts.
 debian_pkg_install:
   - git
   - acl
@@ -10,17 +13,24 @@ debian_pkg_install:
   - apt-transport-https
   - gnupg
   - sudo
+  - wget
+  - nano
 redhat_pkg_install:
-  - git
+  - git-core
   - sudo
+  - acl
+  - wget
+  - nano
 debian_pkg_remove:
   - cloud-init
   - python3-pyyaml
   - python3-simplejson
+  - git-core
 redhat_pkg_remove:
   - cloud-init
   - python3-pyyaml
   - python3-simplejson
+  - git
 disable_firewall: yes
 ssh_key_filename: id_ed25519_stack
 ip_version: 4

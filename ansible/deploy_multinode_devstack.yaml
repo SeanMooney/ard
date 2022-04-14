@@ -12,11 +12,15 @@
           file:
             path: '~/.cache/ard/pip'
             state: directory
-        - name: ensure local pip cache
+        - name: ensure local apt cache
           file:
             path: '~/.cache/ard/apt'
             state: directory
-        - name: ensure local pip cache
+        - name: ensure local dnf cache
+          file:
+            path: '~/.cache/ard/dnf'
+            state: directory
+        - name: ensure local git cache
           file:
             path: '~/.cache/ard/repos'
             state: directory
@@ -31,24 +35,25 @@
     - block:
         - name: push apt cache
           become: yes
+          when: ansible_facts.os_family == 'Debian'
           synchronize:
             src: '~/.cache/ard/apt'
             dest: /var/cache/
-        - name: delete pip cache
+        - name: push dnf cache
           become: yes
-          ansible.builtin.file:
-            path: '/opt/pip'
-            state: absent
+          when: ansible_facts.os_family == 'RedHat'
+          synchronize:
+            src: '~/.cache/ard/dnf'
+            dest: /var/cache/
         - name: create pip cache
           become: yes
           ansible.builtin.file:
             path: '/opt/pip'
             state: directory
             mode: '0777'
-            owner: stack
-            group: stack
+            owner: root
+            group: root
         - name: push pip cache
-          become_user: stack
           become: yes
           synchronize:
             src: '~/.cache/ard/pip'
@@ -103,7 +108,10 @@
 - name: sync controller data to subnodes
   hosts: all
   roles:
-    - role:  sync-devstack-data
+    - {
+    role: sync-devstack-data,
+    when: "(run_devstack | default(true) | bool) and (controller_services_extra is defined and controller_services_extra['tls-proxy'] is defined and controller_services_extra['tls-proxy'] | bool)"
+      }
 
 - name: sync ceph configs to subnodes
   hosts: subnode
@@ -114,6 +122,8 @@
 - name: "deploy devstack compute(s)"
   import_playbook: devstack_compute.yaml
 
+
+
 - name: Discover hosts
   hosts: controller
   tasks:
@@ -121,6 +131,7 @@
       become: yes
       become_user: stack
       run_once: true
+      when: "run_devstack | default(true) | bool"
       shell: ./tools/discover_hosts.sh
       args:
         chdir: "{{ repos_dir | default('/opt/repos') }}/devstack"
@@ -132,12 +143,20 @@
     - block:
         - name: pull apt cache
           become: yes
+          when: ansible_facts.os_family == 'Debian'
           synchronize:
             mode: pull
             src: /var/cache/apt
             dest: '~/.cache/ard/'
             rsync_opts:
               - "--exclude=/var/cache/apt/archives/lock"
+        - name: pull dnf cache
+          become: yes
+          when: ansible_facts.os_family == 'RedHat'
+          synchronize:
+            mode: pull
+            src: /var/cache/dnf
+            dest: '~/.cache/ard/'
         - name: pull pip cache
           become: yes
           synchronize:
@@ -145,7 +164,7 @@
             src: /opt/pip
             dest: '~/.cache/ard'
         - name: find git dirs
-          shell: "ls /opt/stack/*/.git | awk -F '/' '/.git:/ {print $4}'"
+          shell: "ls /opt/stack/*/.git | awk -F '/' '/.git:/ {print $4}' | grep -v requirements"
           register: repo_names
         - name: pull repos
           become_user: stack
