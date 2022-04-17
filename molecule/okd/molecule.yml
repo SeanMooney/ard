@@ -1,0 +1,91 @@
+---
+dependency:
+  name: galaxy
+verifier:
+  name: ansible
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  # Run vagrant up with --provision.
+  # Defaults to --no-provision)
+  provision: no
+  # vagrant-cachier configuration
+  # Defaults to 'machine'
+  # Any value different from 'machine' or 'box' will disable it
+  cachier: machine
+  # If set to false, set VAGRANT_NO_PARALLEL to '1'
+  # Defaults to true
+  parallel: true
+  # vagrant box to use by default
+  # Defaults to 'generic/alpine310'
+  default_box: 'fedora-coreos'
+platforms:
+  - name: controller-1
+    memory: 6000
+    cpus: 8
+    interfaces:
+      - network_name: private_network
+        type: dhcp
+        network_address: '192.168.125.0'
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+    provider_raw_config_args:
+      - random :model => 'random'
+      - qemuargs :value => "-fw_cfg"
+      - qemuargs :value => "name=opt/com.coreos/config,file=$MOLECULE_PROJECT_DIRECTORY/okd/vagrant.ign"
+    config_options:
+      ssh.keep_alive: yes
+      ssh.remote_user: 'core'
+      synced_folder: false
+    groups:
+      - okd-controllers
+      - openstack-controllers
+  - name: controller-2
+    memory: 6000
+    cpus: 8
+    interfaces:
+      - network_name: private_network
+        type: dhcp
+        network_address: '192.168.125.0'
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+    provider_raw_config_args:
+      - random :model => 'random'
+      - qemuargs :value => "-fw_cfg"
+      - qemuargs :value => "name=opt/com.coreos/config,file=$MOLECULE_PROJECT_DIRECTORY/okd/vagrant.ign"
+    config_options:
+      ssh.keep_alive: yes
+      ssh.remote_user: 'core'
+      synced_folder: false
+    groups:
+      - okd-controllers
+      - openstack-controllers
+  - name: controller-3
+    memory: 6000
+    cpus: 8
+    interfaces:
+      - network_name: private_network
+        type: dhcp
+        network_address: '192.168.125.0'
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+    provider_raw_config_args:
+      - random :model => 'random'
+      - qemuargs :value => "-fw_cfg"
+      - qemuargs :value => "name=opt/com.coreos/config,file=$MOLECULE_PROJECT_DIRECTORY/okd/vagrant.ign"
+    config_options:
+      ssh.keep_alive: yes
+      ssh.remote_user: 'core'
+      synced_folder: false
+    groups:
+      - okd-controllers
+      - openstack-controllers
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:../../submodules/devstack/roles:../../submodules/openstack-zuul-jobs/roles"
