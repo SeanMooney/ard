@@ -1,6 +1,8 @@
 ---
 # defaults file for devstack_common
+devstack_repo_url: "https://opendev.org/openstack/devstack"
 devstack_branch: "master"
+devstack_refspec:
 repo_dir: "/opt/repos"
 stack_user_password: "tester"
 # devstack ensure that git is install on debian systems and

@@ -151,9 +151,10 @@
   block:
     - name: download devstack
       ansible.builtin.git:
-        repo: 'https://opendev.org/openstack/devstack'
+        repo: '{{devstack_repo_url}}'
         dest: '{{repo_dir}}/devstack'
         version: '{{devstack_branch}}'
+        refspec: '{{devstack_refspec | default(omit) }}'
 
 - name: create /opt/stack
   become: yes
