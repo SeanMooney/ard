@@ -24,7 +24,7 @@
           file:
             path: '~/.cache/ard/repos'
             state: directory
-      when: "use_local_cache | default(false) | bool"
+      when: "use_local_cache | default(true) | bool"
 
 - name: "execute devstack_common on all hosts"
   import_playbook: devstack_common.yaml
@@ -87,7 +87,7 @@
             dest: '/opt/stack/'
             src: '~/.cache/ard/repos/{{item}}'
           with_items: "{{repo_names.stdout_lines}}"
-      when: "use_local_cache | default(false) | bool"
+      when: "use_local_cache | default(true) | bool"
 
 - name: "deploy devstack controller"
   import_playbook: devstack_controller.yaml
@@ -175,4 +175,4 @@
             dest: '~/.cache/ard/repos/'
           with_items: "{{repo_names.stdout_lines}}"
 
-      when: "use_local_cache | default(false) | bool"
+      when: "use_local_cache | default(true) | bool"
