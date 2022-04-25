@@ -27,9 +27,7 @@ platforms:
     provider_options:
       cpu_mode: 'host-passthrough'
       nested: true
-    provider_raw_config_args:
-      - cputopology :sockets => '1', :cores => '4', :threads => '2'
-      - random :model => 'random'
+      machine_type: 'q35'
     groups:
       - controller
       - switch
@@ -39,9 +37,7 @@ platforms:
     provider_options:
       cpu_mode: 'host-passthrough'
       nested: true
-    provider_raw_config_args:
-      - cputopology :sockets => '1', :cores => '4', :threads => '2'
-      - random :model => 'random'
+      machine_type: 'q35'
     groups:
       - compute
       - peers

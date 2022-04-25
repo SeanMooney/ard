@@ -1,9 +1,13 @@
-
 build-essential [platform:dpkg]
+gcc [platform:rpm]
 libffi-dev [platform:dpkg]
 libffi-devel [platform:rpm]
 python3
 python3-dev [platform:dpkg]
 python3-devel [platform:rpm]
+libvirt-devel [platform:rpm]
+ruby-devel [platform:rpm]
+redhat-rpm-config [platform:rpm]
+vagrant [platform:rpm]
+rsync [platform:rpm]
 libvirt-daemon
-vagrant
