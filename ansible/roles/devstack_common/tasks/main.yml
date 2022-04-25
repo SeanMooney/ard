@@ -37,7 +37,7 @@
     - name: Ensure hostname does not point to 127.0.*.* in /etc/hosts
       lineinfile:
         dest: /etc/hosts
-        regexp: "^127.0.*\\b.*\\s{{ inventory_hostname }}\\b"
+        regexp: "^127.0.*\\b.*\\s{{ ansible_hostname }}\\b"
         state: absent
 
     - name: Generate /etc/hosts for all of the nodes
@@ -46,10 +46,10 @@
         marker: "# {mark} ANSIBLE GENERATED HOSTS"
         block: |
           {% for host in groups['all'] %}
-          {{ hostvars[host]['ansible_facts']['default_ipv4']['address'] }} {{ host }}
+          {{ hostvars[host]['ansible_facts']['default_ipv4']['address'] }} {{ ansible_hostname  }} {{ host }}
           {% endfor %}
 
-- name: update common packages debian
+- name: manage common packages debian
   become: yes
   when: ansible_facts.os_family == 'Debian'
   block:
@@ -68,10 +68,21 @@
         state: present
 
 
-- name: install common packages debian
+- name: manage common packages redhat
   become: yes
   when: ansible_facts.os_family == 'RedHat'
   block:
+    - name: enable crb repo
+      ini_file:
+        path: /etc/yum.repos.d/centos.repo
+        section: crb
+        option: enabled
+        value: 1
+        no_extra_spaces: yes
+    - name: remove centos-server repo file
+      file:
+        path: /etc/yum.repos.d/centos-server.repo
+        state: absent
     - name: remove RPM packages
       package:
         name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
@@ -220,7 +231,7 @@
         state: present
         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
 
-- name: setup root user ssh keys
+- name: setup ansible user ssh keys
   block:
     - name: create .ssh dir
       file:
@@ -237,7 +248,7 @@
         dest: "~/.ssh/id_ed25519.pub"
     - name: Set authorized key
       ansible.posix.authorized_key:
-        user: vagrant
+        user: "{{ ansible_user }}"
         state: present
         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
 
