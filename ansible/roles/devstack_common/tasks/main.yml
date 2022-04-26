@@ -24,8 +24,9 @@
     path: '/tmp/work_root'
     state: directory
 
-- name: manage /etc/hosts
+- name: manage /etc/hosts and /etc/hostname
   become: yes
+  tags: hostname
   block:
     - name: Ensure localhost in /etc/hosts
       lineinfile:
@@ -69,6 +70,7 @@
 - name: manage common packages debian
   become: yes
   when: ansible_facts.os_family == 'Debian'
+  tags: system-packages
   block:
     - name: update apt cache
       apt:
@@ -88,6 +90,7 @@
 - name: manage common packages redhat
   become: yes
   when: ansible_facts.os_family == 'RedHat'
+  tags: system-packages
   block:
     - name: enable crb repo
       ini_file:
@@ -114,6 +117,7 @@
 - name: disable firewall
   become: yes
   when: disable_firewall | bool
+  tags: firewall
   block:
     - name: Set firewall default policy
       ufw:
@@ -144,6 +148,7 @@
 
 - name: create stack user as root
   become: yes
+  tags: users
   block:
     - name: stack group
       group:
@@ -196,6 +201,7 @@
 - name: generate stack user ssh key "{{ssh_key_filename}}"
   delegate_to: 127.0.0.1
   run_once: yes
+  tags: ssh
   openssh_keypair:
     path: "~/.ssh/{{ssh_key_filename}}"
     type: ed25519
@@ -206,6 +212,7 @@
 - name: setup stack user ssh keys
   become_user: stack
   become: yes
+  tags: ssh
   block:
     - name: create .ssh dir
       file:
@@ -228,6 +235,7 @@
 
 - name: setup root user ssh keys
   become: yes
+  tags: ssh
   block:
     - name: create .ssh dir
       file:
@@ -249,6 +257,7 @@
         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
 
 - name: setup ansible user ssh keys
+  tags: ssh
   block:
     - name: create .ssh dir
       file:
@@ -271,6 +280,7 @@
 
 - name: disable host key checking in sshd config
   become: yes
+  tags: ssh
   block:
     - name: create ssh_config.d
       file:

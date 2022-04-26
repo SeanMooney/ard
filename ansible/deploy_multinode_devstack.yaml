@@ -25,12 +25,25 @@
             path: '~/.cache/ard/repos'
             state: directory
       when: "use_local_cache | default(true) | bool"
-
-- name: "execute devstack_common on all hosts"
+  tags:
+    - common
+    - cache
+- name: execute devstack_common on all hosts
   import_playbook: devstack_common.yaml
+  tags:
+    - common
+
+- name: configure vdpa
+  import_playbook: vdpa.yaml
+  tags:
+    - common
+    - vdpa
 
 - name: push remote cache dirs
   hosts: all
+  tags:
+    - common
+    - cache
   tasks:
     - block:
         - name: push apt cache
