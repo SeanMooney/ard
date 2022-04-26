@@ -6,16 +6,17 @@
       projects: "{{ controller_projects }}"
       project: "{{ controller_project }}"
 
-- name: vdpa pci whitelist
+- name: vdpa pci whitelist and filter
   when: "configure_vdpa"
   set_fact:
-    controller_local_conf:
-      $NOVA_CONF:
-        filter_scheduler:
-          enabled_filters: "ComputeFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,SameHostFilter,DifferentHostFilter,PciPassthroughFilter,NUMATopologyFilter"
-      $NOVA_CPU_CONF:
-        pci:
-          passthrough_whitelist: '{"vendor_id":"15b3", "product_id": "101e", "physical_network": null}'
+    vdpa_local_conf:
+      post_config:
+        $NOVA_CONF:
+          filter_scheduler:
+            enabled_filters: "ComputeFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,SameHostFilter,DifferentHostFilter,PciPassthroughFilter,NUMATopologyFilter"
+        $NOVA_CPU_CONF:
+          pci:
+            passthrough_whitelist: '{"vendor_id":"15b3", "product_id": "101e", "physical_network": null}'
 
 - name:  enable_ceph
   when: "enable_ceph | bool"
@@ -29,7 +30,7 @@
   vars:
     devstack_base_dir: '{{ repos_dir }}'
     devstack_localrc: '{{ controller_localrc | combine(controller_localrc_extra) }}'
-    devstack_local_conf: '{{ controller_local_conf | combine(controller_local_conf_extra) }}'
+    devstack_local_conf: '{{ controller_local_conf | combine(vdpa_local_conf | default({})) | combine(controller_local_conf_extra) }}'
     devstack_services: '{{ controller_services | combine(controller_services_extra) }}'
     devstack_plugins:  '{{ controller_devstack_plugins }}'
 
