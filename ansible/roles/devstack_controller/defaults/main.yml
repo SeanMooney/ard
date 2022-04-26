@@ -5,6 +5,7 @@ git_base: "https://github.com"
 devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
 enable_ceph: false
+configure_vdpa: False
 controller_devstack_plugins: {}
 controller_localrc_extra: {}
 controller_localrc:

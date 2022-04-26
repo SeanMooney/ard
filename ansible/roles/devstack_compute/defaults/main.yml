@@ -6,6 +6,7 @@ devstack_libvirt_type: 'kvm'
 devstack_ip_version: 4
 compute_devstack_plugins: {}
 enable_ceph: false
+configure_vdpa: False
 compute_localrc_extra: {}
 compute_localrc:
   GIT_BASE: "{{ git_base }}"
