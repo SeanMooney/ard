@@ -1,0 +1,8 @@
+---
+# defaults file for configure_vdpa
+configure_vdpa: False
+vdpa_kernel_modules:
+  - vhost_vdpa
+  - vdpa
+  - mlx5_vdpa
+num_vdpa_per_pf: 2

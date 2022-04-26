@@ -6,6 +6,14 @@
       projects: "{{ controller_projects }}"
       project: "{{ controller_project }}"
 
+- name: vdpa pci whitelist
+  when: "configure_vdpa"
+  set_fact:
+    controller_local_conf:
+      $NOVA_CPU_CONF:
+        pci:
+          passthrough_whitelist: '{"vendor_id":"15b3", "product_id": "101e", "physical_network": null}'
+
 - name:  enable_ceph
   when: "enable_ceph | bool"
   set_fact:

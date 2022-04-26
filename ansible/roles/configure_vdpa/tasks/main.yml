@@ -1,0 +1,42 @@
+---
+# tasks file for configure_vdpa
+
+- name: configure vdpa
+  when: "configure_vdpa"
+  block:
+    - name: load vdpa kernel modules
+      become: yes
+      community.general.modprobe:
+        name: "{{item}}"
+        state: present
+      with_items: "{{vdpa_kernel_modules}}"
+
+    # TODO: filter this later
+    - name: dealocate all VFs
+      become: yes
+      shell: "for nic in ls  /sys/bus/pci/devices/*/sriov_numvfs; do echo 0 > $nic; done"
+
+    # TODO: make this smarter
+    - name: Find vdpa capable nics
+      command: "devlink dev"
+      register: vdpa_pfs
+
+    - name: enable switchdev mode
+      become: yes
+      command: "devlink dev eswitch set {{item}}  mode switchdev"
+      with_items: "{{vdpa_pfs.stdout_lines}}"
+
+    - name: allocate VFs
+      become: yes
+      shell: "echo {{num_vdpa_per_pf}} > /sys/bus/pci/devices/{{ item  | split('/') | last }}/sriov_numvfs"
+      with_items: "{{vdpa_pfs.stdout_lines}}"
+
+    - name: Find vdpa VFs
+      shell: "vdpa mgmtdev show | awk  '/:/ {print substr($0, 1, length($0)-2)}'"
+      register: vdpa_vfs
+
+    - name: create vdpa devs
+      become: yes
+      command: "vdpa dev add name vdpa-{{item.0}} mgmtdev {{item.1}}"
+      with_indexed_items: "{{vdpa_vfs.stdout_lines}}"
+
