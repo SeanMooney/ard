@@ -1,0 +1,46 @@
+# Molecule managed
+
+---
+all:
+  hosts:
+    controller: &controller
+      ansible_host: <controller-ip-or-hostname>
+      ansible_port: '22'
+      ansible_private_key_file: <path-to-ssh-key>
+      ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o ControlMaster=auto
+        -o ControlPersist=60s -o ForwardX11=no -o LogLevel=ERROR -o IdentitiesOnly=yes
+        -o StrictHostKeyChecking=no
+      ansible_user: <remote-user>
+      connection: ssh
+    compute1: &compute
+      ansible_host: <compute-ip-or-hostname>
+      ansible_port: '22'
+      ansible_private_key_file: <path-to-ssh-key>
+      ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o ControlMaster=auto
+        -o ControlPersist=60s -o ForwardX11=no -o LogLevel=ERROR -o IdentitiesOnly=yes
+        -o StrictHostKeyChecking=no
+      ansible_user: <remote-user>
+      connection: ssh
+  vars: &vars
+compute:
+  hosts:
+    compute1: *compute
+  vars: *vars
+controller:
+  hosts:
+    controller: *controller
+  vars: *vars
+peers:
+  hosts:
+    compute1: *compute
+  vars: *vars
+subnode:
+  hosts:
+    compute1: *compute
+  vars: *vars
+switch:
+  hosts:
+    controller: *controller
+  vars: *vars
+ungrouped:
+  vars: {}

@@ -1,0 +1,17 @@
+run_devstack: true
+configure_vdpa: true
+use_local_cache: false
+devstack_branch: master
+# disable tls until https://review.opendev.org/c/openstack/devstack/+/838043 is merged
+controller_services_extra:
+  # Shared services
+  tls-proxy: false
+  q-sriov-agt: true
+compute_services_extra:
+  # Shared services
+  tls-proxy: false
+  q-sriov-agt: true
+contoller_local_conf_extra:
+  Q_ML2_PLUGIN_MECHANISM_DRIVERS: sriovnicswitch,ovn,logger
+  Q_ML2_PLUGIN_TYPE_DRIVERS: local,flat,vlan,geneve
+  Q_ML2_TENANT_NETWORK_TYPE: geneve,vlan
