@@ -99,10 +99,19 @@
         option: enabled
         value: 1
         no_extra_spaces: yes
+    # this is added in our downstream image but does not work
     - name: remove centos-server repo file
       file:
-        path: /etc/yum.repos.d/centos-server.repo
+        path: "/etc/yum.repos.d/centos-server.repo"
         state: absent
+    # This is enabled in the current centos 9 stream vagrant
+    # box image.
+    - name: remove home:alvistack.repo file
+      file:
+        path: "/etc/yum.repos.d/home:alvistack.repo"
+        state: absent
+    - name: force remove custom packages
+      shell: "dnf remove -y $(dnf list installed | awk '/@home_alvistack/ {print $1}')"
     - name: remove RPM packages
       package:
         name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
