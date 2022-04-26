@@ -10,6 +10,9 @@
   when: "configure_vdpa"
   set_fact:
     controller_local_conf:
+      $NOVA_CONF:
+        filter_scheduler:
+          enabled_filters: "ComputeFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,SameHostFilter,DifferentHostFilter,PciPassthroughFilter,NUMATopologyFilter"
       $NOVA_CPU_CONF:
         pci:
           passthrough_whitelist: '{"vendor_id":"15b3", "product_id": "101e", "physical_network": null}'
