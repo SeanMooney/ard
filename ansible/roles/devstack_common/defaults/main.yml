@@ -23,6 +23,10 @@ redhat_pkg_install:
   - acl
   - wget
   - nano
+  - vim
+  - bash-completion
+pip_pkg_install:
+  - git-review
 debian_pkg_remove:
   - cloud-init
   - python3-pyyaml

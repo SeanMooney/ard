@@ -123,6 +123,11 @@
         state: present
         update_cache: yes
 
+    - name: Install pip packages
+      pip:
+        name: "{{ (pip_pkg_install | join(' ')).split() }}"
+      become: yes
+
 - name: disable firewall
   become: yes
   when: disable_firewall | bool
