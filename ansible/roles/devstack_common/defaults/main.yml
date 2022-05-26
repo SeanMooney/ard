@@ -17,12 +17,14 @@ debian_pkg_install:
   - sudo
   - wget
   - nano
+  - rsync
 redhat_pkg_install:
   - git-core
   - sudo
   - acl
   - wget
   - nano
+  - rsync
 debian_pkg_remove:
   - cloud-init
   - python3-pyyaml

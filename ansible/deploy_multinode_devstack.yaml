@@ -39,6 +39,10 @@
     - common
     - vdpa
 
+# note that syncing the cache need to happen after the devstack_common
+# role has run to ensure rsync is installed on the target hosts.
+# when the cacheing is refarctored into push cache and pull cache roles
+# we can relax this requriement by having the cache roles ensure its installed.
 - name: push remote cache dirs
   hosts: all
   tags:

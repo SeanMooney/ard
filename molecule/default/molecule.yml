@@ -19,7 +19,7 @@ driver:
   parallel: true
   # vagrant box to use by default
   # Defaults to 'generic/alpine310'
-  default_box: 'alvistack/centos-9-stream'
+  default_box: 'generic/centos9s'
 platforms:
   - name: controller
     memory: 8192
