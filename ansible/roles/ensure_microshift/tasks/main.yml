@@ -117,3 +117,38 @@
         cat /var/lib/microshift/resources/kubeadmin/kubeconfig > /home/stack/.kube/config
         chown stack:stack /home/stack/.kube/config
 
+- name: install olm
+  when: install_olm | bool
+  tags: olm
+  become_user: stack
+  become: yes
+  block:
+    - name: install git
+      become: yes
+      become_user: root
+      package:
+        name: git
+        state: present
+    - name: clone operator-sdk
+      ansible.builtin.git:
+        repo: '{{operator_sdk_url}}'
+        dest: '{{repo_dir}}/operator-sdk'
+        version: '{{operator_sdk_version}}'
+    - name: install go
+      become: yes
+      become_user: root
+      package:
+        name: golang
+        state: present
+    - name: build  sdk
+      shell:
+        cmd: make build
+        chdir: '{{repo_dir}}/operator-sdk'
+    - name: remove olm if installed
+      shell:
+        cmd: build/operator-sdk olm uninstall
+        chdir: '{{repo_dir}}/operator-sdk'
+    - name: install olm with sdk
+      shell:
+        cmd: build/operator-sdk olm install
+        chdir: '{{repo_dir}}/operator-sdk'

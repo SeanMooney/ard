@@ -13,3 +13,7 @@ microshift_volumes:
   - "/etc:/etc"
 crio_os:  "CentOS_8_Stream"
 crio_version: "1.21"
+install_olm: yes
+repo_dir: /opt/stack
+operator_sdk_url: https://github.com/operator-framework/operator-sdk
+operator_sdk_version: v1.21.0
