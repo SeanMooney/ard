@@ -1,0 +1,37 @@
+---
+dependency:
+  name: galaxy
+verifier:
+  name: ansible
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  # Run vagrant up with --provision.
+  # Defaults to --no-provision)
+  provision: no
+  # vagrant-cachier configuration
+  # Defaults to 'machine'
+  # Any value different from 'machine' or 'box' will disable it
+  cachier: machine
+  # If set to false, set VAGRANT_NO_PARALLEL to '1'
+  # Defaults to true
+  parallel: true
+  # vagrant box to use by default
+  # Defaults to 'generic/alpine310'
+  default_box: 'generic/centos9s'
+platforms:
+  - name: microshfit
+    memory: 8192
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+      machine_type: 'q35'
+    groups:
+      - openshift
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:../../submodules/devstack/roles:../../submodules/openstack-zuul-jobs/roles"

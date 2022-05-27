@@ -1,0 +1,22 @@
+#derivied form https://raw.githubusercontent.com/redhat-et/microshift/main/packaging/systemd/microshift-containerized.service
+
+[Unit]
+Description=MicroShift Containerized
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target crio.service
+After=network-online.target crio.service
+RequiresMountsFor=%t/containers
+
+[Service]
+Environment=PODMAN_SYSTEMD_UNIT=%n
+Restart=on-failure
+TimeoutStopSec=70
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
+ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --replace --sdnotify=container --label io.containers.autoupdate=registry --network=host --privileged -d --name microshift {% for vol in microshift_volumes %} -v {{vol}} {% endfor %} {{microshift_image}}:{{microshift_tag}}
+ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
+ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
+Type=notify
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target default.target
