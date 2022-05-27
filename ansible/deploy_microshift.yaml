@@ -1,0 +1,9 @@
+---
+- name: deploy minishift to openshift hosts
+  hosts: openshift
+  tags: openshift
+  roles:
+    - ensure-podman
+    - ensure_stack_user
+    - ensure_microshift
+

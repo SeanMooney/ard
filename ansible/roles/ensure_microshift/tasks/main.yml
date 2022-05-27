@@ -1,0 +1,119 @@
+---
+# tasks file for ensure_microshift
+- name: configure crio
+  become: yes
+  tags: crio
+  block:
+    - name: define crio stable repo
+      get_url:
+        url: "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/{{crio_os}}/devel:kubic:libcontainers:stable.repo"
+        dest: /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo
+        mode: '0440'
+    - name: define crio versioned repos
+      get_url:
+        url: "https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}/{{crio_os}}/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}.repo"
+        dest: "/etc/yum.repos.d/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}.repo"
+        mode: '0440'
+    - name: install crio package
+      package:
+        name: cri-o
+        state: present
+    - name: enable crio service
+      systemd:
+        name: crio
+        state: started
+        daemon_reload: yes
+        enabled: yes
+
+- name: firewall-cmd
+  become: yes
+  shell: |
+    firewall-cmd --zone=trusted --add-source=10.42.0.0/16 --permanent
+    firewall-cmd --zone=public --add-port=80/tcp --permanent
+    firewall-cmd --zone=public --add-port=443/tcp --permanent
+    firewall-cmd --zone=public --add-port=5353/udp --permanent
+    firewall-cmd --reload
+
+
+# currnetly we are running this as root so that it has access to the crio socket but
+# maybe we can run it as the stack user in the future if we add the stack user to
+# the correct group?
+- name: configure microshift
+  when: microshift_install_type == 'podman'
+  become: yes
+  #become_user: stack
+  tags: microshift
+  block:
+   # - name: allow stack user systemd services to linger
+   #   become: yes
+   #   become_user: root
+   #   command: "loginctl enable-linger 1001"
+    - name: remove  container
+      containers.podman.podman_container:
+        name: microshift
+        state: absent
+    # we cant currently pass cgroups: no-common so we will use a systemd service file to run this instead
+    #- name: Run container
+    #  containers.podman.podman_container:
+    #    privileged: yes
+    #    name: microshift
+    #    image: "{{microshift_image}}:{{microshift_tag}}"
+    #    state: started
+    #    volumes: "{{microshift_volumes}}"
+    #    recreate: yes
+    #    network: host
+    #    restart_policy: on-failure
+    #    cgroups: disabled
+    - name: define microshift service
+      template:
+        src: microshift.service.j2
+        dest: /etc/systemd/system/microshift.service
+    - name: enable microshift service
+      systemd:
+        name: microshift
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
+    - name: install openshift clients
+      ansible.builtin.unarchive:
+        src: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz
+        dest: /usr/bin
+        remote_src: yes
+    - name: setup kubconfig for stack user
+      shell: |
+        mkdir -p /home/stack/.kube
+        chown stack:stack /home/stack/.kube
+        podman cp microshift:/var/lib/microshift/resources/kubeadmin/kubeconfig /home/stack/.kube/config
+        chown stack:stack /home/stack/.kube/config
+
+- name: configure microshift
+  when: microshift_install_type == 'rpm'
+  become: yes
+  tags: microshift
+  block:
+    - name: enable copr repo
+      community.general.copr:
+        state: enabled
+        name: '@redhat-et/microshift'
+    - name: install microshift package
+      package:
+        name: microshift
+        state: present
+    - name: enable microshift service
+      systemd:
+        name: microshift
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+    - name: install openshift clients
+      ansible.builtin.unarchive:
+        src: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz
+        dest: /usr/bin
+        remote_src: yes
+    - name: setup kubconfig for stack user
+      shell: |
+        mkdir -p /home/stack/.kube
+        chown stack:stack /home/stack/.kube
+        cat /var/lib/microshift/resources/kubeadmin/kubeconfig > /home/stack/.kube/config
+        chown stack:stack /home/stack/.kube/config
+

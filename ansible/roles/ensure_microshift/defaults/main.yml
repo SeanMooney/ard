@@ -1,0 +1,15 @@
+---
+# defaults file for ensure_microshift
+microshift_install_type: rpm
+microshift_image: quay.io/microshift/microshift
+microshift_tag: latest
+microshift_volumes:
+  - "hpvolumes:/var/hpvolumes:z,rw,rshared"
+  - "microshift-data:/var/lib/microshift:rw,rshared"
+  - "kubelet:/var/lib/kubelet:rw,rshared"
+  - "/var/run/crio/crio.sock:/var/run/crio/crio.sock:rw,rshared"
+  - "logs:/var/logs"
+  # this might be needed for the kublet or cni config.
+  - "/etc:/etc"
+crio_os:  "CentOS_8_Stream"
+crio_version: "1.21"
