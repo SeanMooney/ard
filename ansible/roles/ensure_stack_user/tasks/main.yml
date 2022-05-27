@@ -1,0 +1,113 @@
+---
+# tasks file for ensure_stack_user
+- name: create stack user as root
+  become: yes
+  tags: users
+  block:
+    - name: stack group
+      group:
+        name: stack
+        state: present
+
+    - name: stack user
+      user:
+        name: stack
+        password: "{{ stack_user_password | password_hash('sha512','A512') }}"
+        shell: /bin/bash
+        group: stack
+        state: present
+
+    - name: grant stack user passwordless sudo privileges
+      copy:
+        dest: /etc/sudoers.d/50_stack_user
+        content: |
+          stack ALL=(ALL) NOPASSWD:ALL
+
+- name: create /opt/stack
+  become: yes
+  ansible.builtin.file:
+    path: '/opt/stack'
+    state: directory
+    mode: '0777'
+    owner: stack
+    group: stack
+
+- name: generate stack user ssh key "{{ssh_key_filename}}"
+  delegate_to: 127.0.0.1
+  run_once: yes
+  tags: ssh
+  openssh_keypair:
+    path: "~/.ssh/{{ssh_key_filename}}"
+    type: ed25519
+    state: present
+    mode: '0600'
+    force: no
+
+- name: setup stack user ssh keys
+  become_user: stack
+  become: yes
+  tags: ssh
+  block:
+    - name: create .ssh dir
+      file:
+        path: '~/.ssh'
+        state: directory
+    - name: copy private key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}"
+        dest: "~/.ssh/id_ed25519"
+        mode: '0600'
+    - name: copy public key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}.pub"
+        dest: "~/.ssh/id_ed25519.pub"
+    - name: Set authorized key
+      ansible.posix.authorized_key:
+        user: stack
+        state: present
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+
+- name: setup root user ssh keys
+  become: yes
+  tags: ssh
+  block:
+    - name: create .ssh dir
+      file:
+        path: '~/.ssh'
+        state: directory
+    - name: copy private key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}"
+        dest: "~/.ssh/id_ed25519"
+        mode: '0600'
+    - name: copy public key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}.pub"
+        dest: "~/.ssh/id_ed25519.pub"
+    - name: Set authorized key
+      ansible.posix.authorized_key:
+        user: root
+        state: present
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+
+- name: setup ansible user ssh keys
+  tags: ssh
+  block:
+    - name: create .ssh dir
+      file:
+        path: '~/.ssh'
+        state: directory
+    - name: copy private key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}"
+        dest: "~/.ssh/id_ed25519"
+        mode: '0600'
+    - name: copy public key
+      copy:
+        src: "~/.ssh/{{ssh_key_filename}}.pub"
+        dest: "~/.ssh/id_ed25519.pub"
+    - name: Set authorized key
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
