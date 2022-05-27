@@ -1,0 +1,4 @@
+---
+# defaults file for ensure_stack_user
+stack_user_password: "tester"
+ssh_key_filename: id_ed25519_stack
