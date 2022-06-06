@@ -32,8 +32,8 @@
         - ("is already requested" not in _install_result.stderr)
     - name: reboot the machine
       when:
-        - ("systemctl reboot" in item.stdout)
         - crio_install_type == 'ostree'
+        - ("systemctl reboot" in item.stdout)
       loop: "{{ _install_result.results }}"
       reboot:
     - name: configure crio logging
@@ -123,11 +123,20 @@
         dest: "{% if microshift_install_type == 'ostree' %}/usr/local/bin{% else %}/usr/bin{% endif %}"
         remote_src: yes
     - name: setup kubconfig for {{ microshift_user }} user
+      when: microshift_install_type != 'ostree'
+      become: true
       shell: |
         mkdir -p /home/{{ microshift_user }}/.kube
         chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube
         podman cp microshift:/var/lib/microshift/resources/kubeadmin/kubeconfig /home/{{ microshift_user }}/.kube/config
         chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube/config
+    - name: setup kubconfig for {{ microshift_user }} user
+      when: microshift_install_type == 'ostree'
+      shell: |
+        mkdir -p /var/lib/{{ microshift_user }}/.kube
+        chown {{ microshift_user }}:{{ microshift_user }} /var/lib/{{ microshift_user }}/.kube
+        podman cp microshift:/var/lib/microshift/resources/kubeadmin/kubeconfig /var/lib/{{ microshift_user }}/.kube/config
+        chown {{ microshift_user }}:{{ microshift_user }} /var/lib/{{ microshift_user }}/.kube/config
 
 - name: configure microshift
   when: microshift_install_type == 'rpm'
