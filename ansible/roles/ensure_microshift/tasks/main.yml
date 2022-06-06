@@ -106,7 +106,7 @@
         daemon_reload: yes
         no_block: true
         enabled: yes
-      async: "{{ (not ansible_check_mode | bool) | ternary(100, omit) }}"
+      async: "{{ (not ansible_check_mode | bool) | ternary(300, omit) }}"
       poll: "{{ (not ansible_check_mode | bool) | ternary(0, omit) }}"
       register: _microshift_service_result
     - name: check microshift service status
@@ -114,8 +114,8 @@
         jid: "{{ _microshift_service_result.ansible_job_id }}"
       register: _microshift_service_wait_result
       until: _microshift_service_wait_result.finished
-      retries: 20
-      delay: 5
+      retries: 30
+      delay: 10
       when: not ansible_check_mode
     - name: install openshift clients
       ansible.builtin.unarchive:
