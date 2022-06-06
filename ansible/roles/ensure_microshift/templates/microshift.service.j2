@@ -6,7 +6,7 @@ Documentation=man:podman-generate-systemd(1)
 Wants=network-online.target crio.service
 After=network-online.target crio.service
 RequiresMountsFor=%t/containers
-StartLimitIntervalSec=300
+StartLimitIntervalSec=600
 StartLimitBurst=5
 
 [Service]
@@ -14,6 +14,7 @@ Environment=PODMAN_SYSTEMD_UNIT=%n
 RestartSec=60
 Restart=on-failure
 TimeoutStopSec=70
+TimeoutStartSec=300
 ExecStartPre=-/usr/bin/podman stop -t 60 --ignore microshift
 ExecStartPre=-/bin/rm -f %t/%n.ctr-id
 #ExecStartPre=/usr/bin/podman pull {{microshift_image}}:{{microshift_tag}}
