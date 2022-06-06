@@ -27,6 +27,23 @@ Including an example of how to use your role (for instance, with variables passe
       roles:
          - { role: username.rolename, x: 42 }
 
+Playbook to test Microshift deployment on Fedora CoreOS
+-------------------------------------------------------
+
+```
+- hosts: microshift
+  gather_facts: true
+  vars:
+    user_name: microshift
+    install_olm: false
+    manage_firewall: false
+    microshift_install_type: ostree
+    crio_install_type: ostree
+    crio_log_level: debug
+  roles:
+    - ensure_microshift
+```
+
 License
 -------
 

@@ -1,7 +1,7 @@
 ---
 # tasks file for ensure_microshift
 - name: configure crio
-  become: yes
+  become: true
   tags: crio
   block:
     - name: define crio stable repo
@@ -9,24 +9,54 @@
         url: "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/{{crio_os}}/devel:kubic:libcontainers:stable.repo"
         dest: /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo
         mode: '0440'
+    - name: purge crio versioned repos
+      shell: rm -f /etc/yum.repos.d/*:cri-o:*.repo
     - name: define crio versioned repos
       get_url:
         url: "https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}/{{crio_os}}/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}.repo"
         dest: "/etc/yum.repos.d/devel:kubic:libcontainers:stable:cri-o:{{crio_version}}.repo"
         mode: '0440'
-    - name: install crio package
+    - name: install crio packages
+      when: crio_install_type == 'rpm'
       package:
-        name: cri-o
+        name: "{{ item }}"
         state: present
+      loop: "{{ crio_packages }}"
+    - name: install crio packages with ostree
+      when: crio_install_type == 'ostree'
+      command: rpm-ostree install {{ item }}
+      register: _install_result
+      loop: "{{ crio_packages }}"
+      failed_when:
+        - _install_result.rc != 0
+        - ("is already requested" not in _install_result.stderr)
+    - name: reboot the machine
+      when:
+        - ("systemctl reboot" in item.stdout)
+        - crio_install_type == 'ostree'
+      loop: "{{ _install_result.results }}"
+      reboot:
+    - name: configure crio logging
+      community.general.ini_file:
+        path: /etc/crio/crio.conf
+        section: crio.runtime
+        option: "{{ item.key }}"
+        value: "{{ item.value }}"
+        mode: '0600'
+      register: _crio_conf_result
+      with_dict:
+        - log_to_journald: "true"
+        - log_level: "'{{ crio_log_level }}'"
     - name: enable crio service
       systemd:
         name: crio
-        state: started
+        state: "{% if _crio_conf_result.changed %}re{% endif %}started"
         daemon_reload: yes
         enabled: yes
 
 - name: firewall-cmd
-  become: yes
+  when: manage_firewall|bool
+  become: true
   shell: |
     firewall-cmd --zone=trusted --add-source=10.42.0.0/16 --permanent
     firewall-cmd --zone=public --add-port=80/tcp --permanent
@@ -36,19 +66,20 @@
 
 
 # currnetly we are running this as root so that it has access to the crio socket but
-# maybe we can run it as the stack user in the future if we add the stack user to
+# maybe we can run it as the {{ microshift_user }} user in the future if we add the {{ microshift_user }} user to
 # the correct group?
 - name: configure microshift
-  when: microshift_install_type == 'podman'
-  become: yes
-  #become_user: stack
+  when: microshift_install_type in ['podman', 'ostree']
+  become: true
+  #become_user: "{{ microshift_user }}"
   tags: microshift
   block:
-   # - name: allow stack user systemd services to linger
-   #   become: yes
-   #   become_user: root
-   #   command: "loginctl enable-linger 1001"
+    # - name: allow {{ microshift_user }} user systemd services to linger
+    #   become: yes
+    #   become_user: "{{ microshift_user }}""
+    #   command: "loginctl enable-linger 1001"
     - name: remove  container
+      when: microshift_upgrade|bool
       containers.podman.podman_container:
         name: microshift
         state: absent
@@ -73,22 +104,34 @@
         name: microshift
         state: restarted
         daemon_reload: yes
+        no_block: true
         enabled: yes
+      async: "{{ (not ansible_check_mode | bool) | ternary(100, omit) }}"
+      poll: "{{ (not ansible_check_mode | bool) | ternary(0, omit) }}"
+      register: _microshift_service_result
+    - name: check microshift service status
+      async_status:
+        jid: "{{ _microshift_service_result.ansible_job_id }}"
+      register: _microshift_service_wait_result
+      until: _microshift_service_wait_result.finished
+      retries: 20
+      delay: 5
+      when: not ansible_check_mode
     - name: install openshift clients
       ansible.builtin.unarchive:
         src: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz
-        dest: /usr/bin
+        dest: "{% if microshift_install_type == 'ostree' %}/usr/local/bin{% else %}/usr/bin{% endif %}"
         remote_src: yes
-    - name: setup kubconfig for stack user
+    - name: setup kubconfig for {{ microshift_user }} user
       shell: |
-        mkdir -p /home/stack/.kube
-        chown stack:stack /home/stack/.kube
-        podman cp microshift:/var/lib/microshift/resources/kubeadmin/kubeconfig /home/stack/.kube/config
-        chown stack:stack /home/stack/.kube/config
+        mkdir -p /home/{{ microshift_user }}/.kube
+        chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube
+        podman cp microshift:/var/lib/microshift/resources/kubeadmin/kubeconfig /home/{{ microshift_user }}/.kube/config
+        chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube/config
 
 - name: configure microshift
   when: microshift_install_type == 'rpm'
-  become: yes
+  become: true
   tags: microshift
   block:
     - name: enable copr repo
@@ -110,21 +153,21 @@
         src: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz
         dest: /usr/bin
         remote_src: yes
-    - name: setup kubconfig for stack user
+    - name: setup kubconfig for {{ microshift_user }} user
       shell: |
-        mkdir -p /home/stack/.kube
-        chown stack:stack /home/stack/.kube
-        cat /var/lib/microshift/resources/kubeadmin/kubeconfig > /home/stack/.kube/config
-        chown stack:stack /home/stack/.kube/config
+        mkdir -p /home/{{ microshift_user }}/.kube
+        chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube
+        cat /var/lib/microshift/resources/kubeadmin/kubeconfig > /home/{{ microshift_user }}/.kube/config
+        chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube/config
 
 - name: install olm
   when: install_olm | bool
   tags: olm
-  become_user: stack
-  become: yes
+  become_user: "{{ microshift_user }}"
+  become: true
   block:
     - name: install git
-      become: yes
+      become: true
       become_user: root
       package:
         name: git
@@ -135,7 +178,7 @@
         dest: '{{repo_dir}}/operator-sdk'
         version: '{{operator_sdk_version}}'
     - name: install go
-      become: yes
+      become: true
       become_user: root
       package:
         name: golang

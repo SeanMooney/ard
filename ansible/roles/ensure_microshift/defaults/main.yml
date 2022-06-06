@@ -1,5 +1,7 @@
 ---
 # defaults file for ensure_microshift
+microshift_upgrade: false
+microshift_user: stack
 microshift_install_type: rpm
 microshift_image: quay.io/microshift/microshift
 microshift_tag: latest
@@ -13,7 +15,14 @@ microshift_volumes:
   - "/etc:/etc"
 crio_os:  "CentOS_8_Stream"
 crio_version: "1.21"
-install_olm: yes
-repo_dir: /opt/stack
+crio_install_type: rpm
+crio_log_level: info
+crio_packages:
+  - cri-o
+  - cri-tools
+  - oci-systemd-hook
+install_olm: true
+repo_dir: /opt/{{ microshift_user }}
 operator_sdk_url: https://github.com/operator-framework/operator-sdk
 operator_sdk_version: v1.21.0
+manage_firewall: false
