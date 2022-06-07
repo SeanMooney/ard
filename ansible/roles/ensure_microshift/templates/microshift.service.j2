@@ -3,7 +3,8 @@
 [Unit]
 Description=MicroShift Containerized
 Documentation=man:podman-generate-systemd(1)
-Wants=network-online.target crio.service
+Wants=network-online.target
+Requires=crio.service
 After=network-online.target crio.service
 RequiresMountsFor=%t/containers
 StartLimitIntervalSec=600
@@ -17,8 +18,8 @@ TimeoutStopSec=70
 TimeoutStartSec=300
 ExecStartPre=-/usr/bin/podman stop -t 60 --ignore microshift
 ExecStartPre=-/bin/rm -f %t/%n.ctr-id
-#ExecStartPre=/usr/bin/podman pull {{microshift_image}}:{{microshift_tag}}
-ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --replace --sdnotify=container --label io.containers.autoupdate=registry --network=host --privileged -d --name microshift {% for vol in microshift_volumes %} -v {{vol}} {% endfor %} {{microshift_image}}:{{microshift_tag}}
+ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --replace --sdnotify=container --label io.containers.autoupdate=registry --network=host --privileged -d --name microshift {% for vol in microshift_volumes %} -v {{vol}} {% endfor %} -v /lib/modules:/lib/modules:ro -v /sys/fs/cgroup:/sys/fs/cgroup {{microshift_image}}:{{microshift_tag}}
+ExecStartPost=-/bin/rm -f /etc/crio/crio.conf.d/microshift.conf
 ExecStop=/usr/bin/podman stop --cidfile=%t/%n.ctr-id
 Type=notify
 NotifyAccess=all
