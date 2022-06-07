@@ -24,33 +24,82 @@
       loop: "{{ crio_packages }}"
     - name: install crio packages with ostree
       when: crio_install_type == 'ostree'
-      command: rpm-ostree install {{ item }}
-      register: _install_result
-      loop: "{{ crio_packages }}"
-      failed_when:
-        - _install_result.rc != 0
-        - ("is already requested" not in _install_result.stderr)
-    - name: reboot the machine
-      when:
-        - crio_install_type == 'ostree'
-        - ("systemctl reboot" in item.stdout)
-      loop: "{{ _install_result.results }}"
-      reboot:
+      block:
+        - name: check for installed crio versions
+          command: crio --version
+          failed_when: false
+          register: _crio_check_result
+        - name: uninstall crio to change requested version
+          when: (not "crio version " + crio_version in _crio_check_result.stdout)
+          command: rpm-ostree uninstall cri-o
+        - name: install crio package
+          command: rpm-ostree install {{ item }}
+          register: _install_result
+          loop: "{{ crio_packages }}"
+          failed_when:
+            - _install_result.rc != 0
+            - ("is already requested" not in _install_result.stderr)
+        - name: reboot the machine
+          when:
+            - ("systemctl reboot" in item.stdout)
+          loop: "{{ _install_result.results }}"
+          reboot:
+    - name: ensure crio config snippets dir
+      file:
+        path: /etc/crio/crio.conf.d/
+        state: directory
+        owner: root
+        mode: 0755
     - name: configure crio logging
       community.general.ini_file:
-        path: /etc/crio/crio.conf
+        path: /etc/crio/crio.conf.d/99-logging.conf
         section: crio.runtime
         option: "{{ item.key }}"
         value: "{{ item.value }}"
         mode: '0600'
-      register: _crio_conf_result
       with_dict:
         - log_to_journald: "true"
         - log_level: "'{{ crio_log_level }}'"
+    - name: fix CNI plugin config for crio
+      copy:
+        content: |
+          {
+              "cniVersion": "0.4.0",
+              "name": "crio",
+              "type": "bridge",
+              "bridge": "cni0",
+              "isGateway": true,
+              "ipMasq": true,
+              "hairpinMode": true,
+              "ipam": {
+                  "type": "host-local",
+                  "routes": [
+                      { "dst": "0.0.0.0/0" },
+                      { "dst": "1100:200::/24" }
+                  ],
+                  "ranges": [
+                      [{ "subnet": "10.85.0.0/16" }],
+                      [{ "subnet": "1100:200::/24" }]
+                  ]
+              }
+          }
+        dest: /etc/cni/net.d/100-crio-bridge.conf
+        mode: 0644
+        owner: root
+    - name: ensure drop-in dir for crio service
+      file:
+        path: /etc/systemd/system/crio.service.d
+        state: directory
+    - name: create drop-in for crio service
+      copy:
+        dest: /etc/systemd/system/crio.service.d/10-remove-microshift-overrides.conf
+        content: |
+          [Service]
+          ExecStartPre=-/bin/rm -f /etc/crio/crio.conf.d/microshift.conf
     - name: enable crio service
       systemd:
         name: crio
-        state: "{% if _crio_conf_result.changed %}re{% endif %}started"
+        state: restarted
         daemon_reload: yes
         enabled: yes
 
