@@ -264,3 +264,49 @@
       shell:
         cmd: build/operator-sdk olm install
         chdir: '{{repo_dir}}/operator-sdk'
+
+- name: install kustomize
+  when: install_kustomize | bool
+  tags: kustomize
+  become_user: "{{ microshift_user }}"
+  become: true
+  block:
+    - name: install kustomize
+      shell:
+        cmd: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/bin
+        creates: "/usr/bin/kustomize"
+
+- name: install local path provisioner
+  when: install_lpp | bool
+  tags: lpp
+  become_user: "{{ microshift_user }}"
+  become: true
+  block:
+    - name: create storage path dir
+      become: true
+      become_user: root
+      file:
+        path: '/opt/local-path-provisioner'
+        mode: '777'
+        state: directory
+      register: local_path_directory
+    - name: Download local-path-provisioner manifests
+      when: local_path_directory.changed
+      get_url:
+        url:  https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.22/deploy/local-path-storage.yaml
+        dest: "/home/{{ microshift_user }}/local-path-storage.yaml"
+        mode: '0440'
+    - name: copy manifest patch
+      when: local_path_directory.changed
+      copy:
+        src: local-path.patch
+        dest: "/home/{{ microshift_user }}/local-path.patch"
+    - name: install local-path-provider
+      when: local_path_directory.changed
+      shell:
+        cmd: |
+          cat local-path.patch | patch -p1 local-path-storage.yaml
+          kubectl apply -f local-path-storage.yaml
+        chdir: /home/{{ microshift_user }}
