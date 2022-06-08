@@ -306,3 +306,8 @@
           cat local-path.patch | patch -p1 local-path-storage.yaml
           kubectl apply -f local-path-storage.yaml
         chdir: /home/{{ microshift_user }}
+
+- name: display host ip for ssh login
+  tags : ip
+  debug:
+    var: ansible_host
