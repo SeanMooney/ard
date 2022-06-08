@@ -218,6 +218,7 @@
         cat /var/lib/microshift/resources/kubeadmin/kubeconfig > /home/{{ microshift_user }}/.kube/config
         chown {{ microshift_user }}:{{ microshift_user }} /home/{{ microshift_user }}/.kube/config
 
+# NOTE(sean-k-mooney): we may want to pin the olm version instead of using latest.
 - name: install olm
   when: install_olm | bool
   tags: olm
@@ -253,14 +254,9 @@
       failed_when:
         - olm_status.rc != 0
         - '"Failed to get OLM status: error getting installed OLM version" not in olm_status.stderr'
-    - name: remove olm if installed
-      shell:
-        cmd: build/operator-sdk olm uninstall
-        chdir: '{{repo_dir}}/operator-sdk'
-      register: uninstall_result
-      when:
-        - olm_status.rc == 0
     - name: install olm with sdk
+      when:
+        - olm_status.rc != 0
       shell:
         cmd: build/operator-sdk olm install
         chdir: '{{repo_dir}}/operator-sdk'
