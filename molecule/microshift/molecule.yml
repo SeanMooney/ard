@@ -21,7 +21,7 @@ driver:
   # Defaults to 'generic/alpine310'
   default_box: 'generic/centos9s'
 platforms:
-  - name: microshfit
+  - name: microshift
     memory: 8192
     cpus: 8
     provider_options:

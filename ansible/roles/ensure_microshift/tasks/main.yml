@@ -144,10 +144,21 @@
       shell:
         cmd: make build
         chdir: '{{repo_dir}}/operator-sdk'
+    - name: check if olm is installed
+      shell:
+        cmd: build/operator-sdk olm status
+        chdir: '{{repo_dir}}/operator-sdk'
+      register: olm_status
+      failed_when:
+        - olm_status.rc != 0
+        - '"Failed to get OLM status: error getting installed OLM version" not in olm_status.stderr'
     - name: remove olm if installed
       shell:
         cmd: build/operator-sdk olm uninstall
         chdir: '{{repo_dir}}/operator-sdk'
+      register: uninstall_result
+      when:
+        - olm_status.rc == 0
     - name: install olm with sdk
       shell:
         cmd: build/operator-sdk olm install
