@@ -261,19 +261,6 @@
         cmd: build/operator-sdk olm install
         chdir: '{{repo_dir}}/operator-sdk'
 
-- name: install kustomize
-  when: install_kustomize | bool
-  tags: kustomize
-  become_user: "{{ microshift_user }}"
-  become: true
-  block:
-    - name: install kustomize
-      shell:
-        cmd: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/bin
-        creates: "/usr/bin/kustomize"
-
 - name: install local path provisioner
   when: install_lpp | bool
   tags: lpp

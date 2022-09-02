@@ -1,0 +1,12 @@
+---
+# tasks file for ensure_kustomize
+- name: install kustomize
+  when: install_kustomize | bool
+  tags: kustomize
+  block:
+    - name: install kustomize
+      shell:
+        cmd: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/bin
+        creates: "/usr/bin/kustomize"

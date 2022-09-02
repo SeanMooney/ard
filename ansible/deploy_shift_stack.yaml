@@ -11,4 +11,4 @@
   tags: ocp
   roles:
     - ensure_crc
-
+    - ensure_kustomize

@@ -1,0 +1,7 @@
+---
+- name: Converge
+  hosts: all
+  tasks:
+    - name: "Include ensure_kustomize"
+      include_role:
+        name: "ensure_kustomize"
