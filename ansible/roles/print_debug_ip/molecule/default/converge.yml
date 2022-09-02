@@ -1,0 +1,7 @@
+---
+- name: Converge
+  hosts: all
+  tasks:
+    - name: "Include print_debug_ip"
+      include_role:
+        name: "print_debug_ip"

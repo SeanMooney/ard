@@ -12,3 +12,8 @@
   roles:
     - ensure_crc
     - ensure_kustomize
+
+- name: finalize
+  hosts: all
+  roles:
+    - print_debug_ip

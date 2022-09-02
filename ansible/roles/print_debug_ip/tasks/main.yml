@@ -1,0 +1,6 @@
+---
+# tasks file for print_debug_ip
+- name: display host ip for ssh login
+  tags : ip
+  debug:
+    var: ansible_host
