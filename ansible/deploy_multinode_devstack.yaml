@@ -28,6 +28,7 @@
   tags:
     - common
     - cache
+
 - name: execute devstack_common on all hosts
   import_playbook: devstack_common.yaml
   tags:
@@ -107,6 +108,7 @@
       when: "use_local_cache | default(true) | bool"
 
 - name: "deploy devstack controller"
+  tags: controller
   import_playbook: devstack_controller.yaml
 
 - name: export facts
@@ -123,7 +125,7 @@
             work_root: /tmp/work_root
 
 - name: sync controller data to subnodes
-  hosts: all
+  hosts: subnode
   roles:
     - {
     role: sync-devstack-data,
@@ -138,8 +140,6 @@
 
 - name: "deploy devstack compute(s)"
   import_playbook: devstack_compute.yaml
-
-
 
 - name: Discover hosts
   hosts: controller

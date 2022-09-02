@@ -93,6 +93,7 @@
   tags: system-packages
   block:
     - name: enable crb repo
+      when: ansible_facts['distribution'] == "CentOS"
       ini_file:
         path: /etc/yum.repos.d/centos.repo
         section: crb

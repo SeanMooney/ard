@@ -42,6 +42,7 @@ controller_localrc:
   # TODO(sean-k-mooney): fix ipv6
   IP_VERSION: "{{ devstack_ip_version }}"
   CINDER_CEPH_UUID: d531d2d4-3937-429c-b0c2-658fe41e82aa
+  MYSQL_GATHER_PERFORMANCE: false
 controller_services_extra: {}
 controller_services:
   # Ignore any default set by devstack. Emit a "disable_all_services".

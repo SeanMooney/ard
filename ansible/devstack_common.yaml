@@ -1,6 +1,7 @@
 ---
 - name: Apply role devstack_common
   hosts: all
+  tags: openstack
   roles:
     - ensure_stack_user
     - devstack_common

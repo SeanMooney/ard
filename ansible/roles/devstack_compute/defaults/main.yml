@@ -47,6 +47,7 @@ compute_localrc:
   # add ceph options note this will not enable ceph by itself
   CINDER_CEPH_UUID: d531d2d4-3937-429c-b0c2-658fe41e82aa
   REMOTE_CEPH: true
+  MYSQL_GATHER_PERFORMANCE: false
 compute_services_extra: {}
 compute_services:
   # Ignore any default set by devstack. Emit a "disable_all_services".
