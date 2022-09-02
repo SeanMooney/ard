@@ -13,3 +13,7 @@
     - ensure_kustomize
     - ensure_microshift
 
+- name: finalize
+  hosts: all
+  roles:
+    - print_debug_ip
