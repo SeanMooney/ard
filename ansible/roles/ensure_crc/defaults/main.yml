@@ -1,0 +1,7 @@
+---
+# defaults file for ensure_crc
+pull_secret_path: "~/.cache/ard/pull-secret"
+crc_url: "https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/crc/latest/crc-linux-amd64.tar.xz"
+install_crc: True
+crc_cpus: 6
+crc_ram: 16384

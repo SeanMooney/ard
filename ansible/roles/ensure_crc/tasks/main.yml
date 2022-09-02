@@ -1,0 +1,52 @@
+---
+# tasks file for ensure_crc
+- name: copy pull secret
+  tags: crc
+  block:
+    - name: create .crc dir
+      file:
+        path: '~/.crc'
+        state: directory
+    - name: copy pull secret
+      copy:
+        src: "{{pull_secret_path}}"
+        dest: "~/.crc/pull-secret"
+        mode: '0600'
+
+- name: install crc
+  when: install_crc | bool
+  tags: crc
+  block:
+    - name: create crc download directory
+      file:
+        path: '~/crc'
+        mode: '777'
+        state: directory
+      register: crc_download_directory
+    - name: Download crc
+      when:  crc_download_directory.changed
+      ansible.builtin.unarchive:
+        src: "{{crc_url}}"
+        dest: "~/crc/"
+        remote_src: yes
+    - name: mv crc to /usr/bin
+      when:  crc_download_directory.changed
+      ansible.builtin.shell:
+        cmd: |
+          crc_path=$(ls ~/crc/*/crc)
+          sudo mv ${crc_path} /usr/bin/crc
+    - name: check if crc is installed.
+      ansible.builtin.command: crc status
+      ignore_errors: True
+      register: crc_status
+    - name: install crc if not installed.
+      when: crc_status.rc == 1
+      ansible.builtin.shell:
+        cmd: |
+           crc config set pull-secret-file ~/.crc/pull-secret
+           crc config set cpus {{crc_cpus}}
+           crc config set memory {{crc_ram}}
+           crc config set consent-telemetry no
+           crc config set disable-update-check true
+           crc setup || /bin/true
+           crc start || /bin/true
