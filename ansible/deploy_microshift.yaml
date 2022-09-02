@@ -3,7 +3,13 @@
   hosts: openshift
   tags: openshift
   roles:
-    - ensure-podman
     - ensure_stack_user
+    - ensure-podman
+- name: deploy minishift to openshift hosts
+  hosts: openshift
+  tags: openshift
+  remote_user: stack
+  roles:
+    - ensure_kustomize
     - ensure_microshift
 

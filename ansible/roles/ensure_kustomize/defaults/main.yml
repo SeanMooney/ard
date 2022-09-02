@@ -1,0 +1,3 @@
+---
+# defaults file for ensure_kustomize
+install_kustomize: true
