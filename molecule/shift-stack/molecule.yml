@@ -1,0 +1,33 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  provision: no
+  parallel: true
+  default_box: 'generic/centos9s'
+platforms:
+  - name: crc
+    memory: 20480
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+      machine_type: 'q35'
+    groups:
+      - openshift
+  - name: compute
+    memory: 8192
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+      machine_type: 'q35'
+    groups:
+      - openstack
+provisioner:
+  name: ansible
+verifier:
+  name: ansible

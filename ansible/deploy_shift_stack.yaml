@@ -1,0 +1,14 @@
+---
+- name: basic setup
+  hosts: all
+  tags: common
+  roles:
+    - ensure_stack_user
+
+- name: deploy openshift
+  hosts: openshift
+  remote_user: stack
+  tags: ocp
+  roles:
+    - ensure_crc
+
