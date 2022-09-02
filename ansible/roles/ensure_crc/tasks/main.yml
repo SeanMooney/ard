@@ -50,3 +50,8 @@
            crc config set disable-update-check true
            crc setup || /bin/true
            crc start || /bin/true
+    - name: add oc client to shell
+      ansible.builtin.lineinfile:
+        path: "/home/stack/.bashrc"
+        regexp: "crc oc-env"
+        line: 'eval $(crc oc-env)'
