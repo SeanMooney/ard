@@ -1,0 +1,76 @@
+---
+# tasks file for prepare_dev_tools
+- name: manage common packages debian
+  become: yes
+  when: ansible_facts.os_family == 'Debian'
+  tags: system-packages
+  block:
+    - name: update apt cache
+      apt:
+        update_cache: yes
+    - name: remove apt packages
+      package:
+        name: "{{ (debian_pkg_remove | join(' ')).split() }}"
+        state: absent
+    - name: Install apt packages
+      package:
+        name: "{{ (debian_pkg_install | join(' ')).split() }}"
+        state: present
+    - name: remove extra apt packages
+      when: debian_pkg_remove_extra | bool
+      package:
+        name: "{{ (debian_pkg_remove_extra | join(' ')).split() }}"
+        state: absent
+    - name: Install extra apt packages
+      when: debian_pkg_install_extra | bool
+      package:
+        name: "{{ (debian_pkg_install_extra | join(' ')).split() }}"
+        state: present
+
+
+- name: manage common packages redhat
+  become: yes
+  when: ansible_facts.os_family == 'RedHat'
+  tags: system-packages
+  block:
+    - name: enable crb repo
+      when: ansible_facts['distribution'] == "CentOS"
+      ini_file:
+        path: /etc/yum.repos.d/centos.repo
+        section: crb
+        option: enabled
+        value: 1
+        no_extra_spaces: yes
+    # this is added in our downstream image but does not work
+    - name: remove centos-server repo file
+      file:
+        path: "/etc/yum.repos.d/centos-server.repo"
+        state: absent
+    # This is enabled in the current centos 9 stream vagrant
+    # box image.
+    - name: remove home:alvistack.repo file
+      file:
+        path: "/etc/yum.repos.d/home:alvistack.repo"
+        state: absent
+    - name: force remove custom packages
+      shell: "dnf remove -y $(dnf list installed | awk '/@home_alvistack/ {print $1}')"
+    - name: remove RPM packages
+      package:
+        name: "{{ (redhat_pkg_remove | join(' ')).split() }}"
+        state: absent
+    - name: Install RPM packages
+      package:
+        name: "{{ (redhat_pkg_install | join(' ')).split() }}"
+        state: present
+        update_cache: yes
+    - name: remove extra  RPM package
+      when: redhat_pkg_remove_extra | bool
+      package:
+        name: "{{ (redhat_pkg_remove_extra | join(' ')).split() }}"
+        state: absent
+    - name: Install extra  RPM packages
+      when: redhat_pkg_install_extra | bool
+      package:
+        name: "{{ (redhat_pkg_install_extra | join(' ')).split() }}"
+        state: present
+        update_cache: yes

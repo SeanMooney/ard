@@ -1,0 +1,35 @@
+---
+# defaults file for prepare_dev_tools
+debian_pkg_install:
+  - git
+  - acl
+  - ca-certificates
+  - apt-transport-https
+  - gnupg
+  - sudo
+  - wget
+  - nano
+  - rsync
+  - pciutils
+redhat_pkg_install:
+  - git-core
+  - sudo
+  - acl
+  - wget
+  - nano
+  - rsync
+  - pciutils
+debian_pkg_remove:
+  - cloud-init
+  - python3-pyyaml
+  - python3-simplejson
+  - git-core
+redhat_pkg_remove:
+  - cloud-init
+  - python3-pyyaml
+  - python3-simplejson
+  - git
+redhat_pkg_install_extra:
+redhat_pkg_remove_extra:
+debian_pkg_install_extra:
+debian_pkg_remove_extra:

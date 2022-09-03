@@ -4,6 +4,7 @@
   tags: openstack
   roles:
     - ensure_stack_user
+    - prepare_dev_tools
     - devstack_common
     - { role: validate-host, when:"validate_hosts | default(false) | bool" }
     - { role: multi-node-known-hosts, tags: multinode}
