@@ -1,0 +1,7 @@
+---
+- name: Converge
+  hosts: all
+  tasks:
+    - name: "Include prepare_dev_tools"
+      include_role:
+        name: "prepare_dev_tools"
