@@ -1,0 +1,23 @@
+---
+# tasks file for deploy_install_yamls
+- name: create repo dir
+  ansible.builtin.file:
+    path: '{{repo_dir}}'
+    state: directory
+
+- name: clone repos
+  block:
+    - name: download install_yamls
+      ansible.builtin.git:
+        repo: '{{install_yamls_repo_url}}'
+        dest: '{{repo_dir}}/install_yamls'
+        version: '{{install_yamls_branch}}'
+        refspec: '{{install_yamls_refspec | default(omit) }}'
+
+- name: deploy stroage
+  ansible.builtin.shell:
+    chdir: "{{repo_dir}}/install_yamls"
+    cmd: |
+      make crc_storage || /bin/true
+      touch .storage_provisioned
+    creates: "{{repo_dir}}/install_yamls/.storage_provisioned"

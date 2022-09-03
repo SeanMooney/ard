@@ -1,9 +1,9 @@
 ---
 - name: basic setup
   hosts: all
-  tags: common
   roles:
     - ensure_stack_user
+    - prepare_dev_tools
 
 - name: deploy openshift
   hosts: openshift
@@ -11,6 +11,13 @@
   roles:
     - ensure_crc
     - ensure_kustomize
+
+- name: deploy openshift
+  hosts: openshift
+  tags: ospo
+  roles:
+    - deploy_install_yamls
+
 
 - name: finalize
   hosts: all
