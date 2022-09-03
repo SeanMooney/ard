@@ -1,0 +1,6 @@
+---
+# defaults file for deploy_install_yamls
+install_yamls_repo_url: https://github.com/openstack-k8s-operators/install_yamls
+install_yamls_branch: master
+install_yamls__refspec:
+repo_dir: ~/repos
