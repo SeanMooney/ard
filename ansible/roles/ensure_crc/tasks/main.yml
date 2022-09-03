@@ -52,6 +52,6 @@
            crc start || /bin/true
     - name: add oc client to shell
       ansible.builtin.lineinfile:
-        path: "/home/stack/.bashrc"
-        regexp: "crc oc-env"
+        path: "~/.bashrc"
+        regexp: "eval $(crc oc-env)"
         line: 'eval $(crc oc-env)'

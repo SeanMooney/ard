@@ -111,3 +111,23 @@
         user: "{{ ansible_user }}"
         state: present
         key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+
+
+- name: update ansible_user
+  tags: always
+  when: update_ansible_user
+  block:
+    - name: print currnet config
+      debug:
+        msg: |
+          ansible_user: {{ansible_user| default('unset')}}
+          remote_user: {{remote_user | default('unset')}}
+    - name: set ansible_user
+      set_fact:
+        ansible_user: stack
+        ansible_private_key_file: "~/.ssh/{{ssh_key_filename}}"
+    - name: print currnet config
+      debug:
+        msg: |
+          ansible_user: {{ansible_user| default('unset')}}
+          remote_user: {{remote_user | default('unset')}}
