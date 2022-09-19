@@ -5,3 +5,4 @@ crc_url: "https://developers.redhat.com/content-gateway/rest/mirror/pub/openshif
 install_crc: True
 crc_cpus: 6
 crc_ram: 16384
+crc_disk: 50
