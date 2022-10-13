@@ -60,4 +60,5 @@
       ansible.builtin.lineinfile:
         path: "~/.bashrc"
         regexp: 'timeout 10 crc console --credentials'
-        line: 'eval $(timeout 10 crc console --credentials | awk -F"'" '/kubeadmin/{print $2}')'
+        line: >
+          eval $(timeout 10 crc console --credentials | awk -F"'" '/kubeadmin/{print $2}')
