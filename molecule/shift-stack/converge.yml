@@ -2,4 +2,4 @@
 - name: "execute deploy shift-stack"
   import_playbook: ../../ansible/deploy_shift_stack.yaml
   vars:
-    pull_secret_path: "../../../pull-secret"
+    pull_secret_path: "~/.cache/ard/pull-secret"

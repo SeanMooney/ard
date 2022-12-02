@@ -62,3 +62,13 @@
         regexp: 'timeout 10 crc console --credentials'
         line: >
           eval $(timeout 10 crc console --credentials | awk -F"'" '/kubeadmin/{print $2}')
+    - name: unset GOFLAGS for vscode ssh plugin to work
+      ansible.builtin.lineinfile:
+        path: "~/.bashrc"
+        regexp: "GOFLAFS"
+        line: "unset GOFLAFS"
+    - name: use existing cluster for go tests
+      ansible.builtin.lineinfile:
+        path: "~/.bashrc"
+        regexp: "USE_EXISTING_CLUSTER"
+        line: "export USE_EXISTING_CLUSTER=true"
