@@ -44,6 +44,42 @@ Playbook to test Microshift deployment on Fedora CoreOS
     - ensure_microshift
 ```
 
+Bootstrap OpenShift crc in a vm
+-------------------------------
+
+This should create ``~/.ssh/id_ed25519_stack`` SSH key to login to VM as a stack user:
+```
+molecule destroy -s shift-stack
+molecule create -s shift-stack
+molecule converge -s shift-stack
+```
+Verify login to CRC VM and RHCOS k8s worker node.
+```
+cd ~/.cache/molecule/ansible_role_devstack/shift-stack
+vagrant ssh crc
+
+[stack@crc ~]$ ssh -i ~/.crc/machines/crc/id_ecdsa core@`crc ip`
+```
+
+Configure localhost to access deployed OpenShift crc
+----------------------------------------------------
+> **NOTE**: This overwrites ``~/.kube/config`` !
+
+Install shuttle first.
+
+```
+inv=~/.cache/molecule/ansible_role_devstack/shift-stack/inventory/ansible_inventory.yml
+IP=$(ansible -i $inv -m debug -a 'var=hostvars["crc"].ansible_host' crc | sed -rn 's/.*ansible_host": "(.*)"/\1/p')
+echo `ssh -i ~/.ssh/id_ed25519_stack stack@$IP tail -1 /etc/hosts | tail -1` | sudo tee -a /etc/host
+ansible -b -i $inv  -m slurp -a "src=/home/stack/.kube/config" crc | sed -r 's/crc \| SUCCESS => //' | jq -r '.content' | base64 -d > ~/.kube/config
+ansible -b -i $inv  -m shell -a "cd /home/stack/.crc/bin/oc; tar hcvf - oc | gzip -v4 > oc.tar.gz" crc
+ansible -b -i $inv  -m slurp -a "src=/home/stack/.crc/bin/oc/oc.tar.gz" crc | sed -r 's/crc \| SUCCESS => //' | jq -r '.content' | base64 -d > oc.tar.gz
+tar xzf oc.tar.gz
+sudo install -o root -g root -m 0755 oc /usr/local/bin/oc
+sudo -E sshuttle -r stack@$IP -x $IP 0.0.0.0/0 -vv --ssh-cmd 'ssh -i $HOME/.ssh/id_ed25519_stack'
+oc login -u kubeadmin -p  `ssh -i ~/.ssh/id_ed25519_stack stack@$IP crc console --credentials | awk '/oc login -u kubeadmin/ {if ($0) print $12}'` https://api.crc.testing:6443
+```
+
 License
 -------
 
