@@ -1,0 +1,5 @@
+---
+- name: "execute deploy shift-stack"
+  import_playbook: ../../ansible/deploy_oks.yaml
+  vars:
+    pull_secret_path: "../../../pull-secret"
