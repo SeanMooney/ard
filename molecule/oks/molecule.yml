@@ -1,0 +1,36 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  provision: no
+  parallel: true
+  default_box: 'generic/centos9s'
+platforms:
+  - name: microshift.dev
+    memory: 20480
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+      machine_type: 'q35'
+    groups:
+      - openshift
+  - name: nova-compute-1
+    memory: 8192
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+      machine_type: 'q35'
+    groups:
+      - openstack
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:../../submodules/sf-infra/roles"
+verifier:
+  name: ansible

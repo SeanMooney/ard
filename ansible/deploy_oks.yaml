@@ -1,0 +1,66 @@
+---
+- name: basic setup
+  hosts: all
+  roles:
+    - ensure_stack_user
+    - prepare_dev_tools
+
+
+
+- name: set selinux permissive
+  hosts: all
+  tasks:
+    - name: selinux
+      become: true
+      selinux:
+        policy: targeted
+        state: permissive
+
+- name: deploy openshift
+  hosts: microshift.dev
+  tags: ocp
+  vars:
+    fqdn: microshift.dev
+    use_copr_microshift: false
+    setup_olm: true
+    openshift_pull_secret: "{{ lookup('file',  pull_secret_path) }}"
+  roles:
+    - extra/microshift
+
+- name: clone install yamls
+  hosts: openshift
+  tags: ospo
+  roles:
+    - ensure_install_yamls
+    - ensure_kustomize
+
+- name: disable image signing checks
+  hosts: microshift.dev
+  tasks:
+    - name: copy /etc/containers/policy.json
+      become: true
+      ansible.builtin.copy:
+        content: |
+          {
+            "default": [
+              {
+                "type": "insecureAcceptAnything"
+              }
+            ],
+            "transports": {
+              "docker-daemon": {
+                "": [
+                  {
+                    "type": "insecureAcceptAnything"
+                  }
+                ]
+              }
+            }
+          }
+        dest: /etc/containers/policy.json
+
+- name: finalize
+  hosts: all
+  roles:
+    - print_debug_ip
+

@@ -7,3 +7,6 @@
 [submodule "submodules/openstack-zuul-jobs"]
 	path = submodules/openstack-zuul-jobs
 	url = https://opendev.org/openstack/openstack-zuul-jobs
+[submodule "submodules/sf-infra"]
+	path = submodules/sf-infra
+	url = https://github.com/softwarefactory-project/sf-infra
