@@ -1,0 +1,37 @@
+---
+- name: create stack user
+  hosts: all
+  tags: user
+  roles:
+    - ensure_stack_user
+
+- name: deploy docker tools
+  hosts: k8s
+  tags: docker
+  remote_user: stack
+  become: true
+  roles:
+    - geerlingguy.pip
+    - geerlingguy.docker
+  post_tasks:
+    - name: Add user to docker group
+      become: true
+      ansible.builtin.command: usermod -aG docker stack
+    - name: Check we can execute docker commands
+      ansible.builtin.command: docker info
+
+- name: deploy k8s tools
+  hosts: k8s
+  tags: k8s-tools
+  remote_user: stack
+  roles:
+    - ensure_kustomize
+    - prepare_dev_tools
+    - ensure_kubectl
+    - ensure_k3d
+
+
+- name: finalize
+  hosts: all
+  roles:
+    - print_debug_ip

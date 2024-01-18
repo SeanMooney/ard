@@ -1,0 +1,57 @@
+---
+dependency:
+  name: galaxy
+verifier:
+  name: ansible
+driver:
+  name: vagrant
+  provider:
+    name: libvirt
+  # Run vagrant up with --provision.
+  # Defaults to --no-provision)
+  provision: no
+  # vagrant-cachier configuration
+  # Defaults to 'machine'
+  # Any value different from 'machine' or 'box' will disable it
+  cachier: machine
+  # If set to false, set VAGRANT_NO_PARALLEL to '1'
+  # Defaults to true
+  parallel: true
+  # vagrant box to use by default
+  # Defaults to 'generic/alpine310'
+  default_box: 'generic/centos9s'
+platforms:
+  - name: k8s-host
+    memory: 8192
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+    provider_raw_config_args:
+      - cputopology :sockets => '1', :cores => '4', :threads => '2'
+      - random :model => 'random'
+    instance_raw_config_args:
+      - "vm.box_check_update = false"
+      - "vm.provision :shell, inline: 'systemctl stop guestfs-firstboot.service'"
+      - "vm.provision :shell, inline: 'systemctl disable guestfs-firstboot.service'"
+    groups:
+      - controller
+      - switch
+      - k8s
+  - name: compute-1
+    memory: 8192
+    cpus: 8
+    provider_options:
+      cpu_mode: 'host-passthrough'
+      nested: true
+    provider_raw_config_args:
+      - cputopology :sockets => '1', :cores => '4', :threads => '2'
+      - random :model => 'random'
+    groups:
+      - compute
+      - peers
+      - subnode
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_ROLES_PATH: "${ANSIBLE_ROLES_PATH}:../../submodules/zuul-jobs/roles:../../submodules/devstack/roles:../../submodules/openstack-zuul-jobs/roles"
