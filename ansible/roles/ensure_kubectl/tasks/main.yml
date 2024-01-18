@@ -1,0 +1,8 @@
+---
+# tasks file for ensure_kubectl
+- name: download kubectl
+  become: true
+  get_url:
+    url: "{{ensure_kubectl_url_template}}"
+    dest: /bin/kubectl
+    mode: 777

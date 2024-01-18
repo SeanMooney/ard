@@ -1,0 +1,44 @@
+---
+# tasks file for ensure_k3d
+- name: install k3d
+  become: true
+  ansible.builtin.shell: |
+    set -e pipefail
+    curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+    k3d --version
+  environment:
+    K3D_INSTALL_DIR: /bin
+
+- name: create k3d cluster
+  ansible.builtin.shell: |
+    set -e pipefail
+    k3d cluster list | grep -q dev-cluster || \
+      k3d cluster create dev-cluster --api-port 6550 --servers 1 --agents 2 --port 8080:80@loadbalancer --port 8443:443@loadbalancer --wait
+    k3d cluster list
+  register: k3d_cluster_create
+  changed_when: k3d_cluster_create.stdout.find('dev-cluster') == -1
+
+- name: gather k3d cluster info
+  ansible.builtin.shell: |
+    set -e pipefail
+    k3d cluster list
+    kubectl cluster-info
+    kubectl get nodes
+    kubectl get pods --all-namespaces
+  register: k3d_cluster_info
+
+- name: print k3d cluster info
+  ansible.builtin.debug:
+    msg: "{{k3d_cluster_info.stdout}}"
+
+
+- name: install olm operator
+  ansible.builtin.shell: |
+    set -e pipefail
+    kubectl get namespace | grep -q "^olm"
+    if [ $? -ne 0 ]; then
+      curl -L https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.26.0/install.sh -o install.sh
+      chmod +x install.sh
+      ./install.sh v0.26.0
+      rm install.sh
+    fi

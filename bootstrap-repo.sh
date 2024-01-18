@@ -12,8 +12,7 @@ which dpkg && bindep -b | xargs sudo apt -y install
 # to install manually later on.
 which rpm && bindep -b | xargs sudo dnf -y --setopt=install_weak_deps=False install
 #pip install ansible=2.9
-pip install ansible\<5 ansible-core\<2.12.0 \
-    molecule!=3.6.1,!=3.6.0 molecule-vagrant python-vagrant netaddr molecule-openstack openstacksdk
+pip install -r molecule-requirements.txt
 which vagrant && vagrant plugin install vagrant-libvirt
 git submodule update --init --recursive
 groups | grep -E "libvirt" > /dev/null || \

@@ -1,0 +1,4 @@
+---
+# defaults file for ensure_kubectl
+ensure_kubectl_version: "v1.29.1"
+ensure_kubectl_url_template: "https://dl.k8s.io/release/{{ensure_kubectl_version}}/bin/linux/amd64/kubectl"
