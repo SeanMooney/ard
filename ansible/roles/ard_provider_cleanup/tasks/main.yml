@@ -1,0 +1,12 @@
+---
+- name: Refuse to cleanup without ard_deployment_dir
+  assert:
+    that:
+      - ard_deployment_dir is defined
+      - ard_deployment_dir | length > 0
+      - ard_deployment_dir != '/'
+
+- name: Remove ARD deployment workspace
+  file:
+    path: "{{ ard_deployment_dir }}"
+    state: absent

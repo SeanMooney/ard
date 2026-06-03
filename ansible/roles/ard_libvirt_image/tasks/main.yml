@@ -1,0 +1,68 @@
+---
+- name: Resolve deployment image
+  set_fact:
+    ard_selected_image_name: "{{ ard_default_image }}"
+    ard_selected_image: "{{ ard_images[ard_default_image] }}"
+    ard_selected_libvirt_image: "{{ ard_images[ard_default_image].provider.libvirt }}"
+
+- name: Validate libvirt image URL is configured
+  assert:
+    that:
+      - ard_selected_libvirt_image.url is defined
+      - ard_selected_libvirt_image.url | length > 0
+      - ard_selected_libvirt_image.url != None
+    fail_msg: "No libvirt image URL configured for {{ ard_selected_image_name }}"
+
+- name: Resolve ARD image cache directory
+  set_fact:
+    ard_image_cache_dir_resolved: "{{ ard_image_cache_dir | regex_replace('^~', lookup('env', 'HOME')) }}"
+
+- name: Ensure ARD image cache exists
+  file:
+    path: "{{ ard_image_cache_dir_resolved }}"
+    state: directory
+    mode: "0755"
+
+- name: Set cached base image path
+  set_fact:
+    ard_cached_base_image: "{{ ard_image_cache_dir_resolved + '/' + (ard_selected_libvirt_image.cache_filename | default(ard_selected_libvirt_image.url | basename)) }}"
+
+- name: Download base cloud image when missing
+  get_url:
+    url: "{{ ard_selected_libvirt_image.url }}"
+    dest: "{{ ard_cached_base_image }}"
+    mode: "0644"
+    checksum: "{{ ard_selected_libvirt_image.checksum | default(omit) }}"
+  when: ard_image_download | default(true) | bool
+
+- name: Ensure cached base image exists
+  stat:
+    path: "{{ ard_cached_base_image }}"
+  register: ard_cached_base_image_stat
+
+- name: Fail when cached base image is unavailable
+  assert:
+    that:
+      - ard_cached_base_image_stat.stat.exists
+    fail_msg: "Cached image {{ ard_cached_base_image }} is missing and ard_image_download is disabled or failed."
+
+- name: Ensure libvirt image directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}"
+
+- name: Grant libvirt-qemu traverse access to XDG state parents
+  command: "setfacl -m u:libvirt-qemu:x {{ item }}"
+  changed_when: false
+  loop:
+    - "{{ lookup('env', 'HOME') }}"
+    - "{{ lookup('env', 'HOME') }}/.local"
+    - "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}"
+  when: ard_libvirt_image_dir is search(lookup('env', 'HOME'))
+
+- name: Grant libvirt-qemu access to ARD libvirt image tree
+  command: "setfacl -R -m u:libvirt-qemu:rx {{ ard_libvirt_image_dir }}"
+  changed_when: false

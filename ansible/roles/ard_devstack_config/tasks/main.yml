@@ -1,0 +1,16 @@
+---
+- name: Load deployment common DevStack vars
+  include_vars:
+    file: "{{ ard_deployment_dir }}/devstack/common.yaml"
+  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/common.yaml', errors='ignore') | length > 0
+
+- name: Load deployment group DevStack vars
+  include_vars:
+    file: "{{ ard_deployment_dir }}/devstack/group_vars/{{ item }}.yaml"
+  loop: "{{ group_names }}"
+  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/group_vars/' + item + '.yaml', errors='ignore') | length > 0
+
+- name: Load deployment host DevStack vars
+  include_vars:
+    file: "{{ ard_deployment_dir }}/devstack/host_vars/{{ inventory_hostname }}.yaml"
+  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/host_vars/' + inventory_hostname + '.yaml', errors='ignore') | length > 0

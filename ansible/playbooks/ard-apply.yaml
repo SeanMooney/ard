@@ -1,0 +1,11 @@
+---
+- name: Apply ARD provider deployment
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  roles:
+    - ard_provider_preflight
+    - ard_provider_image
+    - ard_provider_network
+    - ard_provider_node
+    - ard_provider_inventory

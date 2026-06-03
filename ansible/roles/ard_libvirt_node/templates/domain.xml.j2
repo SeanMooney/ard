@@ -1,0 +1,54 @@
+<domain type='kvm'>
+  <name>{{ ard_node_resource_name }}</name>
+  <memory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</memory>
+  <currentMemory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</currentMemory>
+  <vcpu placement='static'>{{ ard_node_flavor.vcpus }}</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
+    <nvram template='/usr/share/OVMF/OVMF_VARS_4M.fd'>{{ ard_node_nvram }}</nvram>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='{{ ard_node_flavor.cpu_mode | default("host-passthrough") }}' check='none'/>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' discard='unmap'/>
+      <source file='{{ ard_node_overlay }}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ ard_node_seed }}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <interface type='network'>
+      <mac address='{{ ard_node_mac }}'/>
+      <source network='{{ ard_libvirt_network_name }}'/>
+      <model type='virtio'/>
+    </interface>
+    <serial type='pty'>
+      <log file='{{ ard_node_console_log }}' append='on'/>
+      <target type='isa-serial' port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+    <input type='tablet' bus='usb'/>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>

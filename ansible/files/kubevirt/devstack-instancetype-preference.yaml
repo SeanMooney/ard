@@ -1,0 +1,43 @@
+---
+apiVersion: instancetype.kubevirt.io/v1beta1
+kind: VirtualMachineInstancetype
+metadata:
+  name: devstack-8c16g
+spec:
+  cpu:
+    guest: 8
+    model: host-passthrough
+  ioThreadsPolicy: auto
+  memory:
+    guest: 16Gi
+---
+apiVersion: instancetype.kubevirt.io/v1beta1
+kind: VirtualMachineInstancetype
+metadata:
+  name: devstack-8c8g
+spec:
+  cpu:
+    guest: 8
+    model: host-passthrough
+  ioThreadsPolicy: auto
+  memory:
+    guest: 8Gi
+---
+apiVersion: instancetype.kubevirt.io/v1beta1
+kind: VirtualMachinePreference
+metadata:
+  name: devstack
+spec:
+  cpu:
+    preferredCPUTopology: cores
+  devices:
+    preferredDiskBus: virtio
+    preferredInterfaceModel: virtio
+    preferredRng: {}
+  features:
+    preferredKvm: {}
+  firmware:
+    preferredEfi:
+      secureBoot: false
+  machine:
+    preferredMachineType: q35

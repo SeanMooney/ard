@@ -1,5 +1,8 @@
-.venv
+.venv/
+.tmp/
 clouds.yaml
 okd/build/
 okd/output/
 pull-secret
+deployments/*
+!deployments/.keep

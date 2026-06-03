@@ -1,0 +1,7 @@
+---
+- name: Render ARD deployment workspace
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - ard_provider_render

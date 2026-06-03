@@ -1,0 +1,65 @@
+---
+- name: Write ARD deployment inventory
+  copy:
+    dest: "{{ ard_deployment_dir }}/inventory.yaml"
+    mode: "0644"
+    content: |
+      ---
+      all:
+        hosts:
+      {% for node in ard_nodes %}
+          {{ node.name }}:
+            ansible_host: {{ node.networks[0].ip }}
+            ansible_user: stack
+            ansible_private_key_file: {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            ard_deployment_name: {{ ard_deployment_name }}
+            ard_provider_resource_name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
+            nodepool:
+              private_ipv4: {{ node.networks[0].ip }}
+              public_ipv4: {{ node.networks[0].ip }}
+            zuul:
+              executor:
+                log_root: /tmp/zuul_logs
+                work_root: /tmp/work_root
+      {% endfor %}
+        children:
+      {% set group_names = [] %}
+      {% for node in ard_nodes %}
+      {% for group in node.groups %}
+      {% if group not in group_names %}
+      {% set _ = group_names.append(group) %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      {% for group in group_names %}
+          {{ group }}:
+            hosts:
+      {% for node in ard_nodes if group in node.groups %}
+              {{ node.name }}:
+      {% endfor %}
+      {% endfor %}
+
+- name: Write ARD provider state
+  copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: |
+      ---
+      ard_provider: libvirt
+      ard_deployment_name: {{ ard_deployment_name }}
+      ard_libvirt_uri: {{ ard_libvirt_uri }}
+      ard_libvirt_network_name: {{ ard_libvirt_network_name }}
+      ard_libvirt_image_dir: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}
+      ard_cached_base_image: {{ ard_cached_base_image | default('') }}
+      ard_libvirt_base_image: {{ ard_libvirt_base_image | default('') }}
+      domains:
+      {% for node in ard_nodes %}
+        - inventory_name: {{ node.name }}
+          name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
+          ip: {{ node.networks[0].ip }}
+          mac: {{ node.networks[0].mac }}
+          overlay: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}.qcow2
+          seed: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-seed.iso
+          console_log: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-console.log
+      {% endfor %}
