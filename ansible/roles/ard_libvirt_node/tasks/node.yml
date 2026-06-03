@@ -1,0 +1,207 @@
+---
+- name: Resolve node provider facts
+  set_fact:
+    ard_node_name: "{{ ard_node.name }}"
+    ard_node_resource_name: "{{ ard_node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + ard_node.name) }}"
+    ard_node_flavor: "{{ ard_flavors[ard_node.flavor].provider.libvirt }}"
+    ard_node_root_disk_gb: "{{ ard_flavors[ard_node.flavor].root_disk_gb | default(80) }}"
+    ard_node_ip: "{{ ard_node.networks[0].ip }}"
+    ard_node_mac: "{{ ard_node.networks[0].mac }}"
+    ard_node_render_dir: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}"
+    ard_node_overlay: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}.qcow2"
+    ard_node_seed_local: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}/{{ ard_node.name }}-seed.iso"
+    ard_node_seed: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-seed.iso"
+    ard_node_console_log: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-console.log"
+    ard_node_nvram: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-vars.fd"
+
+- name: Ensure rendered node directory exists
+  file:
+    path: "{{ ard_node_render_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Render cloud-init user-data
+  copy:
+    dest: "{{ ard_node_render_dir }}/user-data"
+    mode: "0644"
+    content: |
+      #cloud-config
+      hostname: {{ ard_node.hostname | default(ard_node.name) }}
+      manage_etc_hosts: true
+      ssh_authorized_keys:
+        - {{ ard_stack_public_key }}
+      users:
+        - default
+        - name: stack
+          gecos: ARD Stack User
+          shell: /bin/bash
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          groups: sudo
+          lock_passwd: false
+          ssh_authorized_keys:
+            - {{ ard_stack_public_key }}
+      chpasswd:
+        expire: false
+        users:
+          - name: stack
+            password: {{ stack_user_password | default('tester') }}
+            type: text
+      package_update: true
+      packages:
+        - python3
+        - sudo
+        - openssh-server
+        - qemu-guest-agent
+        - git
+        - rsync
+        - curl
+        - ca-certificates
+      write_files:
+        - path: /etc/default/grub.d/99-ard-serial-console.cfg
+          owner: root:root
+          permissions: '0644'
+          content: |
+            GRUB_TERMINAL="serial console"
+            GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+            GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT console=tty0 console=ttyS0,115200n8"
+        - path: /etc/systemd/system/serial-getty@ttyS0.service.d/ard-autolog.conf
+          owner: root:root
+          permissions: '0644'
+          content: |
+            [Service]
+            TTYVTDisallocate=no
+        - path: /etc/ssh/sshd_config.d/90-ard-password-auth.conf
+          owner: root:root
+          permissions: '0644'
+          content: |
+            PasswordAuthentication yes
+            KbdInteractiveAuthentication yes
+            Banner /etc/issue.net
+        - path: /etc/issue
+          owner: root:root
+          permissions: '0644'
+          content: |
+            ARD DevStack VM
+            Login user: stack
+            Password fallback: tester
+            SSH key auth is preferred; the ARD stack key is installed for the default cloud user and stack.
+
+        - path: /etc/issue.net
+          owner: root:root
+          permissions: '0644'
+          content: |
+            ARD DevStack VM
+            Login user: stack
+            Password fallback: tester
+            SSH key auth is preferred.
+
+        - path: /etc/motd
+          owner: root:root
+          permissions: '0644'
+          content: |
+            ARD DevStack VM
+            Login user: stack
+            Password fallback: tester
+            SSH key auth is preferred; the ARD stack key is installed for the default cloud user and stack.
+      bootcmd:
+        - [ sh, -c, 'echo "ARD cloud-init bootcmd on $(hostname)" > /dev/ttyS0 || true' ]
+      runcmd:
+        - [ systemctl, daemon-reload ]
+        - [ systemctl, enable, --now, serial-getty@ttyS0.service ]
+        - [ systemctl, restart, ssh.service ]
+        - [ update-grub ]
+        - [ sh, -c, 'echo "ARD cloud-init runcmd complete on $(hostname)" > /dev/ttyS0 || true' ]
+      ssh_pwauth: true
+
+- name: Render cloud-init meta-data
+  copy:
+    dest: "{{ ard_node_render_dir }}/meta-data"
+    mode: "0644"
+    content: |
+      instance-id: {{ ard_node_resource_name }}
+      local-hostname: {{ ard_node.hostname | default(ard_node.name) }}
+
+- name: Render cloud-init network-config
+  copy:
+    dest: "{{ ard_node_render_dir }}/network-config"
+    mode: "0644"
+    content: |
+      version: 2
+      ethernets:
+        ard-mgmt:
+          match:
+            macaddress: "{{ ard_node_mac }}"
+          set-name: eth0
+          addresses:
+            - {{ ard_node_ip }}/24
+          routes:
+            - to: default
+              via: {{ ard_libvirt_network_gateway }}
+          nameservers:
+            addresses:
+              - {{ ard_libvirt_network_gateway }}
+              - 1.1.1.1
+
+- name: Create cloud-init seed ISO locally
+  command: "cloud-localds --network-config={{ ard_node_render_dir }}/network-config {{ ard_node_seed_local }} {{ ard_node_render_dir }}/user-data {{ ard_node_render_dir }}/meta-data"
+  changed_when: true
+
+- name: Copy cloud-init seed ISO into libvirt image directory
+  copy:
+    src: "{{ ard_node_seed_local }}"
+    dest: "{{ ard_node_seed }}"
+    mode: "0644"
+    remote_src: true
+
+- name: Create node qcow2 disk from cached base image
+  command: >-
+    qemu-img convert -O qcow2
+    {{ ard_cached_base_image }}
+    {{ ard_node_overlay }}
+  args:
+    creates: "{{ ard_node_overlay }}"
+
+- name: Resize node qcow2 disk
+  command: "qemu-img resize {{ ard_node_overlay }} {{ ard_node_root_disk_gb }}G"
+  register: ard_node_disk_resize
+  changed_when: ard_node_disk_resize.rc == 0
+  failed_when: ard_node_disk_resize.rc != 0 and ('Image is already larger' not in (ard_node_disk_resize.stderr | default('')))
+
+- name: Ensure node console log exists
+  file:
+    path: "{{ ard_node_console_log }}"
+    state: touch
+    mode: "0664"
+
+- name: Grant libvirt-qemu access to node storage
+  command: "setfacl -m u:libvirt-qemu:rx {{ item }}"
+  changed_when: false
+  loop:
+    - "{{ ard_node_overlay }}"
+    - "{{ ard_node_seed }}"
+
+- name: Grant libvirt-qemu write access to node console log
+  command: "setfacl -m u:libvirt-qemu:rw {{ ard_node_console_log }}"
+  changed_when: false
+
+- name: Check whether libvirt domain exists
+  command: "virsh --connect {{ ard_libvirt_uri }} dominfo {{ ard_node_resource_name }}"
+  register: ard_libvirt_domain_info
+  changed_when: false
+  failed_when: false
+
+- name: Render libvirt domain XML
+  template:
+    src: domain.xml.j2
+    dest: "{{ ard_node_render_dir }}/domain.xml"
+    mode: "0644"
+
+- name: Define libvirt domain from rendered XML
+  command: "virsh --connect {{ ard_libvirt_uri }} define {{ ard_node_render_dir }}/domain.xml"
+  when: ard_libvirt_domain_info.rc != 0
+
+- name: Start libvirt domain
+  command: "virsh --connect {{ ard_libvirt_uri }} start {{ ard_node_resource_name }}"
+  register: ard_libvirt_domain_start
+  changed_when: ard_libvirt_domain_start.rc == 0
+  failed_when: ard_libvirt_domain_start.rc != 0 and ('already active' not in (ard_libvirt_domain_start.stderr | default('')))

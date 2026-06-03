@@ -1,0 +1,12 @@
+---
+- name: Ensure libvirt deployment directory exists
+  file:
+    path: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}"
+    state: directory
+    mode: "0755"
+
+- name: Create libvirt node resources
+  include_tasks: node.yml
+  loop: "{{ ard_nodes }}"
+  loop_control:
+    loop_var: ard_node

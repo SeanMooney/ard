@@ -1,0 +1,13 @@
+---
+- name: Load ARD deployment variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Load ARD node variables if present
+  include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+  when: lookup('ansible.builtin.file', ard_deployment_dir + '/nodes.yaml', errors='ignore') | length > 0
+
+- name: Run provider destroy handling
+  include_role:
+    name: "ard_{{ ard_provider }}_destroy"

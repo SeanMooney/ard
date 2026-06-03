@@ -1,0 +1,185 @@
+---
+- name: Set ARD deployment render facts
+  set_fact:
+    ard_deployment_dir: "{{ ard_deployment_dir | default('deployments/devstack-1') }}"
+    ard_deployment_name: "{{ ard_deployment_name | default((ard_deployment_dir | default('deployments/devstack-1')) | basename) }}"
+    ard_provider: "{{ ard_provider | default('libvirt') }}"
+
+- name: Ensure ARD deployment directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ard_deployment_dir }}"
+    - "{{ ard_deployment_dir }}/devstack/group_vars"
+    - "{{ ard_deployment_dir }}/devstack/host_vars"
+    - "{{ ard_deployment_dir }}/rendered/libvirt"
+    - "{{ ard_deployment_dir }}/logs"
+
+- name: Render deployment provider inputs
+  copy:
+    dest: "{{ ard_deployment_dir }}/deployment.yaml"
+    force: false
+    mode: "0644"
+    content: |
+      ---
+      ard_provider: {{ ard_provider }}
+      ard_deployment_name: {{ ard_deployment_name }}
+      ard_resource_name_prefix: ard-{{ ard_deployment_name }}
+
+      ard_default_image: debian-13
+      ard_default_controller_flavor: devstack-control
+      ard_default_compute_flavor: devstack-compute
+      ard_default_vm_preference: devstack
+
+      ard_image_cache_dir: "{{ lookup('env', 'XDG_CACHE_HOME') | default(lookup('env', 'HOME') + '/.cache', true) }}/ard/images"
+      ard_image_download: true
+      ard_image_checksum_required: false
+
+      ard_libvirt_uri: qemu:///system
+      ard_libvirt_pool: ard
+      ard_libvirt_network_name: ard-{{ ard_deployment_name }}
+      ard_libvirt_network_cidr: 192.168.96.0/24
+      ard_libvirt_network_gateway: 192.168.96.1
+      ard_libvirt_image_dir: "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}/ard/libvirt/images"
+
+      ard_images:
+        debian-13:
+          os_family: debian
+          version: "13"
+          cloud_init: true
+          provider:
+            libvirt:
+              url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+              alternate_urls:
+                - https://cloud.debian.org/images/cloud/trixie/latest/debian-13-nocloud-amd64.qcow2
+              name: debian-13
+              cache_filename: debian-13-genericcloud-amd64.qcow2
+              format: qcow2
+              cloud_init_datasource: NoCloud
+        ubuntu-24.04:
+          os_family: ubuntu
+          version: "24.04"
+          cloud_init: true
+          provider:
+            libvirt:
+              url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+              name: ubuntu-24.04
+              cache_filename: noble-server-cloudimg-amd64.img
+              format: qcow2
+              cloud_init_datasource: NoCloud
+        ubuntu-26.04:
+          os_family: ubuntu
+          version: "26.04"
+          cloud_init: true
+          provider:
+            libvirt:
+              url: null
+              name: ubuntu-26.04
+              cache_filename: ubuntu-26.04-cloudimg-amd64.img
+              format: qcow2
+              cloud_init_datasource: NoCloud
+
+      ard_flavors:
+        devstack-control:
+          vcpus: 8
+          memory: 16Gi
+          root_disk_gb: 80
+          nested_virt: true
+          provider:
+            libvirt:
+              vcpus: 8
+              memory_mb: 16384
+              cpu_mode: host-passthrough
+        devstack-compute:
+          vcpus: 8
+          memory: 8Gi
+          root_disk_gb: 80
+          nested_virt: true
+          provider:
+            libvirt:
+              vcpus: 8
+              memory_mb: 8192
+              cpu_mode: host-passthrough
+
+- name: Render two-node topology inputs
+  copy:
+    dest: "{{ ard_deployment_dir }}/nodes.yaml"
+    force: false
+    mode: "0644"
+    content: |
+      ---
+      ard_nodes:
+        - name: controller
+          hostname: controller
+          provider_resource_name: ard-{{ ard_deployment_name }}-controller
+          groups:
+            - controller
+            - switch
+          image: debian-13
+          flavor: devstack-control
+          preference: devstack
+          networks:
+            - name: ard-mgmt
+              ip: 192.168.96.2
+              mac: "52:54:00:96:00:02"
+          profiles:
+            - ssh
+            - nested_virt
+            - ovn
+        - name: compute1
+          hostname: compute1
+          provider_resource_name: ard-{{ ard_deployment_name }}-compute1
+          groups:
+            - compute
+            - peers
+            - subnode
+          image: debian-13
+          flavor: devstack-compute
+          preference: devstack
+          networks:
+            - name: ard-mgmt
+              ip: 192.168.96.3
+              mac: "52:54:00:96:00:03"
+          profiles:
+            - ssh
+            - nested_virt
+            - ovn
+
+- name: Render common DevStack vars
+  copy:
+    dest: "{{ ard_deployment_dir }}/devstack/common.yaml"
+    force: false
+    mode: "0644"
+    content: |
+      ---
+      devstack_branch: master
+      run_devstack: true
+      enable_ceph: false
+      configure_vdpa: false
+      external_bridge_mtu: 1450
+      devstack_libvirt_type: kvm
+      stack_user_password: tester
+
+- name: Render controller DevStack vars
+  copy:
+    dest: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
+    force: false
+    mode: "0644"
+    content: |
+      ---
+      controller_localrc_extra: {}
+      controller_local_conf_extra: {}
+      controller_services_extra: {}
+
+- name: Render compute DevStack vars
+  copy:
+    dest: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
+    force: false
+    mode: "0644"
+    content: |
+      ---
+      compute_localrc_extra: {}
+      compute_local_conf_extra: {}
+      compute_services_extra: {}

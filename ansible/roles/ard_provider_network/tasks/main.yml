@@ -1,0 +1,12 @@
+---
+- name: Load ARD deployment variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Load ARD node variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+
+- name: Run provider network handling
+  include_role:
+    name: "ard_{{ ard_provider }}_network"

@@ -1,0 +1,16 @@
+---
+- name: Discover ARD provider nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - ard_provider_inventory
+
+- name: Load ARD deployment DevStack variables
+  hosts: all
+  gather_facts: false
+  roles:
+    - ard_devstack_config
+
+- name: Deploy ARD multinode DevStack
+  import_playbook: ../deploy_multinode_devstack.yaml

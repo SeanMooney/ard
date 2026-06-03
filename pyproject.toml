@@ -1,0 +1,11 @@
+[project]
+name = "ard"
+version = "0.1.0"
+description = "Ansible Role DevStack local provider tooling"
+requires-python = ">=3.13"
+dependencies = [
+    "ansible-core==2.18.7",
+]
+
+[tool.uv]
+package = false

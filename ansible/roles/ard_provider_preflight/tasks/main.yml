@@ -1,0 +1,8 @@
+---
+- name: Load ARD deployment variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Run provider preflight
+  include_role:
+    name: "ard_{{ ard_provider }}_preflight"
