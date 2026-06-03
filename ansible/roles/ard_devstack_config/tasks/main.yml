@@ -1,16 +1,35 @@
 ---
+- name: Check deployment common DevStack vars
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/common.yaml"
+  register: ard_devstack_common_vars_file
+  delegate_to: localhost
+
 - name: Load deployment common DevStack vars
-  include_vars:
-    file: "{{ ard_deployment_dir }}/devstack/common.yaml"
-  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/common.yaml', errors='ignore') | length > 0
+  ansible.builtin.include_vars:
+    file: "{{ ard_devstack_common_vars_file.stat.path }}"
+  when: ard_devstack_common_vars_file.stat.exists
+
+- name: Check deployment group DevStack var files
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/group_vars/{{ item }}.yaml"
+  loop: "{{ group_names }}"
+  register: ard_devstack_group_var_files
+  delegate_to: localhost
 
 - name: Load deployment group DevStack vars
-  include_vars:
-    file: "{{ ard_deployment_dir }}/devstack/group_vars/{{ item }}.yaml"
-  loop: "{{ group_names }}"
-  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/group_vars/' + item + '.yaml', errors='ignore') | length > 0
+  ansible.builtin.include_vars:
+    file: "{{ item.stat.path }}"
+  loop: "{{ ard_devstack_group_var_files.results }}"
+  when: item.stat.exists
+
+- name: Check deployment host DevStack vars
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/host_vars/{{ inventory_hostname }}.yaml"
+  register: ard_devstack_host_vars_file
+  delegate_to: localhost
 
 - name: Load deployment host DevStack vars
-  include_vars:
-    file: "{{ ard_deployment_dir }}/devstack/host_vars/{{ inventory_hostname }}.yaml"
-  when: lookup('ansible.builtin.file', ard_deployment_dir + '/devstack/host_vars/' + inventory_hostname + '.yaml', errors='ignore') | length > 0
+  ansible.builtin.include_vars:
+    file: "{{ ard_devstack_host_vars_file.stat.path }}"
+  when: ard_devstack_host_vars_file.stat.exists

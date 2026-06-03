@@ -65,7 +65,7 @@
       ansible.posix.authorized_key:
         user: stack
         state: present
-        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/' + ssh_key_filename + '.pub') }}"
 
 - name: setup root user ssh keys
   become: yes
@@ -88,7 +88,7 @@
       ansible.posix.authorized_key:
         user: root
         state: present
-        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/' + ssh_key_filename + '.pub') }}"
 
 - name: setup ansible user ssh keys
   tags: ssh
@@ -110,7 +110,7 @@
       ansible.posix.authorized_key:
         user: "{{ ansible_user }}"
         state: present
-        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/{{ssh_key_filename}}.pub') }}"
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/' + ssh_key_filename + '.pub') }}"
 
 
 - name: update ansible_user
