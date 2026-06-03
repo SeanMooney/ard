@@ -48,7 +48,10 @@ controller_services:
   # Ignore any default set by devstack. Emit a "disable_all_services".
   base: false
   # Shared services
+  dstat: false
   etcd3: true
+  file_tracker: true
+  memory_tracker: true
   mysql: true
   rabbit: true
   tls-proxy: true
@@ -64,6 +67,7 @@ controller_services:
   n-novnc: true
   n-sch: true
   # Placement service
+  openstack-cli-server: true
   placement-api: true
   # OVN services
   ovn-controller: true
@@ -72,7 +76,7 @@ controller_services:
   ovsdb-server: true
   # Neutron services
   q-svc: true
-  q-ovn-metadata-agent: true
+  q-ovn-agent: true
   # Swift services
   s-account: true
   s-container: true

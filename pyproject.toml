@@ -5,6 +5,8 @@ description = "Ansible Role DevStack local provider tooling"
 requires-python = ">=3.13"
 dependencies = [
     "ansible-core==2.18.7",
+    "passlib==1.7.4",
+    "netaddr==1.3.0",
 ]
 
 [tool.uv]
