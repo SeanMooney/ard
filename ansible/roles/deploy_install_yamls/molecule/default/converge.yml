@@ -1,7 +1,42 @@
 ---
 - name: Converge
   hosts: all
+  vars:
+    repo_dir: /tmp/ard-molecule/repos
+    install_yamls_repo_url: file:///tmp/install_yamls-source
+    install_yamls_branch: master
+  pre_tasks:
+    - name: Install test fixture dependencies
+      ansible.builtin.shell: |
+        apt-get update
+        apt-get install -y --no-install-recommends git make
+      changed_when: false
+
+    - name: Create fake install_yamls source repository
+      ansible.builtin.file:
+        path: /tmp/install_yamls-source
+        state: directory
+        mode: "0755"
+
+    - name: Write fake crc_storage target
+      ansible.builtin.copy:
+        dest: /tmp/install_yamls-source/Makefile
+        mode: "0644"
+        content: |
+          crc_storage:
+          	@touch crc_storage_ran
+
+    - name: Initialize fake install_yamls git repository
+      ansible.builtin.shell: |
+        git init --initial-branch=master
+        git config user.email molecule@example.invalid
+        git config user.name Molecule
+        git add Makefile
+        git commit -m 'Initial fake install_yamls repository'
+      args:
+        chdir: /tmp/install_yamls-source
+        creates: /tmp/install_yamls-source/.git/HEAD
   tasks:
-    - name: "Include deploy_install_yamls"
-      include_role:
-        name: "deploy_install_yamls"
+    - name: Include deploy_install_yamls
+      ansible.builtin.include_role:
+        name: deploy_install_yamls

@@ -1,10 +1,19 @@
 ---
-# This is an example playbook to execute Ansible tests.
-
 - name: Verify
   hosts: all
   gather_facts: false
   tasks:
-  - name: Example assertion
-    assert:
-      that: true
+    - name: Check expected tools are installed
+      ansible.builtin.shell: "command -v {{ item }}"
+      loop:
+        - git
+        - sudo
+        - wget
+        - rsync
+      changed_when: false
+
+    - name: Check cloud-init was removed or absent
+      ansible.builtin.command: dpkg-query -W -f=${Status} cloud-init
+      register: cloud_init_status
+      changed_when: false
+      failed_when: cloud_init_status.rc == 0
