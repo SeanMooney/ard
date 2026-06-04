@@ -2,6 +2,6 @@
 - name: Converge
   hosts: all
   tasks:
-    - name: "Include print_debug_ip"
-      include_role:
-        name: "print_debug_ip"
+    - name: Include print_debug_ip
+      ansible.builtin.include_role:
+        name: print_debug_ip

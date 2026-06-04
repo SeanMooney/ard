@@ -61,6 +61,42 @@ vagrant ssh crc
 [stack@crc ~]$ ssh -i ~/.crc/machines/crc/id_ecdsa core@`crc ip`
 ```
 
+Role molecule tests
+-------------------
+
+The uv-managed development environment includes Molecule and the Podman
+Molecule plugin. Role-level Molecule scenarios live under
+``ansible/roles/*/molecule`` and are intended to avoid Vagrant for role unit
+coverage. Use containers for roles that do not need full VM semantics; reserve
+ARD libvirt-backed scenarios for roles that need a real VM, systemd, cloud-init,
+libvirt, or DevStack node behavior.
+
+Run all role-level Molecule scenarios from the repository root:
+
+```
+make molecule-test
+```
+
+Run one role-level scenario from the repository root:
+
+```
+make molecule-role-ensure_kustomize
+```
+
+You can also run a role scenario from the role directory. Activate the uv venv
+first, then run Molecule directly or via the role-local make target:
+
+```
+source ../../../.venv/bin/activate
+cd ansible/roles/ensure_kustomize
+molecule test
+# or
+make molecule-test
+```
+
+Top-level ``molecule/`` scenarios are larger deployment scenarios and are not
+part of this role-level test workflow.
+
 Configure localhost to access deployed OpenShift crc
 ----------------------------------------------------
 > **NOTE**: This overwrites ``~/.kube/config`` !

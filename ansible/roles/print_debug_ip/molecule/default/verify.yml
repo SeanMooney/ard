@@ -1,10 +1,10 @@
 ---
-# This is an example playbook to execute Ansible tests.
-
 - name: Verify
   hosts: all
   gather_facts: false
   tasks:
-  - name: Example assertion
-    assert:
-      that: true
+    - name: Assert podman-backed host was provisioned
+      ansible.builtin.assert:
+        that:
+          - ansible_connection == 'podman'
+          - inventory_hostname == 'print-debug-ip-default'

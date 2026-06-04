@@ -1,10 +1,15 @@
 ---
-# This is an example playbook to execute Ansible tests.
-
 - name: Verify
   hosts: all
   gather_facts: false
   tasks:
-  - name: Example assertion
-    assert:
-      that: true
+    - name: Run kustomize
+      ansible.builtin.command: /usr/bin/kustomize version
+      register: kustomize_version
+      changed_when: false
+
+    - name: Assert kustomize reports a version
+      ansible.builtin.assert:
+        that:
+          - kustomize_version.rc == 0
+          - kustomize_version.stdout | length > 0

@@ -1,10 +1,20 @@
 ---
-# This is an example playbook to execute Ansible tests.
-
 - name: Verify
   hosts: all
   gather_facts: false
   tasks:
-  - name: Example assertion
-    assert:
-      that: true
+    - name: Check install_yamls was cloned
+      ansible.builtin.stat:
+        path: /tmp/ard-molecule/repos/install_yamls/.git
+      register: install_yamls_git
+
+    - name: Check crc_storage target was run
+      ansible.builtin.stat:
+        path: /tmp/ard-molecule/repos/install_yamls/.storage_provisioned
+      register: install_yamls_storage
+
+    - name: Assert deploy_install_yamls effects
+      ansible.builtin.assert:
+        that:
+          - install_yamls_git.stat.isdir | default(false)
+          - install_yamls_storage.stat.exists
