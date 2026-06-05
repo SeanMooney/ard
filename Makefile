@@ -9,19 +9,35 @@ ARD_DEPLOYMENT ?= devstack-1
 ARD_DEPLOYMENTS_DIR ?= $(CURDIR)/deployments
 ARD_DEPLOYMENT_DIR ?= $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT)
 ARD_TOPOLOGY ?= one-controller-one-compute
-ARD_IMAGE ?= debian-13
+ARD_TARGET_BRANCH ?= master
+ARD_SERVICES ?= devstack,ovn,tempest
+ARD_PROVIDER_PROFILE ?= local-libvirt
+ARD_IMAGE ?=
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
+ARD_RENDER_FILE ?=
 ARD_EXTRA_VARS ?=
 ARD_NODE ?= controller
 ARD_SSH_PRINT ?= 0
 ARD_SSH_ARGS ?=
 
+ARD_RENDER_FILE_ARG = $(if $(ARD_RENDER_FILE),-e @$(ARD_RENDER_FILE),)
+ARD_RENDER_PROVIDER_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER)),ard_provider=$(ARD_PROVIDER),)
+ARD_RENDER_PROVIDER_PROFILE_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER_PROFILE)),ard_provider_profile=$(ARD_PROVIDER_PROFILE),)
+ARD_RENDER_TARGET_BRANCH_VAR = $(if $(filter command line environment override,$(origin ARD_TARGET_BRANCH)),ard_target_branch=$(ARD_TARGET_BRANCH),)
+ARD_RENDER_TOPOLOGY_VAR = $(if $(filter command line environment override,$(origin ARD_TOPOLOGY)),ard_topology=$(ARD_TOPOLOGY),)
+ARD_RENDER_SERVICES_VAR = $(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),)
+ARD_RENDER_IMAGE_VAR = $(if $(ARD_IMAGE),ard_render_image=$(ARD_IMAGE),)
+ARD_RENDER_NETWORK_VAR = $(if $(filter command line environment override,$(origin ARD_NETWORK_CIDR)),ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR),)
+
 ARD_RENDER_EXTRA_VARS = \
-	ard_provider=$(ARD_PROVIDER) \
 	ard_deployment_dir=$(ARD_DEPLOYMENT_DIR) \
-	ard_topology=$(ARD_TOPOLOGY) \
-	ard_default_image=$(ARD_IMAGE) \
-	ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR) \
+	$(ARD_RENDER_PROVIDER_VAR) \
+	$(ARD_RENDER_PROVIDER_PROFILE_VAR) \
+	$(ARD_RENDER_TARGET_BRANCH_VAR) \
+	$(ARD_RENDER_TOPOLOGY_VAR) \
+	$(ARD_RENDER_SERVICES_VAR) \
+	$(ARD_RENDER_IMAGE_VAR) \
+	$(ARD_RENDER_NETWORK_VAR) \
 	$(ARD_EXTRA_VARS)
 
 ARD_DEPLOYMENT_EXTRA_VARS = \
@@ -39,6 +55,7 @@ default:
 
 render:
 	uv run ansible-playbook -i localhost, ansible/playbooks/ard-render.yaml \
+		$(ARD_RENDER_FILE_ARG) \
 		-e "$(ARD_RENDER_EXTRA_VARS)"
 
 apply:
