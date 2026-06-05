@@ -27,39 +27,44 @@ Including an example of how to use your role (for instance, with variables passe
       roles:
          - { role: username.rolename, x: 42 }
 
-Playbook to test Microshift deployment on Fedora CoreOS
--------------------------------------------------------
+Top-level Molecule DevStack scenarios
+-------------------------------------
+
+Top-level ``molecule/`` scenarios are full ARD/libvirt-backed DevStack
+deployments. They use Molecule's default/delegated driver to call the ARD
+provider playbooks directly; they do not use Vagrant.
+
+Available scenarios:
+
+* ``default``: two-node DevStack master on Debian 13 genericcloud
+  (``controller`` + ``compute1``).
+* ``one-controller-two-compute``: same as ``default`` plus ``compute2``;
+  ``nova-compute`` is disabled on the controller.
+* ``stable-2026.1``: two-node DevStack ``stable/2026.1`` on Ubuntu 24.04 cloud
+  images.
+
+Run a full scenario test from the repository root:
 
 ```
-- hosts: microshift
-  gather_facts: true
-  vars:
-    user_name: microshift
-    install_olm: false
-    manage_firewall: false
-    microshift_install_type: ostree
-    crio_install_type: ostree
-    crio_log_level: debug
-  roles:
-    - ensure_microshift
+uv run molecule test -s default
+uv run molecule test -s one-controller-two-compute
+uv run molecule test -s stable-2026.1
 ```
 
-Bootstrap OpenShift crc in a vm
--------------------------------
+For an incremental and cheaper validation loop, create the VMs first and verify
+SSH before converging DevStack:
 
-This should create ``~/.ssh/id_ed25519_stack`` SSH key to login to VM as a stack user:
 ```
-molecule destroy -s shift-stack
-molecule create -s shift-stack
-molecule converge -s shift-stack
+uv run molecule create -s default
+uv run ansible -i molecule/default/deployment/inventory.yaml all -m ping
+uv run molecule converge -s default
+uv run molecule verify -s default
+uv run molecule destroy -s default
 ```
-Verify login to CRC VM and RHCOS k8s worker node.
-```
-cd ~/.cache/molecule/ansible_role_devstack/shift-stack
-vagrant ssh crc
 
-[stack@crc ~]$ ssh -i ~/.crc/machines/crc/id_ecdsa core@`crc ip`
-```
+Scenario deployment workspaces live under ``molecule/<scenario>/deployment``.
+Generated files such as ``inventory.yaml``, ``provider-state.yaml``, and
+``rendered/`` are runtime artifacts and should not be committed.
 
 Role molecule tests
 -------------------
@@ -96,25 +101,6 @@ make molecule-test
 
 Top-level ``molecule/`` scenarios are larger deployment scenarios and are not
 part of this role-level test workflow.
-
-Configure localhost to access deployed OpenShift crc
-----------------------------------------------------
-> **NOTE**: This overwrites ``~/.kube/config`` !
-
-Install shuttle first.
-
-```
-inv=~/.cache/molecule/ansible_role_devstack/shift-stack/inventory/ansible_inventory.yml
-IP=$(ansible -i $inv -m debug -a 'var=hostvars["crc"].ansible_host' crc | sed -rn 's/.*ansible_host": "(.*)"/\1/p')
-echo `ssh -i ~/.ssh/id_ed25519_stack stack@$IP tail -1 /etc/hosts | tail -1` | sudo tee -a /etc/host
-ansible -b -i $inv  -m slurp -a "src=/home/stack/.kube/config" crc | sed -r 's/crc \| SUCCESS => //' | jq -r '.content' | base64 -d > ~/.kube/config
-ansible -b -i $inv  -m shell -a "cd /home/stack/.crc/bin/oc; tar hcvf - oc | gzip -v4 > oc.tar.gz" crc
-ansible -b -i $inv  -m slurp -a "src=/home/stack/.crc/bin/oc/oc.tar.gz" crc | sed -r 's/crc \| SUCCESS => //' | jq -r '.content' | base64 -d > oc.tar.gz
-tar xzf oc.tar.gz
-sudo install -o root -g root -m 0755 oc /usr/local/bin/oc
-sudo -E sshuttle -r stack@$IP -x $IP 0.0.0.0/0 -vv --ssh-cmd 'ssh -i $HOME/.ssh/id_ed25519_stack'
-oc login -u kubeadmin -p  `ssh -i ~/.ssh/id_ed25519_stack stack@$IP crc console --credentials | awk '/oc login -u kubeadmin/ {if ($0) print $12}'` https://api.crc.testing:6443
-```
 
 License
 -------

@@ -1,23 +1,24 @@
-*********************************
-Vagrant driver installation guide
-*********************************
+************************************
+ARD libvirt scenario requirements
+************************************
+
+This scenario uses Molecule's default/delegated driver to call the ARD
+libvirt provider playbooks. It does not require Vagrant.
 
 Requirements
 ============
 
-* Vagrant
-* Virtualbox, Parallels, VMware Fusion, VMware Workstation or VMware Desktop
+* the uv-managed project environment
+* Molecule
+* Ansible
+* libvirt/qemu access to ``qemu:///system``
 
-Install
-=======
-
-Please refer to the `Virtual environment`_ documentation for installation best
-practices. If not using a virtual environment, please consider passing the
-widely recommended `'--user' flag`_ when invoking ``pip``.
-
-.. _Virtual environment: https://virtualenv.pypa.io/en/latest/
-.. _'--user' flag: https://packaging.python.org/tutorials/installing-packages/#installing-to-the-user-site
+Run
+===
 
 .. code-block:: bash
 
-    $ pip install 'molecule_vagrant'
+    uv run molecule create -s default
+    uv run molecule converge -s default
+    uv run molecule verify -s default
+    uv run molecule destroy -s default
