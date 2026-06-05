@@ -436,11 +436,65 @@ If `ard_deployment_name` is passed explicitly, it must match the basename of `ar
 
 The workflow is:
 
-1. **Render**: create `deployments/<deployment-name>/` from provider-neutral defaults and templates. This does not contact libvirt or OpenShift.
-2. **Modify**: edit `deployment.yaml`, `nodes.yaml`, and the layered files under `devstack/` on disk. This is where scenario-specific DevStack `local.conf` inputs are changed per deployment, per group, or per node.
-3. **Apply**: read the deployment folder, create or update provider resources, wait for SSH, generate `inventory.yaml`, and write `provider-state.yaml`.
+1. **Render**: create `deployments/<deployment-name>/` from provider-neutral presets, provider profiles, service profiles, and optional overlays. This does not contact libvirt or OpenShift.
+2. **Customize**: keep custom intent in a render file or overlay, rather than editing generated concrete files directly. Render is intentionally kustomize-like but simpler: presets are bases, overlays are ordinary YAML dictionaries, and later layers deep-merge into earlier layers.
+3. **Apply**: read the deployment folder, create or update provider resources, wait for SSH and cloud-init, generate `inventory.yaml`, and write `provider-state.yaml`.
 4. **Destroy**: use `provider-state.yaml`, the deployment name, and provider labels/name prefixes to destroy provider resources. Keep the deployment folder and logs.
-5. **Cleanup**: remove the local deployment folder after destroy when the user no longer needs the rendered scenario inputs or state.
+5. **Cleanup**: remove generated local deployment artifacts after destroy when the user no longer needs rendered inputs or state.
+
+Render composition order is:
+
+```text
+role defaults
+  -> branch preset
+  -> topology preset
+  -> service profiles, in requested order
+  -> provider profile
+  -> render intent file
+  -> deployment-local overlay file
+  -> CLI / Make extra-vars
+```
+
+The intent file is small and should be the primary committed interface for Molecule scenarios and reusable examples:
+
+```yaml
+# render.yaml
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_target_branch: master
+ard_topology: one-controller-two-compute
+ard_service_profiles:
+  - devstack
+  - ovn
+  - tempest
+```
+
+Topology presets are named convenience bases such as `all-in-one`, `one-controller-one-compute`, and `one-controller-two-compute`. They normalize into counts and roles, and advanced users may override the normalized values with `ard_topology_overrides` when a curated name is close but not exact.
+
+Generated concrete files such as `deployment.yaml`, `nodes.yaml`, and `devstack/*.yaml` are render output. They should include a generated-file header and may be overwritten by subsequent renders. Local customizations belong in the render intent or an overlay such as `overrides/render.yaml`.
+
+The supported explicit overlay dictionary is:
+
+```yaml
+ard_render_overrides:
+  provider_defaults:
+    image: ubuntu-24.04
+    controller_flavor: devstack-control
+    compute_flavor: devstack-compute
+    vm_preference: devstack
+  topology:
+    compute_count: 2
+  devstack:
+    common:
+      enable_ceph: true
+    controller:
+      controller_localrc_extra:
+        DEBUG_LIBVIRT_COREDUMPS: true
+    compute:
+      compute_localrc_extra: {}
+```
+
+For command-line convenience, `ard_render_image`, `ard_render_controller_flavor`, `ard_render_compute_flavor`, and `ard_render_vm_preference` can override the composed provider defaults without changing the eventual provider input names written to `deployment.yaml`.
 
 Example deployment inputs:
 
@@ -1390,40 +1444,41 @@ The KubeVirt provider should use `VirtualMachineInstancetype` and `VirtualMachin
 
 ## 14. Molecule Integration
 
-Molecule should use ansible-native or delegated mode and call the same provider-neutral playbooks.
+Molecule should use ansible-native or delegated mode and call the same provider-neutral playbooks. Molecule should not own provider-specific VM creation logic. It should be a workflow runner and verifier.
+
+To avoid defining topology and node names in multiple places, top-level Molecule scenarios should put ARD intent inline under `provisioner.ard` in `molecule.yml`. Molecule `platforms` are optional and should be omitted for these scenarios; ARD render presets generate the node list and provider inventory.
 
 Example scenario structure:
 
 ```text
 molecule/libvirt-multinode/
-  molecule.yml
-  create.yml
+  molecule.yml              # includes provisioner.ard
+  create.yml                # reads provisioner.ard, renders, applies
   converge.yml
   verify.yml
   destroy.yml
+  deployment/               # generated/ignored
 ```
 
-`create.yml`:
+Example `molecule.yml` fragment:
 
 ```yaml
-- import_playbook: ../../ansible/playbooks/ard-create.yaml
+provisioner:
+  name: ansible
+  ard:
+    provider: libvirt
+    provider_profile: local-libvirt
+    target_branch: master
+    topology: one-controller-two-compute
+    service_profiles:
+      - devstack
+      - ovn
+      - tempest
+    libvirt:
+      network_cidr: 192.168.99.0/24
 ```
 
-`converge.yml`:
-
-```yaml
-- import_playbook: ../../ansible/playbooks/ard-deploy-devstack.yaml
-```
-
-`destroy.yml`:
-
-```yaml
-- import_playbook: ../../ansible/playbooks/ard-destroy.yaml
-```
-
-The same pattern applies to KubeVirt.
-
-Molecule should not own provider-specific VM creation logic. It should be a workflow runner and verifier.
+`create.yml` reads `molecule.yml`, writes generated render variables under the ignored deployment directory, calls `ard-render.yaml`, and then calls `ard-apply.yaml`. The same pattern applies to KubeVirt once that provider is implemented.
 
 ## 15. Zuul Integration
 

@@ -62,7 +62,7 @@ make cleanup ARD_DEPLOYMENT=devstack-a
 
 The normal local workflow is:
 
-1. `render`: create an editable deployment workspace.
+1. `render`: create a concrete deployment workspace from presets and optional overlays.
 2. `apply`: create libvirt network/domain/disk/seed resources, generate inventory, and wait for SSH/cloud-init readiness.
 3. `ping`: verify SSH/Ansible connectivity again.
 4. `deploy`: run the multinode DevStack playbook.
@@ -89,9 +89,7 @@ deployments/<deployment-name>/
   logs/
 ```
 
-`render` writes files with overwrite protection, so local edits are preserved.
-After rendering, edit `nodes.yaml` or the files under `devstack/` to customize a
-scenario before applying it.
+`render` treats `deployment.yaml`, `nodes.yaml`, and `devstack/*.yaml` as generated output and may overwrite them. Keep custom intent in a render file or deployment-local overlay such as `overrides/render.yaml`.
 
 ## Make targets
 
@@ -133,8 +131,12 @@ ARD_DEPLOYMENTS_DIR  deployment parent dir, default ./deployments
 ARD_DEPLOYMENT_DIR   full workspace path
 ARD_PROVIDER         provider, currently libvirt
 ARD_TOPOLOGY         topology preset
-ARD_IMAGE            image key, default debian-13
+ARD_TARGET_BRANCH    DevStack target branch, default master
+ARD_SERVICES         comma-separated service profiles, default devstack,ovn,tempest
+ARD_PROVIDER_PROFILE provider profile, default local-libvirt
+ARD_IMAGE            optional image key override
 ARD_NETWORK_CIDR     libvirt management CIDR, default 192.168.96.0/24
+ARD_RENDER_FILE      optional render intent file loaded before Make vars
 ARD_NODE             inventory node for make ssh, default controller
 ARD_SSH_PRINT        print SSH command without running it when set to 1
 ARD_SSH_ARGS         extra arguments passed to ssh
@@ -146,7 +148,9 @@ Example:
 ```bash
 make render \
   ARD_DEPLOYMENT=devstack-a \
+  ARD_TARGET_BRANCH=master \
   ARD_TOPOLOGY=one-controller-two-compute \
+  ARD_SERVICES=devstack,ovn,tempest \
   ARD_NETWORK_CIDR=192.168.99.0/24
 ```
 
@@ -174,8 +178,15 @@ Inventory hostnames remain logical names such as `controller`, `compute1`, and
 Supported local render presets:
 
 ```text
+all-in-one
 one-controller-one-compute
 one-controller-two-compute
+```
+
+`all-in-one` renders:
+
+```text
+controller
 ```
 
 `one-controller-one-compute` renders:
@@ -193,8 +204,55 @@ compute1
 compute2
 ```
 
-The two-compute topology disables `nova-compute` on the controller through the
-rendered controller group vars.
+Multinode topologies disable `nova-compute` on the controller through the rendered controller group vars. The `all-in-one` topology leaves controller compute services enabled.
+
+## Render intent and service profiles
+
+Render can start from a small intent file:
+
+```yaml
+---
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_target_branch: stable/2026.1
+ard_topology: one-controller-one-compute
+ard_service_profiles:
+  - devstack
+  - ovn
+  - tempest
+ard_libvirt_network_cidr: 192.168.98.0/24
+```
+
+Use it with:
+
+```bash
+make render ARD_DEPLOYMENT=stable-test ARD_RENDER_FILE=examples/render.yaml
+```
+
+Use `ard_render_overrides` for simple kustomize-like customizations:
+
+```yaml
+ard_render_overrides:
+  provider_defaults:
+    image: ubuntu-24.04
+  topology:
+    compute_count: 2
+  devstack:
+    common:
+      enable_ceph: true
+    controller:
+      controller_localrc_extra:
+        DEBUG_LIBVIRT_COREDUMPS: true
+```
+
+Current service profiles are:
+
+```text
+devstack
+ovn
+tempest
+ceph
+```
 
 ## Images and flavors
 
@@ -255,7 +313,9 @@ provider resources.
 
 Top-level Molecule scenarios are full ARD/libvirt-backed DevStack validation
 flows. They call the same provider playbooks used by Make and do not use
-Vagrant.
+Vagrant. The scenario source of truth lives in `molecule.yml` under
+`provisioner.ard`; Molecule `platforms` are intentionally omitted so topology
+and node names are defined only once by ARD render presets.
 
 Available scenarios:
 

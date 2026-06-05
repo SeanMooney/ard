@@ -4,14 +4,24 @@ dependency:
   enabled: false
 driver:
   name: default
-platforms:
-  - name: controller
-  - name: compute1
-  - name: compute2
 provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
+  ard:
+    provider: libvirt
+    provider_profile: local-libvirt
+    deployment_name: molecule-one-controller-two-compute
+    resource_name_prefix: ard-molecule-one-controller-two-compute
+    target_branch: master
+    topology: one-controller-two-compute
+    service_profiles:
+      - devstack
+      - ovn
+      - tempest
+    libvirt:
+      network_name: ard-molecule-one-controller-two-compute
+      network_cidr: 192.168.99.0/24
 verifier:
   name: ansible
 scenario:

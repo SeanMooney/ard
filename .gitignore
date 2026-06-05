@@ -6,7 +6,4 @@ okd/output/
 pull-secret
 deployments/*
 !deployments/.keep
-molecule/*/deployment/inventory.yaml
-molecule/*/deployment/provider-state.yaml
-molecule/*/deployment/rendered/
-molecule/*/deployment/logs/
+molecule/*/deployment/

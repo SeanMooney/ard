@@ -1,0 +1,9 @@
+---
+ard_render_provider_profiles:
+  local-libvirt:
+    provider: libvirt
+    provider_defaults:
+      image: debian-13
+      controller_flavor: devstack-control
+      compute_flavor: devstack-compute
+      vm_preference: devstack

@@ -1,28 +1,142 @@
 ---
-- name: Set ARD deployment render facts
+- name: Set initial ARD deployment render facts
+  ansible.builtin.set_fact:
+    ard_deployment_dir: "{{ ard_deployment_dir | default('deployments/devstack-1') }}"
+    ard_deployment_name: "{{ ard_deployment_name | default((ard_deployment_dir | default('deployments/devstack-1')) | basename) }}"
+
+- name: Set ARD render input paths
+  ansible.builtin.set_fact:
+    ard_render_file: "{{ ard_render_file | default(ard_deployment_dir + '/render.yaml') }}"
+    ard_render_overlay_file: "{{ ard_render_overlay_file | default(ard_deployment_dir + '/overrides/render.yaml') }}"
+
+- name: Check for ARD render intent file
+  ansible.builtin.stat:
+    path: "{{ ard_render_file }}"
+  register: ard_render_file_stat
+
+- name: Load ARD render intent file
+  ansible.builtin.include_vars:
+    file: "{{ ard_render_file }}"
+  when: ard_render_file_stat.stat.exists
+
+- name: Check for ARD render overlay file
+  ansible.builtin.stat:
+    path: "{{ ard_render_overlay_file }}"
+  register: ard_render_overlay_file_stat
+
+- name: Load ARD render overlay file
+  ansible.builtin.include_vars:
+    file: "{{ ard_render_overlay_file }}"
+  when: ard_render_overlay_file_stat.stat.exists
+
+- name: Reload ARD deployment render facts after intent files
   ansible.builtin.set_fact:
     ard_deployment_dir: "{{ ard_deployment_dir | default('deployments/devstack-1') }}"
     ard_deployment_name: "{{ ard_deployment_name | default((ard_deployment_dir | default('deployments/devstack-1')) | basename) }}"
     ard_provider: "{{ ard_provider | default('libvirt') }}"
+    ard_provider_profile: "{{ ard_provider_profile | default('local-libvirt') }}"
     ard_topology: "{{ ard_topology | default('one-controller-one-compute') }}"
+    ard_target_branch: "{{ ard_target_branch | default('master') }}"
 
-- name: Validate supported local render inputs
+- name: Load ARD render topology presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/topologies.yaml"
+
+- name: Load ARD render branch presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/branches.yaml"
+
+- name: Load ARD render service presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/services.yaml"
+
+- name: Load ARD render provider profile presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/provider-profiles.yaml"
+
+- name: Normalize ARD render service profile list
+  ansible.builtin.set_fact:
+    ard_render_service_profile_list: >-
+      {{
+        (ard_service_profiles.split(',') | map('trim') | reject('equalto', '') | list)
+        if ard_service_profiles is string
+        else (ard_service_profiles | default(['devstack', 'ovn', 'tempest']))
+      }}
+
+- name: Validate supported ARD render presets
   ansible.builtin.assert:
     that:
       - ard_provider == 'libvirt'
-      - ard_topology in ['one-controller-one-compute', 'one-controller-two-compute']
+      - ard_topology in ard_render_topologies
+      - ard_provider_profile in ard_render_provider_profiles
+      - ard_render_service_profile_list | difference(ard_render_services.keys() | list) | length == 0
       - ard_libvirt_network_cidr is match('^([0-9]{1,3}\.){3}0/24$')
     fail_msg: >-
-      Local render currently supports libvirt and /24 CIDRs only. Requested
-      provider={{ ard_provider }}, topology={{ ard_topology }},
-      cidr={{ ard_libvirt_network_cidr }}.
+      Unsupported render input. provider={{ ard_provider }},
+      provider_profile={{ ard_provider_profile }}, topology={{ ard_topology }},
+      services={{ ard_render_service_profile_list }}, cidr={{ ard_libvirt_network_cidr }}.
 
-- name: Derive local network render facts
+- name: Compose ARD topology preset
+  ansible.builtin.set_fact:
+    ard_render_topology_config: >-
+      {{ ard_render_topologies[ard_topology] |
+         combine((ard_render_overrides | default({})).get('topology', {}), recursive=True) |
+         combine(ard_topology_overrides | default({}), recursive=True) }}
+
+- name: Initialize ARD service profile composition
+  ansible.builtin.set_fact:
+    ard_render_services_config: {}
+    ard_render_node_profiles: []
+
+- name: Compose requested ARD service profiles
+  ansible.builtin.set_fact:
+    ard_render_services_config: >-
+      {{ ard_render_services_config | combine(ard_render_services[item], recursive=True, list_merge='append') }}
+    ard_render_node_profiles: >-
+      {{ (ard_render_node_profiles + (ard_render_services[item].node_profiles | default([]))) | unique }}
+  loop: "{{ ard_render_service_profile_list }}"
+
+- name: Compose ARD branch and provider profile presets
+  ansible.builtin.set_fact:
+    ard_render_branch_config: >-
+      {{ {'devstack': {'common': {'devstack_branch': ard_target_branch}}} |
+         combine(ard_render_branches[ard_target_branch] | default({}), recursive=True) }}
+    ard_render_provider_profile_config: "{{ ard_render_provider_profiles[ard_provider_profile] }}"
+
+- name: Compose ARD provider defaults
+  ansible.builtin.set_fact:
+    ard_render_provider_defaults: >-
+      {{ ard_render_provider_profile_config.provider_defaults |
+         combine(ard_render_branch_config.provider_defaults | default({}), recursive=True) |
+         combine((ard_render_overrides | default({})).get('provider_defaults', {}), recursive=True) }}
+
+- name: Derive local network and provider defaults
   ansible.builtin.set_fact:
     ard_render_network_prefix: "{{ ard_libvirt_network_cidr | regex_replace('\\.0/24$', '') }}"
     ard_libvirt_network_gateway: "{{ ard_libvirt_network_gateway | default(ard_libvirt_network_cidr | regex_replace('\\.0/24$', '.1')) }}"
     ard_resource_name_prefix: "{{ ard_resource_name_prefix | default('ard-' + ard_deployment_name) }}"
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
+    ard_render_default_image: "{{ ard_render_image | default(ard_render_provider_defaults.image) }}"
+    ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
+    ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
+    ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
+
+- name: Compose rendered DevStack variables
+  ansible.builtin.set_fact:
+    ard_render_devstack_common: >-
+      {{ (ard_render_services_config.devstack.common | default({})) |
+         combine(ard_render_branch_config.devstack.common | default({}), recursive=True) |
+         combine((ard_render_overrides | default({})).get('devstack', {}).get('common', {}), recursive=True) |
+         combine(ard_devstack_common_overrides | default({}), recursive=True) }}
+    ard_render_devstack_controller: >-
+      {{ {'controller_services_extra': ({'n-cpu': false} if not ard_render_topology_config.controller_runs_compute else {})} |
+         combine(ard_render_services_config.devstack.controller | default({}), recursive=True) |
+         combine((ard_render_overrides | default({})).get('devstack', {}).get('controller', {}), recursive=True) |
+         combine(ard_devstack_controller_overrides | default({}), recursive=True) }}
+    ard_render_devstack_compute: >-
+      {{ (ard_render_services_config.devstack.compute | default({})) |
+         combine((ard_render_overrides | default({})).get('devstack', {}).get('compute', {}), recursive=True) |
+         combine(ard_devstack_compute_overrides | default({}), recursive=True) }}
 
 - name: Ensure ARD deployment directories exist
   ansible.builtin.file:
@@ -39,19 +153,22 @@
 - name: Render deployment provider inputs
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/deployment.yaml"
-    force: false
     mode: "0644"
     content: |
+      {{ ard_render_generated_header }}
       ---
       ard_provider: {{ ard_provider }}
+      ard_provider_profile: {{ ard_provider_profile }}
       ard_deployment_name: {{ ard_deployment_name }}
       ard_resource_name_prefix: {{ ard_resource_name_prefix }}
 
+      ard_target_branch: {{ ard_target_branch }}
       ard_topology: {{ ard_topology }}
-      ard_default_image: {{ ard_default_image }}
-      ard_default_controller_flavor: {{ ard_default_controller_flavor }}
-      ard_default_compute_flavor: {{ ard_default_compute_flavor }}
-      ard_default_vm_preference: {{ ard_default_vm_preference }}
+      ard_service_profiles: {{ ard_render_service_profile_list | to_json }}
+      ard_default_image: {{ ard_render_default_image }}
+      ard_default_controller_flavor: {{ ard_render_controller_flavor }}
+      ard_default_compute_flavor: {{ ard_render_compute_flavor }}
+      ard_default_vm_preference: {{ ard_render_vm_preference }}
 
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
       ard_libvirt_network_cidr: {{ ard_libvirt_network_cidr }}
@@ -60,9 +177,9 @@
 - name: Render topology inputs
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/nodes.yaml"
-    force: false
     mode: "0644"
     content: |
+      {{ ard_render_generated_header }}
       ---
       ard_nodes:
         - name: controller
@@ -71,9 +188,9 @@
           groups:
             - controller
             - switch
-          image: {{ ard_default_image }}
-          flavor: {{ ard_default_controller_flavor }}
-          preference: {{ ard_default_vm_preference }}
+          image: {{ ard_render_default_image }}
+          flavor: {{ ard_render_controller_flavor }}
+          preference: {{ ard_render_vm_preference }}
           networks:
             - name: ard-mgmt
               ip: {{ ard_render_network_prefix }}.2
@@ -81,84 +198,52 @@
           profiles:
             - ssh
             - nested_virt
-            - ovn
-      {% if ard_topology in ['one-controller-one-compute', 'one-controller-two-compute'] %}
-        - name: compute1
-          hostname: compute1
-          provider_resource_name: {{ ard_resource_name_prefix }}-compute1
+      {% for profile in ard_render_node_profiles %}
+            - {{ profile }}
+      {% endfor %}
+      {% for index in range(1, (ard_render_topology_config.compute_count | int) + 1) %}
+        - name: compute{{ index }}
+          hostname: compute{{ index }}
+          provider_resource_name: {{ ard_resource_name_prefix }}-compute{{ index }}
           groups:
             - compute
             - peers
             - subnode
-          image: {{ ard_default_image }}
-          flavor: {{ ard_default_compute_flavor }}
-          preference: {{ ard_default_vm_preference }}
+          image: {{ ard_render_default_image }}
+          flavor: {{ ard_render_compute_flavor }}
+          preference: {{ ard_render_vm_preference }}
           networks:
             - name: ard-mgmt
-              ip: {{ ard_render_network_prefix }}.3
-              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:03"
+              ip: {{ ard_render_network_prefix }}.{{ index + 2 }}
+              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:{{ '%02x' | format(index + 2) }}"
           profiles:
             - ssh
             - nested_virt
-            - ovn
-      {% endif %}
-      {% if ard_topology == 'one-controller-two-compute' %}
-        - name: compute2
-          hostname: compute2
-          provider_resource_name: {{ ard_resource_name_prefix }}-compute2
-          groups:
-            - compute
-            - peers
-            - subnode
-          image: {{ ard_default_image }}
-          flavor: {{ ard_default_compute_flavor }}
-          preference: {{ ard_default_vm_preference }}
-          networks:
-            - name: ard-mgmt
-              ip: {{ ard_render_network_prefix }}.4
-              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:04"
-          profiles:
-            - ssh
-            - nested_virt
-            - ovn
-      {% endif %}
+      {% for profile in ard_render_node_profiles %}
+            - {{ profile }}
+      {% endfor %}
+      {% endfor %}
 
 - name: Render common DevStack vars
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/common.yaml"
-    force: false
     mode: "0644"
     content: |
-      ---
-      devstack_branch: master
-      run_devstack: true
-      enable_ceph: false
-      configure_vdpa: false
-      external_bridge_mtu: 1450
-      devstack_libvirt_type: kvm
-      stack_user_password: tester
+      {{ ard_render_generated_header }}
+      {{ ard_render_devstack_common | to_nice_yaml(indent=2, sort_keys=False) }}
 
 - name: Render controller DevStack vars
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
-    force: false
     mode: "0644"
     content: |
-      ---
-      controller_localrc_extra: {}
-      controller_local_conf_extra: {}
-      controller_services_extra:{{ '' if ard_topology == 'one-controller-two-compute' else ' {}' }}
-      {% if ard_topology == 'one-controller-two-compute' %}
-        n-cpu: false
-      {% endif %}
+      {{ ard_render_generated_header }}
+      {{ ard_render_devstack_controller | to_nice_yaml(indent=2, sort_keys=False) }}
 
 - name: Render compute DevStack vars
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
-    force: false
     mode: "0644"
     content: |
-      ---
-      compute_localrc_extra: {}
-      compute_local_conf_extra: {}
-      compute_services_extra: {}
+      {{ ard_render_generated_header }}
+      {{ ard_render_devstack_compute | to_nice_yaml(indent=2, sort_keys=False) }}

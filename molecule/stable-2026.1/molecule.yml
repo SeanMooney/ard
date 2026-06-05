@@ -4,13 +4,24 @@ dependency:
   enabled: false
 driver:
   name: default
-platforms:
-  - name: controller
-  - name: compute1
 provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
+  ard:
+    provider: libvirt
+    provider_profile: local-libvirt
+    deployment_name: molecule-stable-2026-1
+    resource_name_prefix: ard-molecule-stable-2026-1
+    target_branch: stable/2026.1
+    topology: one-controller-one-compute
+    service_profiles:
+      - devstack
+      - ovn
+      - tempest
+    libvirt:
+      network_name: ard-molecule-stable-2026-1
+      network_cidr: 192.168.98.0/24
 verifier:
   name: ansible
 scenario:

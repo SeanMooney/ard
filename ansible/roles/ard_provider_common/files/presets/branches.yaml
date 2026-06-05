@@ -1,0 +1,12 @@
+---
+ard_render_branches:
+  master:
+    devstack:
+      common:
+        devstack_branch: master
+  stable/2026.1:
+    devstack:
+      common:
+        devstack_branch: stable/2026.1
+    provider_defaults:
+      image: ubuntu-24.04
