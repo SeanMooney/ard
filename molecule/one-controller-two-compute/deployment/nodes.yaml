@@ -1,0 +1,56 @@
+---
+ard_nodes:
+  - name: controller
+    hostname: controller
+    provider_resource_name: ard-molecule-octc-controller
+    groups:
+      - controller
+      - switch
+    image: debian-13
+    flavor: devstack-control
+    preference: devstack
+    networks:
+      - name: ard-mgmt
+        ip: 192.168.97.2
+        mac: "52:54:00:97:00:02"
+    profiles:
+      - ssh
+      - nested_virt
+      - ovn
+  - name: compute1
+    hostname: compute1
+    provider_resource_name: ard-molecule-octc-compute1
+    groups:
+      - compute
+      - peers
+      - subnode
+    image: debian-13
+    flavor: devstack-compute
+    preference: devstack
+    networks:
+      - name: ard-mgmt
+        ip: 192.168.97.3
+        mac: "52:54:00:97:00:03"
+    profiles:
+      - ssh
+      - nested_virt
+      - ovn
+
+  - name: compute2
+    hostname: compute2
+    provider_resource_name: ard-molecule-octc-compute2
+    groups:
+      - compute
+      - peers
+      - subnode
+    image: debian-13
+    flavor: devstack-compute
+    preference: devstack
+    networks:
+      - name: ard-mgmt
+        ip: 192.168.97.4
+        mac: "52:54:00:97:00:04"
+    profiles:
+      - ssh
+      - nested_virt
+      - ovn

@@ -1,0 +1,67 @@
+---
+ard_provider: libvirt
+ard_deployment_name: molecule-stable-2026-1
+ard_resource_name_prefix: ard-molecule-stable-2026-1
+
+ard_default_image: ubuntu-24.04
+ard_default_controller_flavor: devstack-control
+ard_default_compute_flavor: devstack-compute
+ard_default_vm_preference: devstack
+
+ard_image_cache_dir: "{{ lookup('env', 'XDG_CACHE_HOME') | default(lookup('env', 'HOME') + '/.cache', true) }}/ard/images"
+ard_image_download: true
+ard_image_checksum_required: false
+
+ard_libvirt_uri: qemu:///system
+ard_libvirt_pool: ard
+ard_libvirt_network_name: ard-molecule-stable-2026-1
+ard_libvirt_network_cidr: 192.168.98.0/24
+ard_libvirt_network_gateway: 192.168.98.1
+ard_libvirt_image_dir: "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}/ard/libvirt/images"
+
+ard_images:
+  debian-13:
+    os_family: debian
+    version: "13"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+        alternate_urls:
+          - https://cloud.debian.org/images/cloud/trixie/latest/debian-13-nocloud-amd64.qcow2
+        name: debian-13
+        cache_filename: debian-13-genericcloud-amd64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+  ubuntu-24.04:
+    os_family: ubuntu
+    version: "24.04"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+        name: ubuntu-24.04
+        cache_filename: noble-server-cloudimg-amd64.img
+        format: qcow2
+        cloud_init_datasource: NoCloud
+ard_flavors:
+  devstack-control:
+    vcpus: 8
+    memory: 16Gi
+    root_disk_gb: 80
+    nested_virt: true
+    provider:
+      libvirt:
+        vcpus: 8
+        memory_mb: 16384
+        cpu_mode: host-passthrough
+  devstack-compute:
+    vcpus: 8
+    memory: 8Gi
+    root_disk_gb: 80
+    nested_virt: true
+    provider:
+      libvirt:
+        vcpus: 8
+        memory_mb: 8192
+        cpu_mode: host-passthrough

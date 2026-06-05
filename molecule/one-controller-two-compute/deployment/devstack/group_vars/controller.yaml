@@ -1,0 +1,5 @@
+---
+controller_localrc_extra: {}
+controller_local_conf_extra: {}
+controller_services_extra:
+  n-cpu: false

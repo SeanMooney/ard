@@ -1,5 +1,5 @@
 ---
-- name: Deploy DevStack into ARD libvirt deployment
+- name: Destroy ARD libvirt deployment
   hosts: localhost
   connection: local
   gather_facts: false
@@ -8,13 +8,13 @@
     ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
     ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
   tasks:
-    - name: Run ARD DevStack deployment playbook
+    - name: Destroy ARD provider resources
       ansible.builtin.command:
         argv:
           - ansible-playbook
           - -i
-          - "{{ ard_deployment_dir }}/inventory.yaml"
-          - ansible/playbooks/ard-deploy-devstack.yaml
+          - localhost,
+          - ansible/playbooks/ard-destroy.yaml
           - -e
           - ard_deployment_dir={{ ard_deployment_dir }}
       environment:

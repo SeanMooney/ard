@@ -1,23 +1,17 @@
-*********************************
-Vagrant driver installation guide
-*********************************
+************************************
+ARD libvirt scenario requirements
+************************************
 
-Requirements
-============
+This scenario uses Molecule's default/delegated driver to call the ARD
+libvirt provider playbooks. It creates one controller and two compute nodes.
+It does not require Vagrant.
 
-* Vagrant
-* Virtualbox, Parallels, VMware Fusion, VMware Workstation or VMware Desktop
-
-Install
-=======
-
-Please refer to the `Virtual environment`_ documentation for installation best
-practices. If not using a virtual environment, please consider passing the
-widely recommended `'--user' flag`_ when invoking ``pip``.
-
-.. _Virtual environment: https://virtualenv.pypa.io/en/latest/
-.. _'--user' flag: https://packaging.python.org/tutorials/installing-packages/#installing-to-the-user-site
+Run
+===
 
 .. code-block:: bash
 
-    $ pip install 'molecule_vagrant'
+    uv run molecule create -s one-controller-two-compute
+    uv run molecule converge -s one-controller-two-compute
+    uv run molecule verify -s one-controller-two-compute
+    uv run molecule destroy -s one-controller-two-compute
