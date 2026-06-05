@@ -4,12 +4,14 @@
   connection: local
   gather_facts: false
   roles:
+    - ard_provider_common
     - ard_provider_inventory
 
 - name: Load ARD deployment DevStack variables
   hosts: all
   gather_facts: false
   roles:
+    - ard_provider_common
     - ard_devstack_config
 
 - name: Wait for provider node bootstrap to finish

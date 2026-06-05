@@ -1,0 +1,6 @@
+---
+# This role intentionally defines shared ARD provider defaults. Keeping a
+# no-op task file lets playbooks include the role explicitly before provider
+# dispatcher roles load deployment-specific overrides.
+- name: Load ARD provider common defaults
+  ansible.builtin.meta: noop

@@ -12,7 +12,6 @@
     ard_node_seed_local: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}/{{ ard_node.name }}-seed.iso"
     ard_node_seed: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-seed.iso"
     ard_node_console_log: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-console.log"
-    ard_node_nvram: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-vars.fd"
 
 - name: Ensure rendered node directory exists
   file:
