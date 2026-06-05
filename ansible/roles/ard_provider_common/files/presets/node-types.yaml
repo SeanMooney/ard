@@ -1,0 +1,20 @@
+---
+ard_render_node_types:
+  controller:
+    groups:
+      - controller
+      - switch
+    profiles:
+      - ssh
+      - nested_virt
+    flavor: devstack-control
+
+  compute:
+    groups:
+      - compute
+      - peers
+      - subnode
+    profiles:
+      - ssh
+      - nested_virt
+    flavor: devstack-compute
