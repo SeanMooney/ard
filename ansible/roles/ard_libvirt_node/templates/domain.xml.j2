@@ -3,10 +3,12 @@
   <memory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</memory>
   <currentMemory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</currentMemory>
   <vcpu placement='static'>{{ ard_node_flavor.vcpus }}</vcpu>
-  <os>
+  <os firmware='{{ ard_libvirt_firmware | default("efi") }}'>
     <type arch='x86_64' machine='q35'>hvm</type>
-    <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
-    <nvram template='/usr/share/OVMF/OVMF_VARS_4M.fd'>{{ ard_node_nvram }}</nvram>
+    <firmware>
+      <feature enabled='{{ "yes" if ard_libvirt_secure_boot | default(false) | bool else "no" }}' name='secure-boot'/>
+    </firmware>
+    <loader secure='{{ "yes" if ard_libvirt_secure_boot | default(false) | bool else "no" }}'/>
     <boot dev='hd'/>
   </os>
   <features>

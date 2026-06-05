@@ -1,6 +1,6 @@
 ---
 - name: Check required libvirt provider commands
-  shell: "command -v {{ item }}"
+  ansible.builtin.shell: "command -v {{ item }}"
   changed_when: false
   loop:
     - virsh
@@ -11,31 +11,25 @@
   register: ard_libvirt_command_checks
   failed_when: ard_libvirt_command_checks.rc != 0
 
-- name: Check OVMF firmware exists
-  stat:
-    path: /usr/share/OVMF/OVMF_CODE_4M.fd
-  register: ard_ovmf_code
-
-- name: Require OVMF firmware for Debian cloud image boot
-  assert:
-    that:
-      - ard_ovmf_code.stat.exists
-    fail_msg: "OVMF firmware not found at /usr/share/OVMF/OVMF_CODE_4M.fd"
-
 - name: Check libvirt connection
-  command: "virsh --connect {{ ard_libvirt_uri }} uri"
+  ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} uri"
   changed_when: false
 
+- name: Check libvirt version for firmware auto-selection
+  ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} version"
+  changed_when: false
+  register: ard_libvirt_version
+
 - name: Ensure stack SSH key exists
-  command: ssh-keygen -t ed25519 -N '' -f {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
+  ansible.builtin.command: ssh-keygen -t ed25519 -N '' -f {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
   args:
     creates: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
 
 - name: Read stack public SSH key
-  slurp:
+  ansible.builtin.slurp:
     src: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack.pub"
   register: ard_stack_public_key_slurp
 
 - name: Set stack public SSH key fact
-  set_fact:
+  ansible.builtin.set_fact:
     ard_stack_public_key: "{{ ard_stack_public_key_slurp.content | b64decode | trim }}"

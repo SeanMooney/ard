@@ -4,6 +4,7 @@
   connection: local
   gather_facts: true
   roles:
+    - ard_provider_common
     - ard_provider_preflight
     - ard_provider_image
     - ard_provider_network

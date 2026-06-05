@@ -11,3 +11,19 @@
 - name: Run provider destroy handling
   include_role:
     name: "ard_{{ ard_provider }}_destroy"
+
+- name: Remove generated ARD deployment artifacts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ ard_deployment_dir }}/inventory.yaml"
+    - "{{ ard_deployment_dir }}/provider-state.yaml"
+    - "{{ ard_deployment_dir }}/rendered"
+  when: ard_destroy_cleanup_generated | default(false) | bool
+
+- name: Remove ARD deployment logs
+  ansible.builtin.file:
+    path: "{{ ard_deployment_dir }}/logs"
+    state: absent
+  when: ard_destroy_cleanup_logs | default(false) | bool

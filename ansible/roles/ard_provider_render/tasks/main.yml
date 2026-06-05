@@ -1,12 +1,31 @@
 ---
 - name: Set ARD deployment render facts
-  set_fact:
+  ansible.builtin.set_fact:
     ard_deployment_dir: "{{ ard_deployment_dir | default('deployments/devstack-1') }}"
     ard_deployment_name: "{{ ard_deployment_name | default((ard_deployment_dir | default('deployments/devstack-1')) | basename) }}"
     ard_provider: "{{ ard_provider | default('libvirt') }}"
+    ard_topology: "{{ ard_topology | default('one-controller-one-compute') }}"
+
+- name: Validate supported local render inputs
+  ansible.builtin.assert:
+    that:
+      - ard_provider == 'libvirt'
+      - ard_topology in ['one-controller-one-compute', 'one-controller-two-compute']
+      - ard_libvirt_network_cidr is match('^([0-9]{1,3}\.){3}0/24$')
+    fail_msg: >-
+      Local render currently supports libvirt and /24 CIDRs only. Requested
+      provider={{ ard_provider }}, topology={{ ard_topology }},
+      cidr={{ ard_libvirt_network_cidr }}.
+
+- name: Derive local network render facts
+  ansible.builtin.set_fact:
+    ard_render_network_prefix: "{{ ard_libvirt_network_cidr | regex_replace('\\.0/24$', '') }}"
+    ard_libvirt_network_gateway: "{{ ard_libvirt_network_gateway | default(ard_libvirt_network_cidr | regex_replace('\\.0/24$', '.1')) }}"
+    ard_resource_name_prefix: "{{ ard_resource_name_prefix | default('ard-' + ard_deployment_name) }}"
+    ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
 
 - name: Ensure ARD deployment directories exist
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
@@ -18,7 +37,7 @@
     - "{{ ard_deployment_dir }}/logs"
 
 - name: Render deployment provider inputs
-  copy:
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/deployment.yaml"
     force: false
     mode: "0644"
@@ -26,85 +45,20 @@
       ---
       ard_provider: {{ ard_provider }}
       ard_deployment_name: {{ ard_deployment_name }}
-      ard_resource_name_prefix: ard-{{ ard_deployment_name }}
+      ard_resource_name_prefix: {{ ard_resource_name_prefix }}
 
-      ard_default_image: debian-13
-      ard_default_controller_flavor: devstack-control
-      ard_default_compute_flavor: devstack-compute
-      ard_default_vm_preference: devstack
+      ard_topology: {{ ard_topology }}
+      ard_default_image: {{ ard_default_image }}
+      ard_default_controller_flavor: {{ ard_default_controller_flavor }}
+      ard_default_compute_flavor: {{ ard_default_compute_flavor }}
+      ard_default_vm_preference: {{ ard_default_vm_preference }}
 
-      ard_image_cache_dir: "{{ lookup('env', 'XDG_CACHE_HOME') | default(lookup('env', 'HOME') + '/.cache', true) }}/ard/images"
-      ard_image_download: true
-      ard_image_checksum_required: false
+      ard_libvirt_network_name: {{ ard_libvirt_network_name }}
+      ard_libvirt_network_cidr: {{ ard_libvirt_network_cidr }}
+      ard_libvirt_network_gateway: {{ ard_libvirt_network_gateway }}
 
-      ard_libvirt_uri: qemu:///system
-      ard_libvirt_pool: ard
-      ard_libvirt_network_name: ard-{{ ard_deployment_name }}
-      ard_libvirt_network_cidr: 192.168.96.0/24
-      ard_libvirt_network_gateway: 192.168.96.1
-      ard_libvirt_image_dir: "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}/ard/libvirt/images"
-
-      ard_images:
-        debian-13:
-          os_family: debian
-          version: "13"
-          cloud_init: true
-          provider:
-            libvirt:
-              url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
-              alternate_urls:
-                - https://cloud.debian.org/images/cloud/trixie/latest/debian-13-nocloud-amd64.qcow2
-              name: debian-13
-              cache_filename: debian-13-genericcloud-amd64.qcow2
-              format: qcow2
-              cloud_init_datasource: NoCloud
-        ubuntu-24.04:
-          os_family: ubuntu
-          version: "24.04"
-          cloud_init: true
-          provider:
-            libvirt:
-              url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
-              name: ubuntu-24.04
-              cache_filename: noble-server-cloudimg-amd64.img
-              format: qcow2
-              cloud_init_datasource: NoCloud
-        ubuntu-26.04:
-          os_family: ubuntu
-          version: "26.04"
-          cloud_init: true
-          provider:
-            libvirt:
-              url: null
-              name: ubuntu-26.04
-              cache_filename: ubuntu-26.04-cloudimg-amd64.img
-              format: qcow2
-              cloud_init_datasource: NoCloud
-
-      ard_flavors:
-        devstack-control:
-          vcpus: 8
-          memory: 16Gi
-          root_disk_gb: 80
-          nested_virt: true
-          provider:
-            libvirt:
-              vcpus: 8
-              memory_mb: 16384
-              cpu_mode: host-passthrough
-        devstack-compute:
-          vcpus: 8
-          memory: 8Gi
-          root_disk_gb: 80
-          nested_virt: true
-          provider:
-            libvirt:
-              vcpus: 8
-              memory_mb: 8192
-              cpu_mode: host-passthrough
-
-- name: Render two-node topology inputs
-  copy:
+- name: Render topology inputs
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/nodes.yaml"
     force: false
     mode: "0644"
@@ -113,42 +67,64 @@
       ard_nodes:
         - name: controller
           hostname: controller
-          provider_resource_name: ard-{{ ard_deployment_name }}-controller
+          provider_resource_name: {{ ard_resource_name_prefix }}-controller
           groups:
             - controller
             - switch
-          image: debian-13
-          flavor: devstack-control
-          preference: devstack
+          image: {{ ard_default_image }}
+          flavor: {{ ard_default_controller_flavor }}
+          preference: {{ ard_default_vm_preference }}
           networks:
             - name: ard-mgmt
-              ip: 192.168.96.2
-              mac: "52:54:00:96:00:02"
+              ip: {{ ard_render_network_prefix }}.2
+              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:02"
           profiles:
             - ssh
             - nested_virt
             - ovn
+      {% if ard_topology in ['one-controller-one-compute', 'one-controller-two-compute'] %}
         - name: compute1
           hostname: compute1
-          provider_resource_name: ard-{{ ard_deployment_name }}-compute1
+          provider_resource_name: {{ ard_resource_name_prefix }}-compute1
           groups:
             - compute
             - peers
             - subnode
-          image: debian-13
-          flavor: devstack-compute
-          preference: devstack
+          image: {{ ard_default_image }}
+          flavor: {{ ard_default_compute_flavor }}
+          preference: {{ ard_default_vm_preference }}
           networks:
             - name: ard-mgmt
-              ip: 192.168.96.3
-              mac: "52:54:00:96:00:03"
+              ip: {{ ard_render_network_prefix }}.3
+              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:03"
           profiles:
             - ssh
             - nested_virt
             - ovn
+      {% endif %}
+      {% if ard_topology == 'one-controller-two-compute' %}
+        - name: compute2
+          hostname: compute2
+          provider_resource_name: {{ ard_resource_name_prefix }}-compute2
+          groups:
+            - compute
+            - peers
+            - subnode
+          image: {{ ard_default_image }}
+          flavor: {{ ard_default_compute_flavor }}
+          preference: {{ ard_default_vm_preference }}
+          networks:
+            - name: ard-mgmt
+              ip: {{ ard_render_network_prefix }}.4
+              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:04"
+          profiles:
+            - ssh
+            - nested_virt
+            - ovn
+      {% endif %}
 
 - name: Render common DevStack vars
-  copy:
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/common.yaml"
     force: false
     mode: "0644"
@@ -163,7 +139,7 @@
       stack_user_password: tester
 
 - name: Render controller DevStack vars
-  copy:
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
     force: false
     mode: "0644"
@@ -171,10 +147,13 @@
       ---
       controller_localrc_extra: {}
       controller_local_conf_extra: {}
-      controller_services_extra: {}
+      controller_services_extra:{{ '' if ard_topology == 'one-controller-two-compute' else ' {}' }}
+      {% if ard_topology == 'one-controller-two-compute' %}
+        n-cpu: false
+      {% endif %}
 
 - name: Render compute DevStack vars
-  copy:
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
     force: false
     mode: "0644"
