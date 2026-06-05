@@ -5,8 +5,10 @@
     ard_node_resource_name: "{{ ard_node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + ard_node.name) }}"
     ard_node_flavor: "{{ ard_flavors[ard_node.flavor].provider.libvirt }}"
     ard_node_root_disk_gb: "{{ ard_flavors[ard_node.flavor].root_disk_gb | default(80) }}"
-    ard_node_ip: "{{ ard_node.networks[0].ip }}"
-    ard_node_mac: "{{ ard_node.networks[0].mac }}"
+    ard_node_management_network: "{{ ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first }}"
+    ard_node_networks: "{{ ard_node.networks }}"
+    ard_node_ip: "{{ (ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first).ip }}"
+    ard_node_mac: "{{ (ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first).mac }}"
     ard_node_render_dir: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}"
     ard_node_overlay: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}.qcow2"
     ard_node_seed_local: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}/{{ ard_node.name }}-seed.iso"
@@ -127,19 +129,29 @@
     content: |
       version: 2
       ethernets:
-        ard-mgmt:
+      {% for node_network in ard_node_networks %}
+        ard-{{ loop.index0 }}:
           match:
-            macaddress: "{{ ard_node_mac }}"
-          set-name: eth0
+            macaddress: "{{ node_network.mac }}"
+          set-name: eth{{ loop.index0 }}
+      {% if node_network.ip is defined %}
           addresses:
-            - {{ ard_node_ip }}/24
+            - {{ node_network.ip }}/24
+      {% else %}
+          dhcp4: false
+          dhcp6: false
+          optional: true
+      {% endif %}
+      {% if node_network.name == ard_management_network %}
           routes:
             - to: default
-              via: {{ ard_libvirt_network_gateway }}
+              via: {{ ard_networks[ard_management_network].gateway }}
           nameservers:
             addresses:
-              - {{ ard_libvirt_network_gateway }}
+              - {{ ard_networks[ard_management_network].gateway }}
               - 1.1.1.1
+      {% endif %}
+      {% endfor %}
 
 - name: Create cloud-init seed ISO locally
   command: "cloud-localds --network-config={{ ard_node_render_dir }}/network-config {{ ard_node_seed_local }} {{ ard_node_render_dir }}/user-data {{ ard_node_render_dir }}/meta-data"

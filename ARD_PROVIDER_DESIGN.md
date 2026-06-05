@@ -514,13 +514,14 @@ ard_render_topologies:
             ip_start: 3
 ```
 
-Counted pools default to readable hyphenated names like `{type}-{index}`. Singleton pools may set explicit names such as `controller`. The current presets render `compute-1` and `compute-2` rather than the older `compute-1` and `compute-2` spelling.
+Counted pools default to readable hyphenated names like `{type}-{index}`. Singleton pools may set explicit names such as `controller`. The current presets render `compute-1` and `compute-2` rather than the older unhyphenated `compute1` and `compute2` spelling.
 
 Generated concrete files such as `deployment.yaml`, `nodes.yaml`, and `devstack/*.yaml` are render output. They should include a generated-file header and may be overwritten by subsequent renders. Local customizations belong in the render intent or an overlay such as `overrides/render.yaml`.
 
-The supported explicit overlay dictionary is:
+The supported explicit overlay dictionary uses ordinary recursive dictionary merge semantics. Later dictionaries replace scalar and list values for the relevant section; there is no separate patch language with `add`, `remove`, or `replace` operations.
 
 ```yaml
+ard_management_network: ard-mgmt
 ard_render_overrides:
   provider_defaults:
     image: ubuntu-24.04
@@ -532,7 +533,14 @@ ard_render_overrides:
       count: 3
       flavor: larger-compute
       profiles:
+        - ssh
+        - nested_virt
         - performance
+      networks:
+        - name: ard-mgmt
+          ip_start: 3
+        - name: storage
+          ip_start: 20
   networks:
     storage:
       cidr: 192.168.120.0/24
@@ -551,13 +559,32 @@ ard_render_node_overrides:
     image: ubuntu-24.04
     flavor: gpu-compute
     profiles:
-      add: [gpu]
-    groups:
-      add: [special]
+      - ssh
+      - nested_virt
+      - gpu
     networks:
       ard-mgmt:
         ip: 192.168.96.50
 ```
+
+`ard_management_network` selects the network used for generated SSH inventory and `nodepool.private_ipv4`. Additional networks are valid provider contract data; the libvirt provider renders one libvirt network per entry and attaches all node networks as VM interfaces.
+
+Networks support two initial modes:
+
+```yaml
+ard_render_overrides:
+  networks:
+    storage:
+      mode: nat
+      cidr: 192.168.120.0/24
+      provider_network: ard-storage
+    tenant:
+      mode: isolated
+      provider_network: tenant
+      mac_id: 130
+```
+
+`nat` networks have host-side IP/DHCP/NAT and require a CIDR. `isolated` networks are bridge-only libvirt networks with no host-side IP, NAT, or DHCP. The built-in `tenant` preset is isolated and opt-in; no current topology attaches it by default.
 
 For command-line convenience, `ard_render_image`, `ard_render_controller_flavor`, `ard_render_compute_flavor`, and `ard_render_vm_preference` can override the composed provider defaults without changing the eventual provider input names written to `deployment.yaml`.
 

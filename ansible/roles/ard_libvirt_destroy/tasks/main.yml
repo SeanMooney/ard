@@ -46,14 +46,23 @@
   changed_when: ard_undefine_domain.rc == 0
   failed_when: false
 
-- name: Destroy libvirt network
-  command: "virsh --connect {{ ard_libvirt_uri }} net-destroy {{ ard_libvirt_network_name }}"
+- name: Build destroy network list
+  set_fact:
+    ard_destroy_networks: >-
+      {{ ard_state.networks | default([{'name': ard_management_network | default('ard-mgmt'), 'libvirt_name': ard_libvirt_network_name}])
+         if ard_provider_state_stat.stat.exists
+         else [{'name': ard_management_network | default('ard-mgmt'), 'libvirt_name': ard_libvirt_network_name}] }}
+
+- name: Destroy libvirt networks
+  command: "virsh --connect {{ ard_libvirt_uri }} net-destroy {{ item.libvirt_name }}"
+  loop: "{{ ard_destroy_networks | default([]) }}"
   register: ard_net_destroy
   changed_when: ard_net_destroy.rc == 0
   failed_when: false
 
-- name: Undefine libvirt network
-  command: "virsh --connect {{ ard_libvirt_uri }} net-undefine {{ ard_libvirt_network_name }}"
+- name: Undefine libvirt networks
+  command: "virsh --connect {{ ard_libvirt_uri }} net-undefine {{ item.libvirt_name }}"
+  loop: "{{ ard_destroy_networks | default([]) }}"
   register: ard_net_undefine
   changed_when: ard_net_undefine.rc == 0
   failed_when: false

@@ -15,6 +15,7 @@ ard_default_image: debian-13
 ard_default_controller_flavor: devstack-control
 ard_default_compute_flavor: devstack-compute
 ard_default_vm_preference: devstack
+ard_management_network: ard-mgmt
 
 ard_image_cache_dir: "{{ lookup('env', 'XDG_CACHE_HOME') | default(lookup('env', 'HOME') + '/.cache', true) }}/ard/images"
 ard_image_download: true

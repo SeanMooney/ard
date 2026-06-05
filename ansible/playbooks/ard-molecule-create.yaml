@@ -1,0 +1,98 @@
+---
+- name: Create ARD Molecule deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
+    ard_scenario_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
+    ard_deployment_dir: "{{ ard_scenario_dir }}/deployment"
+    ard_molecule_render_vars_file: "{{ ard_deployment_dir }}/.molecule-render-vars.yaml"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
+  tasks:
+    - name: Load Molecule scenario configuration
+      ansible.builtin.include_vars:
+        file: "{{ ard_scenario_dir }}/molecule.yml"
+        name: ard_molecule_config
+
+    - name: Validate Molecule ARD scenario configuration
+      ansible.builtin.assert:
+        that:
+          - ard_molecule_config.provisioner.ard is defined
+          - ard_molecule_config.provisioner.ard.topology is defined
+          - ard_molecule_config.provisioner.ard.libvirt.network_cidr is defined
+        fail_msg: >-
+          Molecule scenario must define provisioner.ard.topology and
+          provisioner.ard.libvirt.network_cidr in molecule.yml.
+
+    - name: Ensure ARD deployment directory exists for generated render vars
+      ansible.builtin.file:
+        path: "{{ ard_deployment_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write generated ARD render vars from Molecule scenario
+      ansible.builtin.copy:
+        dest: "{{ ard_molecule_render_vars_file }}"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: {{ ard_molecule_config.provisioner.ard.provider | default('libvirt') }}
+          ard_provider_profile: {{ ard_molecule_config.provisioner.ard.provider_profile | default('local-libvirt') }}
+          ard_deployment_name: {{ ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename) }}
+          ard_resource_name_prefix: {{ ard_molecule_config.provisioner.ard.resource_name_prefix | default('ard-' ~ (ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename))) }}
+          ard_target_branch: {{ ard_molecule_config.provisioner.ard.target_branch | default('master') }}
+          ard_topology: {{ ard_molecule_config.provisioner.ard.topology }}
+          ard_service_profiles: {{ ard_molecule_config.provisioner.ard.service_profiles | default(['devstack', 'ovn', 'tempest']) | to_json }}
+          ard_libvirt_network_name: {{ ard_molecule_config.provisioner.ard.libvirt.network_name | default('ard-' ~ (ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename))) }}
+          ard_libvirt_network_cidr: {{ ard_molecule_config.provisioner.ard.libvirt.network_cidr }}
+          {% if ard_molecule_config.provisioner.ard.management_network is defined %}
+          ard_management_network: {{ ard_molecule_config.provisioner.ard.management_network }}
+          {% endif %}
+          {% if ard_molecule_config.provisioner.ard.render_image is defined %}
+          ard_render_image: {{ ard_molecule_config.provisioner.ard.render_image }}
+          {% endif %}
+          {% if ard_molecule_config.provisioner.ard.render_overrides is defined %}
+          ard_render_overrides:
+          {{ ard_molecule_config.provisioner.ard.render_overrides | to_nice_yaml(indent=2, sort_keys=False) | indent(2, true) }}
+          {% endif %}
+          {% if ard_molecule_config.provisioner.ard.node_overrides is defined %}
+          ard_render_node_overrides:
+          {{ ard_molecule_config.provisioner.ard.node_overrides | to_nice_yaml(indent=2, sort_keys=False) | indent(2, true) }}
+          {% endif %}
+
+    - name: Render ARD deployment workspace
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - -i
+          - localhost,
+          - ansible/playbooks/ard-render.yaml
+          - -e
+          - "@{{ ard_molecule_render_vars_file }}"
+          - -e
+          - ard_deployment_dir={{ ard_deployment_dir }}
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true
+
+    - name: Apply ARD provider resources
+      tags:
+        - apply
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - -i
+          - localhost,
+          - ansible/playbooks/ard-apply.yaml
+          - -e
+          - ard_deployment_dir={{ ard_deployment_dir }}
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true

@@ -8,16 +8,17 @@
       all:
         hosts:
       {% for node in ard_nodes %}
+      {% set management_network = (node.networks | selectattr('name', 'equalto', ard_management_network) | list | first) %}
           {{ node.name }}:
-            ansible_host: {{ node.networks[0].ip }}
+            ansible_host: {{ management_network.ip }}
             ansible_user: stack
             ansible_private_key_file: {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
             ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
             ard_deployment_name: {{ ard_deployment_name }}
             ard_provider_resource_name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
             nodepool:
-              private_ipv4: {{ node.networks[0].ip }}
-              public_ipv4: {{ node.networks[0].ip }}
+              private_ipv4: {{ management_network.ip }}
+              public_ipv4: {{ management_network.ip }}
             zuul:
               executor:
                 log_root: /tmp/zuul_logs
@@ -44,19 +45,21 @@
   ansible.builtin.add_host:
     name: "{{ item.name }}"
     groups: "{{ ['ard_provider_nodes'] + item.groups }}"
-    ansible_host: "{{ item.networks[0].ip }}"
+    ansible_host: "{{ ard_inventory_management_network.ip }}"
     ansible_user: stack
     ansible_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ item.provider_resource_name | default('ard-' + ard_deployment_name + '-' + item.name) }}"
     nodepool:
-      private_ipv4: "{{ item.networks[0].ip }}"
-      public_ipv4: "{{ item.networks[0].ip }}"
+      private_ipv4: "{{ ard_inventory_management_network.ip }}"
+      public_ipv4: "{{ ard_inventory_management_network.ip }}"
     zuul:
       executor:
         log_root: /tmp/zuul_logs
         work_root: /tmp/work_root
+  vars:
+    ard_inventory_management_network: "{{ item.networks | selectattr('name', 'equalto', ard_management_network) | list | first }}"
   loop: "{{ ard_nodes }}"
 
 - name: Write ARD provider state
@@ -68,16 +71,38 @@
       ard_provider: libvirt
       ard_deployment_name: {{ ard_deployment_name }}
       ard_libvirt_uri: {{ ard_libvirt_uri }}
+      ard_management_network: {{ ard_management_network }}
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
       ard_libvirt_image_dir: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}
       ard_cached_base_image: {{ ard_cached_base_image | default('') }}
       ard_libvirt_base_image: {{ ard_libvirt_base_image | default('') }}
+      networks:
+      {% for network_name, network in ard_networks.items() %}
+        - name: {{ network_name }}
+          libvirt_name: {{ network.provider.libvirt.name }}
+          mode: {{ network.mode | default('nat') }}
+      {% if network.cidr is defined %}
+          cidr: {{ network.cidr }}
+      {% endif %}
+      {% if network.gateway is defined %}
+          gateway: {{ network.gateway }}
+      {% endif %}
+      {% endfor %}
       domains:
       {% for node in ard_nodes %}
+      {% set management_network = (node.networks | selectattr('name', 'equalto', ard_management_network) | list | first) %}
         - inventory_name: {{ node.name }}
           name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
-          ip: {{ node.networks[0].ip }}
-          mac: {{ node.networks[0].mac }}
+          ip: {{ management_network.ip }}
+          mac: {{ management_network.mac }}
+          networks:
+      {% for node_network in node.networks %}
+            - name: {{ node_network.name }}
+      {% if node_network.ip is defined %}
+              ip: {{ node_network.ip }}
+      {% endif %}
+              mac: {{ node_network.mac }}
+      {% endfor %}
           overlay: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}.qcow2
           seed: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-seed.iso
           console_log: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-console.log

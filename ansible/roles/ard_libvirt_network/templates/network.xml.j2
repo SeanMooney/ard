@@ -1,0 +1,20 @@
+<network>
+  <name>{{ ard_libvirt_render_network.provider.libvirt.name }}</name>
+{% if ard_libvirt_render_network.provider.libvirt.bridge_name is defined %}
+  <bridge name='{{ ard_libvirt_render_network.provider.libvirt.bridge_name }}' stp='on' delay='0'/>
+{% endif %}
+{% if ard_libvirt_render_network.mode | default('nat') == 'nat' %}
+  <forward mode='nat'/>
+  <ip address='{{ ard_libvirt_render_network.gateway }}' netmask='255.255.255.0'>
+    <dhcp>
+{% for node in ard_nodes %}
+{% for node_network in node.networks | selectattr('name', 'equalto', ard_libvirt_render_network_name) %}
+{% if node_network.ip is defined %}
+      <host mac='{{ node_network.mac }}' name='{{ node.hostname | default(node.name) }}' ip='{{ node_network.ip }}'/>
+{% endif %}
+{% endfor %}
+{% endfor %}
+    </dhcp>
+  </ip>
+{% endif %}
+</network>

@@ -229,9 +229,10 @@ Use it with:
 make render ARD_DEPLOYMENT=stable-test ARD_RENDER_FILE=examples/render.yaml
 ```
 
-Use `ard_render_overrides` for simple kustomize-like customizations:
+Use `ard_render_overrides` for simple kustomize-like customizations. Overrides use ordinary recursive dictionary merge semantics: later dictionaries replace scalar and list values for the relevant section.
 
 ```yaml
+ard_management_network: ard-mgmt
 ard_render_overrides:
   provider_defaults:
     image: ubuntu-24.04
@@ -240,7 +241,14 @@ ard_render_overrides:
       count: 2
       flavor: devstack-compute
       profiles:
+        - ssh
+        - nested_virt
         - performance
+      networks:
+        - name: ard-mgmt
+          ip_start: 3
+        - name: storage
+          ip_start: 20
   networks:
     storage:
       cidr: 192.168.120.0/24
@@ -257,12 +265,30 @@ ard_render_node_overrides:
     image: ubuntu-24.04
     flavor: devstack-compute
     profiles:
-      add:
-        - gpu
+      - ssh
+      - nested_virt
+      - gpu
     networks:
       ard-mgmt:
         ip: 192.168.98.50
 ```
+
+The libvirt provider supports multiple rendered networks. `ard_management_network` selects which attached network is used for SSH inventory and `nodepool.private_ipv4`; additional networks are rendered as extra libvirt networks and attached as additional VM interfaces.
+
+The built-in `tenant` network preset is isolated and opt-in. It is not attached by default, but can be added to a node pool when guests need a bridge-only network for their own VLANs, DHCP, or overlay experiments:
+
+```yaml
+ard_render_overrides:
+  node_pools:
+    compute:
+      networks:
+        - name: ard-mgmt
+          ip_start: 3
+        - name: tenant
+          mac_start: 20
+```
+
+Isolated networks render as libvirt networks without host-side IP, NAT, or DHCP. Guest interfaces are still given deterministic MAC addresses and stable interface names.
 
 Current service profiles are:
 
