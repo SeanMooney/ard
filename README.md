@@ -63,8 +63,8 @@ make cleanup ARD_DEPLOYMENT=devstack-a
 The normal local workflow is:
 
 1. `render`: create an editable deployment workspace.
-2. `apply`: create libvirt network/domain/disk/seed resources and inventory.
-3. `ping`: verify SSH/Ansible connectivity.
+2. `apply`: create libvirt network/domain/disk/seed resources, generate inventory, and wait for SSH/cloud-init readiness.
+3. `ping`: verify SSH/Ansible connectivity again.
 4. `deploy`: run the multinode DevStack playbook.
 5. `verify`: run basic post-deploy checks.
 6. `destroy`: remove libvirt resources but keep the workspace and generated artifacts for inspection.
@@ -305,14 +305,16 @@ libvirt cannot define or start the domain.
 
 ### SSH not ready
 
-`apply` creates VMs and inventory. If an immediate ping fails, wait briefly and
-retry:
+`apply` creates VMs and inventory, then waits for SSH and cloud-init completion
+before returning. If `apply` times out, inspect the serial console logs under the
+libvirt deployment state directory or retry:
 
 ```bash
-make ping ARD_DEPLOYMENT=devstack-a
+make apply ARD_DEPLOYMENT=devstack-a
 ```
 
-Molecule create waits for SSH before converging.
+Molecule create uses the same apply playbook, so it also waits for node readiness
+before converging.
 
 ### CIDR conflicts
 

@@ -26,6 +26,9 @@ ard_libvirt_secure_boot: false
 ard_destroy_cleanup_generated: false
 ard_destroy_cleanup_logs: false
 
+# Apply should not finish until provider-created nodes are usable by Ansible.
+ard_apply_wait_timeout: 900
+
 ard_images:
   debian-13:
     os_family: debian

@@ -40,6 +40,25 @@
       {% endfor %}
       {% endfor %}
 
+- name: Add ARD nodes to active inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    ansible_host: "{{ item.networks[0].ip }}"
+    ansible_user: stack
+    ansible_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    ard_deployment_name: "{{ ard_deployment_name }}"
+    ard_provider_resource_name: "{{ item.provider_resource_name | default('ard-' + ard_deployment_name + '-' + item.name) }}"
+    nodepool:
+      private_ipv4: "{{ item.networks[0].ip }}"
+      public_ipv4: "{{ item.networks[0].ip }}"
+    zuul:
+      executor:
+        log_root: /tmp/zuul_logs
+        work_root: /tmp/work_root
+  loop: "{{ ard_nodes }}"
+
 - name: Write ARD provider state
   copy:
     dest: "{{ ard_deployment_dir }}/provider-state.yaml"
