@@ -33,9 +33,9 @@ SSH to a deployment node, or print the SSH command without running it:
 
 ```bash
 make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=controller
-make ssh-print ARD_DEPLOYMENT=devstack-a ARD_NODE=compute1
+make ssh-print ARD_DEPLOYMENT=devstack-a ARD_NODE=compute-1
 # equivalent explicit dry-run/print mode
-make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=compute1 ARD_SSH_PRINT=1
+make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=compute-1 ARD_SSH_PRINT=1
 ```
 
 Deploy DevStack:
@@ -167,11 +167,11 @@ Provider resources are named with the deployment name, for example:
 
 ```text
 ard-devstack-a-controller
-ard-devstack-a-compute1
+ard-devstack-a-compute-1
 ```
 
-Inventory hostnames remain logical names such as `controller`, `compute1`, and
-`compute2`.
+Inventory hostnames remain logical names such as `controller`, `compute-1`, and
+`compute-2`.
 
 ## Topology presets
 
@@ -193,18 +193,18 @@ controller
 
 ```text
 controller
-compute1
+compute-1
 ```
 
 `one-controller-two-compute` renders:
 
 ```text
 controller
-compute1
-compute2
+compute-1
+compute-2
 ```
 
-Multinode topologies disable `nova-compute` on the controller through the rendered controller group vars. The `all-in-one` topology leaves controller compute services enabled.
+Topology presets are built from generic node pools. Singleton pools can set an explicit name such as `controller`; counted pools default to readable hyphenated names such as `{type}-{index}`. Multinode topologies disable `nova-compute` on the controller through the rendered controller group vars when the topology says the controller does not run compute services.
 
 ## Render intent and service profiles
 
@@ -235,14 +235,33 @@ Use `ard_render_overrides` for simple kustomize-like customizations:
 ard_render_overrides:
   provider_defaults:
     image: ubuntu-24.04
-  topology:
-    compute_count: 2
+  node_pools:
+    compute:
+      count: 2
+      flavor: devstack-compute
+      profiles:
+        - performance
+  networks:
+    storage:
+      cidr: 192.168.120.0/24
+      provider_network: ard-storage
   devstack:
     common:
       enable_ceph: true
     controller:
       controller_localrc_extra:
         DEBUG_LIBVIRT_COREDUMPS: true
+
+ard_render_node_overrides:
+  compute-2:
+    image: ubuntu-24.04
+    flavor: devstack-compute
+    profiles:
+      add:
+        - gpu
+    networks:
+      ard-mgmt:
+        ip: 192.168.98.50
 ```
 
 Current service profiles are:
@@ -320,9 +339,9 @@ and node names are defined only once by ARD render presets.
 Available scenarios:
 
 ```text
-default                    Debian 13, controller + compute1, master
-one-controller-two-compute Debian 13, controller + compute1 + compute2
-stable-2026.1              Ubuntu 24.04, controller + compute1, stable/2026.1
+default                    Debian 13, controller + compute-1, master
+one-controller-two-compute Debian 13, controller + compute-1 + compute-2
+stable-2026.1              Ubuntu 24.04, controller + compute-1, stable/2026.1
 ```
 
 Run a full scenario test:

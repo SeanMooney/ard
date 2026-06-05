@@ -50,6 +50,14 @@
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../ard_provider_common/files/presets/services.yaml"
 
+- name: Load ARD render node type presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/node-types.yaml"
+
+- name: Load ARD render network presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/networks.yaml"
+
 - name: Load ARD render provider profile presets
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../ard_provider_common/files/presets/provider-profiles.yaml"
@@ -121,6 +129,13 @@
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
 
+- name: Compose ARD render networks
+  ansible.builtin.set_fact:
+    ard_render_networks_config: >-
+      {{ ard_render_networks |
+         combine({'ard-mgmt': {'cidr': ard_libvirt_network_cidr, 'gateway': ard_libvirt_network_gateway}}, recursive=True) |
+         combine((ard_render_overrides | default({})).get('networks', {}), recursive=True) }}
+
 - name: Compose rendered DevStack variables
   ansible.builtin.set_fact:
     ard_render_devstack_common: >-
@@ -175,54 +190,10 @@
       ard_libvirt_network_gateway: {{ ard_libvirt_network_gateway }}
 
 - name: Render topology inputs
-  ansible.builtin.copy:
+  ansible.builtin.template:
+    src: nodes.yaml.j2
     dest: "{{ ard_deployment_dir }}/nodes.yaml"
     mode: "0644"
-    content: |
-      {{ ard_render_generated_header }}
-      ---
-      ard_nodes:
-        - name: controller
-          hostname: controller
-          provider_resource_name: {{ ard_resource_name_prefix }}-controller
-          groups:
-            - controller
-            - switch
-          image: {{ ard_render_default_image }}
-          flavor: {{ ard_render_controller_flavor }}
-          preference: {{ ard_render_vm_preference }}
-          networks:
-            - name: ard-mgmt
-              ip: {{ ard_render_network_prefix }}.2
-              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:02"
-          profiles:
-            - ssh
-            - nested_virt
-      {% for profile in ard_render_node_profiles %}
-            - {{ profile }}
-      {% endfor %}
-      {% for index in range(1, (ard_render_topology_config.compute_count | int) + 1) %}
-        - name: compute{{ index }}
-          hostname: compute{{ index }}
-          provider_resource_name: {{ ard_resource_name_prefix }}-compute{{ index }}
-          groups:
-            - compute
-            - peers
-            - subnode
-          image: {{ ard_render_default_image }}
-          flavor: {{ ard_render_compute_flavor }}
-          preference: {{ ard_render_vm_preference }}
-          networks:
-            - name: ard-mgmt
-              ip: {{ ard_render_network_prefix }}.{{ index + 2 }}
-              mac: "52:54:00:{{ '%02x' | format((ard_render_network_prefix.split('.')[2] | int) % 256) }}:00:{{ '%02x' | format(index + 2) }}"
-          profiles:
-            - ssh
-            - nested_virt
-      {% for profile in ard_render_node_profiles %}
-            - {{ profile }}
-      {% endfor %}
-      {% endfor %}
 
 - name: Render common DevStack vars
   ansible.builtin.copy:

@@ -1,0 +1,5 @@
+---
+ard_render_networks:
+  ard-mgmt:
+    provider_network: ard-mgmt
+    mac_prefix: "52:54:00"

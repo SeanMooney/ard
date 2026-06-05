@@ -1,14 +1,48 @@
 ---
 ard_render_topologies:
   all-in-one:
-    controller_count: 1
-    compute_count: 0
     controller_runs_compute: true
+    node_pools:
+      - type: controller
+        count: 1
+        name: controller
+        hostname: controller
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
+
   one-controller-one-compute:
-    controller_count: 1
-    compute_count: 1
     controller_runs_compute: true
+    node_pools:
+      - type: controller
+        count: 1
+        name: controller
+        hostname: controller
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
+      - type: compute
+        count: 1
+        name_format: "compute-{index}"
+        hostname_format: "compute-{index}"
+        networks:
+          - name: ard-mgmt
+            ip_start: 3
+
   one-controller-two-compute:
-    controller_count: 1
-    compute_count: 2
     controller_runs_compute: false
+    node_pools:
+      - type: controller
+        count: 1
+        name: controller
+        hostname: controller
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
+      - type: compute
+        count: 2
+        name_format: "compute-{index}"
+        hostname_format: "compute-{index}"
+        networks:
+          - name: ard-mgmt
+            ip_start: 3

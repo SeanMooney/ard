@@ -44,13 +44,13 @@ controller:
     - controller
     - switch
 
-compute1:
+compute-1:
   groups:
     - compute
     - peers
     - subnode
 
-compute2:
+compute-2:
   groups:
     - compute
     - peers
@@ -166,7 +166,7 @@ deployments/
         compute.yaml             # compute group vars using existing compute_* names
       host_vars/
         controller.yaml          # optional per-node Ansible vars
-        compute1.yaml
+        compute-1.yaml
     inventory.yaml               # generated provider inventory
     provider-state.yaml          # provider resource names/ids for destroy
     rendered/
@@ -362,8 +362,8 @@ ard_nodes:
       - nested_virt
       - ovn
 
-  - name: compute1
-    hostname: compute1
+  - name: compute-1
+    hostname: compute-1
     groups:
       - compute
       - peers
@@ -379,8 +379,8 @@ ard_nodes:
       - nested_virt
       - ovn
 
-  - name: compute2
-    hostname: compute2
+  - name: compute-2
+    hostname: compute-2
     groups:
       - compute
       - peers
@@ -414,7 +414,7 @@ deployments/<deployment-name>/
       compute.yaml
     host_vars/
       controller.yaml
-      compute1.yaml
+      compute-1.yaml
   inventory.yaml
   provider-state.yaml
   rendered/
@@ -469,7 +469,52 @@ ard_service_profiles:
   - tempest
 ```
 
-Topology presets are named convenience bases such as `all-in-one`, `one-controller-one-compute`, and `one-controller-two-compute`. They normalize into counts and roles, and advanced users may override the normalized values with `ard_topology_overrides` when a curated name is close but not exact.
+Topology presets are named convenience bases such as `all-in-one`, `one-controller-one-compute`, and `one-controller-two-compute`. They normalize generic node pools into concrete `ard_nodes`. Provider roles consume only concrete `ard_nodes`; they do not need to understand topology, node types, or pool semantics.
+
+The generic topology model has three layers:
+
+1. **node types** define reusable defaults for a kind of node, such as `controller`, `compute`, `storage`, `edpm`, or `k8s-worker`.
+2. **node pools** instantiate a type with a count, naming pattern, network attachments, and optional pool-level overrides.
+3. **node overrides** apply final per-node customization after names have been generated.
+
+Example node types:
+
+```yaml
+ard_render_node_types:
+  controller:
+    groups: [controller, switch]
+    profiles: [ssh, nested_virt]
+    flavor: devstack-control
+  compute:
+    groups: [compute, peers, subnode]
+    profiles: [ssh, nested_virt]
+    flavor: devstack-compute
+```
+
+Example topology preset:
+
+```yaml
+ard_render_topologies:
+  one-controller-two-compute:
+    controller_runs_compute: false
+    node_pools:
+      - type: controller
+        count: 1
+        name: controller
+        hostname: controller
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
+      - type: compute
+        count: 2
+        name_format: "compute-{index}"
+        hostname_format: "compute-{index}"
+        networks:
+          - name: ard-mgmt
+            ip_start: 3
+```
+
+Counted pools default to readable hyphenated names like `{type}-{index}`. Singleton pools may set explicit names such as `controller`. The current presets render `compute-1` and `compute-2` rather than the older `compute-1` and `compute-2` spelling.
 
 Generated concrete files such as `deployment.yaml`, `nodes.yaml`, and `devstack/*.yaml` are render output. They should include a generated-file header and may be overwritten by subsequent renders. Local customizations belong in the render intent or an overlay such as `overrides/render.yaml`.
 
@@ -482,8 +527,16 @@ ard_render_overrides:
     controller_flavor: devstack-control
     compute_flavor: devstack-compute
     vm_preference: devstack
-  topology:
-    compute_count: 2
+  node_pools:
+    compute:
+      count: 3
+      flavor: larger-compute
+      profiles:
+        - performance
+  networks:
+    storage:
+      cidr: 192.168.120.0/24
+      provider_network: ard-storage
   devstack:
     common:
       enable_ceph: true
@@ -492,6 +545,18 @@ ard_render_overrides:
         DEBUG_LIBVIRT_COREDUMPS: true
     compute:
       compute_localrc_extra: {}
+
+ard_render_node_overrides:
+  compute-2:
+    image: ubuntu-24.04
+    flavor: gpu-compute
+    profiles:
+      add: [gpu]
+    groups:
+      add: [special]
+    networks:
+      ard-mgmt:
+        ip: 192.168.96.50
 ```
 
 For command-line convenience, `ard_render_image`, `ard_render_controller_flavor`, `ard_render_compute_flavor`, and `ard_render_vm_preference` can override the composed provider defaults without changing the eventual provider input names written to `deployment.yaml`.
@@ -517,7 +582,7 @@ ard_nodes:
     image: debian-13
     flavor: devstack-control
     preference: devstack
-  - name: compute1
+  - name: compute-1
     groups: [compute, peers, subnode]
     image: debian-13
     flavor: devstack-compute
@@ -552,7 +617,7 @@ compute_services_extra: {}
 ```
 
 ```yaml
-# deployments/devstack-a/devstack/host_vars/compute1.yaml
+# deployments/devstack-a/devstack/host_vars/compute-1.yaml
 compute_localrc_extra:
   LIBVIRT_TYPE: qemu
 ```
@@ -578,8 +643,8 @@ For libvirt, include the deployment name in domains, volumes, cloud-init seed IS
 $XDG_STATE_HOME/ard/libvirt/images/<deployment-name>/  # or ~/.local/state/ard/libvirt/images when XDG_STATE_HOME is unset
   controller.qcow2
   controller-seed.iso
-  compute1.qcow2
-  compute1-seed.iso
+  compute-1.qcow2
+  compute-1-seed.iso
 ```
 
 `provider-state.yaml` should record native resource names and identifiers, but destroy must also support a label/name-prefix fallback so cleanup is possible if state is partially missing.
@@ -607,7 +672,7 @@ deployments/<name>/devstack/
     compute.yaml
   host_vars/
     controller.yaml
-    compute1.yaml
+    compute-1.yaml
 ```
 
 Merge order for each host:
@@ -660,10 +725,10 @@ zuul:
     work_root: /tmp/work_root
 ```
 
-For `compute1`:
+For `compute-1`:
 
 ```yaml
-inventory_hostname: compute1
+inventory_hostname: compute-1
 ansible_host: 192.168.96.3
 ansible_user: stack
 ansible_private_key_file: ~/.ssh/id_ed25519_stack
@@ -674,7 +739,7 @@ nodepool:
 
 Groups come from `ard_nodes[*].groups`.
 
-For deployment workspaces, `inventory.yaml` is generated inside `deployments/<deployment-name>/` and can be re-read by later apply, deploy, verify, collect-log, and destroy phases. Inventory hostnames remain stable logical names such as `controller` and `compute1`; provider resource names are tracked separately through `ard_provider_resource_name` and `provider-state.yaml`.
+For deployment workspaces, `inventory.yaml` is generated inside `deployments/<deployment-name>/` and can be re-read by later apply, deploy, verify, collect-log, and destroy phases. Inventory hostnames remain stable logical names such as `controller` and `compute-1`; provider resource names are tracked separately through `ard_provider_resource_name` and `provider-state.yaml`.
 
 This lets existing ARD defaults continue to evaluate expressions such as:
 
@@ -852,8 +917,8 @@ $XDG_CACHE_HOME/ard/images/  # or ~/.cache/ard/images when XDG_CACHE_HOME is uns
 $XDG_STATE_HOME/ard/libvirt/images/devstack-a/  # or ~/.local/state/ard/libvirt/images/devstack-a when XDG_STATE_HOME is unset
   controller.qcow2
   controller-seed.iso
-  compute1.qcow2
-  compute1-seed.iso
+  compute-1.qcow2
+  compute-1-seed.iso
 ```
 
 ### 10.5 Cloud-init
@@ -1429,7 +1494,7 @@ Usage:
 ```bash
 make render ARD_PROVIDER=kubevirt ARD_DEPLOYMENT=devstack-a
 vi deployments/devstack-a/devstack/controller.yaml
-vi deployments/devstack-a/devstack/nodes/compute1.yaml
+vi deployments/devstack-a/devstack/nodes/compute-1.yaml
 make apply ARD_DEPLOYMENT=devstack-a
 make deploy ARD_DEPLOYMENT=devstack-a
 make destroy ARD_DEPLOYMENT=devstack-a
@@ -1548,8 +1613,8 @@ For KubeVirt, post-run log collection should work from the OpenShift API even if
 
 ### Phase 3: Libvirt multinode
 
-- Create controller + compute1.
-- Then controller + compute1 + compute2.
+- Create controller + compute-1.
+- Then controller + compute-1 + compute-2.
 - Match current Vagrant scenario groups.
 - Run existing `deploy_multinode_devstack.yaml`.
 
@@ -1628,7 +1693,7 @@ These decisions should be resolved before or during the first libvirt prototype:
 - Image cache location: follow XDG cache conventions with `$XDG_CACHE_HOME/ard/images`, falling back to `~/.cache/ard/images`.
 - Checksum policy: support checksums when configured, but do not require them for the first prototype unless reproducibility/security requirements demand it.
 - Libvirt URI: prototype against `qemu:///system`; defer `qemu:///session` support. The first prototype assumes the invoking user has sufficient `libvirt`/`qemu` group access and should not use Ansible `become` by default.
-- VM naming: use `ard-<deployment-name>-<inventory-name>` as the provider resource name, e.g. `ard-devstack-1-controller`, while keeping inventory hostnames as `controller`, `compute1`, etc.
+- VM naming: use `ard-<deployment-name>-<inventory-name>` as the provider resource name, e.g. `ard-devstack-1-controller`, while keeping inventory hostnames as `controller`, `compute-1`, etc.
 - Destroy semantics: delete per-deployment overlays, seed ISOs, domains, and generated networks by default, but keep cached base images.
 - Filesystem paths: store downloaded base images in XDG cache and libvirt per-deployment base copies, overlays, and seed ISOs in XDG state. The provider should not write to `/var/lib/libvirt/images` by default and should not silently sudo provider operations.
 - Network default: use NAT `192.168.96.0/24` for the libvirt prototype.
