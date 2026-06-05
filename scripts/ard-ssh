@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""SSH to an ARD deployment inventory host."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+
+
+def load_host(inventory_path: Path, node: str) -> dict:
+    with inventory_path.open() as stream:
+        inventory = yaml.safe_load(stream) or {}
+
+    hosts = inventory.get("all", {}).get("hosts", {})
+    if node not in hosts:
+        available = ", ".join(sorted(hosts)) or "<none>"
+        raise SystemExit(
+            f"Node {node!r} not found in {inventory_path}. Available hosts: {available}"
+        )
+    return hosts[node] or {}
+
+
+def build_ssh_command(host: dict, extra_args: list[str]) -> list[str]:
+    ansible_host = host.get("ansible_host")
+    if not ansible_host:
+        raise SystemExit("Selected host has no ansible_host")
+
+    ansible_user = host.get("ansible_user") or os.environ.get("USER") or "stack"
+    command = ["ssh"]
+
+    key_file = host.get("ansible_private_key_file")
+    if key_file:
+        command.extend(["-i", os.path.expanduser(str(key_file))])
+
+    ansible_port = host.get("ansible_port")
+    if ansible_port:
+        command.extend(["-p", str(ansible_port)])
+
+    common_args = host.get("ansible_ssh_common_args")
+    if common_args:
+        command.extend(shlex.split(str(common_args)))
+
+    command.extend(extra_args)
+    command.append(f"{ansible_user}@{ansible_host}")
+    return command
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--inventory", required=True, type=Path)
+    parser.add_argument("--node", default="controller")
+    parser.add_argument(
+        "--print",
+        action="store_true",
+        dest="print_only",
+        help="print the SSH command and exit without executing it",
+    )
+    parser.add_argument(
+        "ssh_args",
+        nargs=argparse.REMAINDER,
+        help="extra arguments passed to ssh after a literal --",
+    )
+    args = parser.parse_args()
+
+    extra_args = args.ssh_args
+    if extra_args and extra_args[0] == "--":
+        extra_args = extra_args[1:]
+
+    host = load_host(args.inventory, args.node)
+    command = build_ssh_command(host, extra_args)
+    printable = shlex.join(command)
+
+    if args.print_only:
+        print(printable)
+        return 0
+
+    print(printable, file=sys.stderr)
+    subprocess.run(command, check=False)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

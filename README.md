@@ -29,6 +29,15 @@ make apply ARD_DEPLOYMENT=devstack-a
 make ping ARD_DEPLOYMENT=devstack-a
 ```
 
+SSH to a deployment node, or print the SSH command without running it:
+
+```bash
+make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=controller
+make ssh-print ARD_DEPLOYMENT=devstack-a ARD_NODE=compute1
+# equivalent explicit dry-run/print mode
+make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=compute1 ARD_SSH_PRINT=1
+```
+
 Deploy DevStack:
 
 ```bash
@@ -86,12 +95,27 @@ scenario before applying it.
 
 ## Make targets
 
-The root `Makefile` wraps the provider playbooks:
+The root `Makefile` wraps the provider playbooks. The default target is a full
+local rebuild workflow:
+
+```bash
+make
+# equivalent to
+make default
+```
+
+`make default` runs `destroy-clean-generated`, `cleanup`, `render`, `apply`,
+`ping`, `deploy`, and `verify` in order. The initial destroy and cleanup steps
+are best-effort so the target also works from a fresh checkout.
+
+Individual workflow targets are also available:
 
 ```bash
 make render
 make apply
 make ping
+make ssh
+make ssh-print
 make deploy
 make verify
 make destroy
@@ -111,6 +135,9 @@ ARD_PROVIDER         provider, currently libvirt
 ARD_TOPOLOGY         topology preset
 ARD_IMAGE            image key, default debian-13
 ARD_NETWORK_CIDR     libvirt management CIDR, default 192.168.96.0/24
+ARD_NODE             inventory node for make ssh, default controller
+ARD_SSH_PRINT        print SSH command without running it when set to 1
+ARD_SSH_ARGS         extra arguments passed to ssh
 ARD_EXTRA_VARS       extra Ansible vars appended to provider commands
 ```
 

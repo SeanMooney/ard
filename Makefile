@@ -1,5 +1,7 @@
+.DEFAULT_GOAL := default
+
 .PHONY: \
-	render apply ping deploy verify destroy destroy-clean-generated clean-generated cleanup site \
+	default render apply ping ssh ssh-print deploy verify destroy destroy-clean-generated clean-generated cleanup site \
 	molecule-test molecule-role-tests molecule-role-%
 
 ARD_PROVIDER ?= libvirt
@@ -10,6 +12,9 @@ ARD_TOPOLOGY ?= one-controller-one-compute
 ARD_IMAGE ?= debian-13
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
 ARD_EXTRA_VARS ?=
+ARD_NODE ?= controller
+ARD_SSH_PRINT ?= 0
+ARD_SSH_ARGS ?=
 
 ARD_RENDER_EXTRA_VARS = \
 	ard_provider=$(ARD_PROVIDER) \
@@ -23,6 +28,15 @@ ARD_DEPLOYMENT_EXTRA_VARS = \
 	ard_deployment_dir=$(ARD_DEPLOYMENT_DIR) \
 	$(ARD_EXTRA_VARS)
 
+default:
+	-$(MAKE) destroy-clean-generated
+	-$(MAKE) cleanup
+	$(MAKE) render
+	$(MAKE) apply
+	$(MAKE) ping
+	$(MAKE) deploy
+	$(MAKE) verify
+
 render:
 	uv run ansible-playbook -i localhost, ansible/playbooks/ard-render.yaml \
 		-e "$(ARD_RENDER_EXTRA_VARS)"
@@ -34,6 +48,16 @@ apply:
 ping:
 	uv run ansible -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml all \
 		-m ansible.builtin.ping
+
+ssh:
+	uv run scripts/ard-ssh \
+		--inventory $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
+		--node $(ARD_NODE) \
+		$(if $(filter 1 true yes,$(ARD_SSH_PRINT)),--print,) \
+		$(if $(ARD_SSH_ARGS),-- $(ARD_SSH_ARGS),)
+
+ssh-print:
+	$(MAKE) ssh ARD_SSH_PRINT=1
 
 deploy:
 	uv run ansible-playbook -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
