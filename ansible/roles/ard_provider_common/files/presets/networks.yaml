@@ -1,5 +1,11 @@
 ---
 ard_render_networks:
   ard-mgmt:
+    mode: nat
     provider_network: ard-mgmt
     mac_prefix: "52:54:00"
+  tenant:
+    mode: isolated
+    provider_network: tenant
+    mac_prefix: "52:54:00"
+    mac_id: 130

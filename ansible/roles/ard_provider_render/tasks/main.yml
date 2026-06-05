@@ -133,8 +133,37 @@
   ansible.builtin.set_fact:
     ard_render_networks_config: >-
       {{ ard_render_networks |
-         combine({'ard-mgmt': {'cidr': ard_libvirt_network_cidr, 'gateway': ard_libvirt_network_gateway}}, recursive=True) |
+         combine({'ard-mgmt': {'mode': 'nat', 'cidr': ard_libvirt_network_cidr, 'gateway': ard_libvirt_network_gateway}}, recursive=True) |
          combine((ard_render_overrides | default({})).get('networks', {}), recursive=True) }}
+
+- name: Validate ARD render networks
+  ansible.builtin.assert:
+    that:
+      - item.value.mode | default('nat') in ['nat', 'isolated']
+      - item.value.mode | default('nat') == 'isolated' or item.value.cidr is defined
+    fail_msg: "Network {{ item.key }} must use mode nat or isolated; nat networks require cidr."
+  loop: "{{ ard_render_networks_config | dict2items }}"
+
+- name: Normalize rendered ARD nodes
+  ansible.builtin.set_fact:
+    ard_render_nodes_doc: "{{ lookup('ansible.builtin.template', 'nodes.yaml.j2') | from_yaml }}"
+
+- name: Set normalized ARD node list
+  ansible.builtin.set_fact:
+    ard_render_nodes: "{{ ard_render_nodes_doc.ard_nodes }}"
+
+- name: Validate normalized ARD nodes
+  ansible.builtin.assert:
+    that:
+      - ard_render_nodes | length > 0
+      - ard_render_nodes | map(attribute='name') | list | unique | length == ard_render_nodes | length
+      - ard_render_nodes | map(attribute='networks') | flatten | selectattr('ip', 'defined') | map(attribute='ip') | list | unique | length == ard_render_nodes | map(attribute='networks') | flatten | selectattr('ip', 'defined') | list | length
+      - ard_render_nodes | map(attribute='networks') | flatten | map(attribute='mac') | list | unique | length == ard_render_nodes | map(attribute='networks') | flatten | list | length
+      - ard_management_network in ard_render_networks_config
+      - (ard_render_networks_config[ard_management_network].mode | default('nat')) == 'nat'
+    fail_msg: >-
+      Rendered topology is invalid. Check for duplicate node names, IPs, MACs,
+      or an undefined management network.
 
 - name: Compose rendered DevStack variables
   ansible.builtin.set_fact:
@@ -185,15 +214,36 @@
       ard_default_compute_flavor: {{ ard_render_compute_flavor }}
       ard_default_vm_preference: {{ ard_render_vm_preference }}
 
+      ard_management_network: {{ ard_management_network }}
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
       ard_libvirt_network_cidr: {{ ard_libvirt_network_cidr }}
       ard_libvirt_network_gateway: {{ ard_libvirt_network_gateway }}
+      ard_networks:
+      {% for network_name, network in ard_render_networks_config.items() %}
+        {{ network_name }}:
+          mode: {{ network.mode | default('nat') }}
+      {% if (network.mode | default('nat')) == 'nat' %}
+          cidr: {{ network.cidr }}
+          gateway: {{ network.gateway | default(network.cidr | regex_replace('0/24$', '1')) }}
+      {% endif %}
+          provider_network: {{ network.provider_network | default(network_name) }}
+          mac_prefix: "{{ network.mac_prefix | default('52:54:00') }}"
+      {% if network.mac_id is defined %}
+          mac_id: {{ network.mac_id }}
+      {% endif %}
+          provider:
+            libvirt:
+              name: {{ (network.provider | default({})).get('libvirt', {}).get('name', ard_libvirt_network_name if network_name == ard_management_network else ard_libvirt_network_name + '-' + network_name) }}
+      {% endfor %}
 
 - name: Render topology inputs
-  ansible.builtin.template:
-    src: nodes.yaml.j2
+  ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/nodes.yaml"
     mode: "0644"
+    content: |
+      {{ ard_render_generated_header }}
+      ---
+      {{ {'ard_nodes': ard_render_nodes} | to_nice_yaml(indent=2, sort_keys=False) }}
 
 - name: Render common DevStack vars
   ansible.builtin.copy:

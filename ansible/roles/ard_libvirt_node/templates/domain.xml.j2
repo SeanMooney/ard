@@ -33,11 +33,13 @@
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>
+{% for node_network in ard_node_networks %}
     <interface type='network'>
-      <mac address='{{ ard_node_mac }}'/>
-      <source network='{{ ard_libvirt_network_name }}'/>
+      <mac address='{{ node_network.mac }}'/>
+      <source network='{{ ard_networks[node_network.name].provider.libvirt.name }}'/>
       <model type='virtio'/>
     </interface>
+{% endfor %}
     <serial type='pty'>
       <log file='{{ ard_node_console_log }}' append='on'/>
       <target type='isa-serial' port='0'/>

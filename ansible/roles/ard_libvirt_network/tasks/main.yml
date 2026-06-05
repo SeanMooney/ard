@@ -1,43 +1,40 @@
 ---
-- name: Create rendered libvirt directory
+- name: Create rendered libvirt network directory
   file:
-    path: "{{ ard_deployment_dir }}/rendered/libvirt"
+    path: "{{ ard_deployment_dir }}/rendered/libvirt/networks"
     state: directory
     mode: "0755"
 
 - name: Render libvirt network XML
-  copy:
-    dest: "{{ ard_deployment_dir }}/rendered/libvirt/network.xml"
+  template:
+    src: network.xml.j2
+    dest: "{{ ard_deployment_dir }}/rendered/libvirt/networks/{{ item.key }}.xml"
     mode: "0644"
-    content: |
-      <network>
-        <name>{{ ard_libvirt_network_name }}</name>
-        <forward mode='nat'/>
-        <ip address='{{ ard_libvirt_network_gateway }}' netmask='255.255.255.0'>
-          <dhcp>
-      {% for node in ard_nodes %}
-            <host mac='{{ node.networks[0].mac }}' name='{{ node.hostname | default(node.name) }}' ip='{{ node.networks[0].ip }}'/>
-      {% endfor %}
-          </dhcp>
-        </ip>
-      </network>
+  vars:
+    ard_libvirt_render_network_name: "{{ item.key }}"
+    ard_libvirt_render_network: "{{ item.value }}"
+  loop: "{{ ard_networks | dict2items }}"
 
-- name: Check whether libvirt network exists
-  command: "virsh --connect {{ ard_libvirt_uri }} net-info {{ ard_libvirt_network_name }}"
+- name: Check whether libvirt networks exist
+  command: "virsh --connect {{ ard_libvirt_uri }} net-info {{ item.value.provider.libvirt.name }}"
   register: ard_libvirt_network_info
   changed_when: false
   failed_when: false
+  loop: "{{ ard_networks | dict2items }}"
 
-- name: Define libvirt network
-  command: "virsh --connect {{ ard_libvirt_uri }} net-define {{ ard_deployment_dir }}/rendered/libvirt/network.xml"
-  when: ard_libvirt_network_info.rc != 0
+- name: Define libvirt networks
+  command: "virsh --connect {{ ard_libvirt_uri }} net-define {{ ard_deployment_dir }}/rendered/libvirt/networks/{{ item.item.key }}.xml"
+  when: item.rc != 0
+  loop: "{{ ard_libvirt_network_info.results }}"
 
-- name: Start libvirt network
-  command: "virsh --connect {{ ard_libvirt_uri }} net-start {{ ard_libvirt_network_name }}"
+- name: Start libvirt networks
+  command: "virsh --connect {{ ard_libvirt_uri }} net-start {{ item.value.provider.libvirt.name }}"
   register: ard_libvirt_net_start
   changed_when: ard_libvirt_net_start.rc == 0
   failed_when: ard_libvirt_net_start.rc != 0 and ('already active' not in (ard_libvirt_net_start.stderr | default('')))
+  loop: "{{ ard_networks | dict2items }}"
 
-- name: Mark libvirt network autostart
-  command: "virsh --connect {{ ard_libvirt_uri }} net-autostart {{ ard_libvirt_network_name }}"
+- name: Mark libvirt networks autostart
+  command: "virsh --connect {{ ard_libvirt_uri }} net-autostart {{ item.value.provider.libvirt.name }}"
   changed_when: false
+  loop: "{{ ard_networks | dict2items }}"

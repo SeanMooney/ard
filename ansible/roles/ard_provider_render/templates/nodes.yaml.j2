@@ -10,36 +10,37 @@ ard_nodes:
 {% for index in range(1, (pool.count | int) + 1) %}
 {% set generated_name = (pool.name if (pool.name is defined and (pool.count | int) == 1) else (pool.name_format | default('{type}-{index}') | replace('{type}', pool.type) | replace('{index}', index | string))) %}
 {% set generated_hostname = (pool.hostname if (pool.hostname is defined and (pool.count | int) == 1) else (pool.hostname_format | default(pool.name_format | default('{type}-{index}')) | replace('{type}', pool.type) | replace('{index}', index | string))) %}
+{% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_resource_name_prefix + '-' + generated_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
-  - name: {{ node_override.name | default(generated_name) }}
-    hostname: {{ node_override.hostname | default(generated_hostname) }}
-    provider_resource_name: {{ node_override.provider_resource_name | default(ard_resource_name_prefix + '-' + (node_override.name | default(generated_name))) }}
+{% set node = node_type | combine(pool, recursive=True) | combine(generated_node, recursive=True) | combine(node_override, recursive=True) %}
+  - name: {{ node.name }}
+    hostname: {{ node.hostname }}
+    provider_resource_name: {{ node.provider_resource_name }}
     groups:
-{% set base_groups = node_type.groups | default([]) %}
-{% set pool_groups = pool.groups if (pool.groups is defined and pool.groups is sequence and pool.groups is not string) else [] %}
-{% set group_add = (node_override.get('groups', {}).get('add', []) if node_override.get('groups', {}) is mapping else []) %}
-{% for group in (base_groups + pool_groups + group_add) | unique %}
+{% for group in node.groups | default([]) | unique %}
       - {{ group }}
 {% endfor %}
-    image: {{ node_override.image | default(pool.image | default(node_type.image | default(ard_render_default_image))) }}
-    flavor: {{ node_override.flavor | default(pool.flavor | default(node_type.flavor | default(ard_render_compute_flavor))) }}
-    preference: {{ node_override.preference | default(pool.preference | default(node_type.preference | default(ard_render_vm_preference))) }}
+    image: {{ node.image | default(ard_render_default_image) }}
+    flavor: {{ node.flavor | default(ard_render_compute_flavor) }}
+    preference: {{ node.preference | default(ard_render_vm_preference) }}
     networks:
-{% set node_network_overrides = node_override.networks | default({}) %}
-{% for network_ref in pool.networks | default([{'name': 'ard-mgmt', 'ip_start': 2 + loop.index0}]) %}
+{% set node_network_overrides = node_override.networks | default({}) if node_override.networks is mapping else {} %}
+{% for network_ref in node.networks | default([{'name': 'ard-mgmt', 'ip_start': 2 + loop.index0}]) %}
 {% set network_config = ard_render_networks_config[network_ref.name] %}
-{% set network_prefix = network_config.cidr | regex_replace('\.0/24$', '') %}
-{% set ip_host = (network_ref.ip_start | int) + index - 1 %}
+{% set network_mode = network_config.mode | default('nat') %}
+{% set network_prefix = (network_config.cidr | default('0.0.0.0/24')) | regex_replace('\.0/24$', '') %}
+{% set ip_host = (network_ref.ip_start | default(network_ref.mac_start | default(2)) | int) + index - 1 %}
+{% set mac_host = (network_ref.mac_start | default(network_ref.ip_start | default(2)) | int) + index - 1 %}
+{% set mac_id = network_config.mac_id | default((network_prefix.split('.')[2] | int) if network_mode == 'nat' else loop.index0) %}
 {% set network_override = node_network_overrides.get(network_ref.name, {}) %}
       - name: {{ network_ref.name }}
-        ip: {{ network_override.ip | default(network_prefix + '.' + (ip_host | string)) }}
-        mac: "{{ network_override.mac | default((network_config.mac_prefix | default('52:54:00')) + ':' + ('%02x' | format((network_prefix.split('.')[2] | int) % 256)) + ':' + ('%02x' | format(loop.index0)) + ':' + ('%02x' | format(ip_host))) }}"
+{% if network_mode == 'nat' or network_override.ip is defined or network_ref.ip is defined %}
+        ip: {{ network_override.ip | default(network_ref.ip | default(network_prefix + '.' + (ip_host | string))) }}
+{% endif %}
+        mac: "{{ network_override.mac | default(network_ref.mac | default((network_config.mac_prefix | default('52:54:00')) + ':' + ('%02x' | format(mac_id | int)) + ':' + ('%02x' | format(loop.index0)) + ':' + ('%02x' | format(mac_host)))) }}"
 {% endfor %}
     profiles:
-{% set base_profiles = node_type.profiles | default([]) %}
-{% set pool_profiles = pool.profiles if (pool.profiles is defined and pool.profiles is sequence and pool.profiles is not string) else [] %}
-{% set profile_add = (node_override.get('profiles', {}).get('add', []) if node_override.get('profiles', {}) is mapping else []) %}
-{% for profile in (base_profiles + ard_render_node_profiles + pool_profiles + profile_add) | unique %}
+{% for profile in ((node.profiles | default([])) + ard_render_node_profiles) | unique %}
       - {{ profile }}
 {% endfor %}
 {% endfor %}
