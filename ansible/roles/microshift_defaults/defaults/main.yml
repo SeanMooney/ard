@@ -1,0 +1,40 @@
+---
+microshift_user: stack
+microshift_target_hosts: microshift
+microshift_deployment_mode: rpm
+
+microshift_rpm_channel: github-release
+microshift_release_tag: 4.20.0_g153ff0ca9_4.20.0_okd_scos.16
+microshift_release_rpm_url: "https://github.com/microshift-io/microshift/releases/download/{{ microshift_release_tag }}/microshift-rpms-{{ ansible_architecture }}.tgz"
+microshift_release_cache_dir: "/var/cache/microshift/releases/{{ microshift_release_tag }}"
+microshift_release_repo_dir: "{{ microshift_release_cache_dir }}/rpms"
+microshift_release_scripts_dir: "{{ microshift_release_cache_dir }}/scripts"
+microshift_rpm_copr: '@microshift-io/microshift'
+microshift_rpm_repo_url: null
+microshift_rpm_repo_name: microshift-custom
+microshift_rpm_repo_description: Custom MicroShift RPM repository
+microshift_rpm_repo_gpgcheck: false
+
+microshift_networking: ovnk
+microshift_install_topolvm: false
+microshift_install_local_path_provisioner: true
+microshift_local_path_manifest_url: https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+microshift_default_storage_class: local-path
+microshift_storage_class_names:
+  local-path: local-path
+  topolvm: topolvm-provisioner
+
+microshift_install_olm: true
+microshift_client_packages: []
+microshift_postinstall_operators:
+  - metallb
+microshift_install_metallb: false
+
+microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig
+microshift_run_smoke_test: true
+microshift_smoke_namespace: ard-smoke
+microshift_smoke_image: quay.io/quay/busybox:latest
+microshift_validate_timeout: 600
+microshift_topolvm_lvm_disk: /var/lib/microshift-okd/lvmdisk.image
+microshift_topolvm_vg_name: myvg1
+microshift_topolvm_lvm_size: 1G

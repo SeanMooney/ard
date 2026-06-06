@@ -1,0 +1,85 @@
+---
+- name: Require RPM MicroShift mode for initial implementation
+  ansible.builtin.assert:
+    that:
+      - microshift_deployment_mode == 'rpm'
+      - ansible_os_family == 'RedHat'
+    fail_msg: "Initial MicroShift implementation supports RPM mode on Red Hat-like hosts only."
+
+- name: Install MicroShift prerequisite packages
+  become: true
+  ansible.builtin.package:
+    name:
+      - bash-completion
+      - curl
+      - dnf-plugins-core
+      - firewalld
+      - jq
+      - python3-libselinux
+      - tar
+    state: present
+
+- name: Install CentOS Stream 10 CNI plugins compatibility package
+  become: true
+  ansible.builtin.command:
+    argv:
+      - dnf
+      - install
+      - -y
+      - --repofrompath=c9appstream,https://mirror.stream.centos.org/9-stream/AppStream/{{ ansible_architecture }}/os/
+      - --repo=c9appstream
+      - --nogpgcheck
+      - containernetworking-plugins
+  register: microshift_centos10_cni_plugins
+  changed_when: "'Nothing to do' not in microshift_centos10_cni_plugins.stdout"
+  when:
+    - ansible_distribution == 'CentOS'
+    - ansible_distribution_major_version == '10'
+
+- name: Enable firewalld
+  become: true
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: Configure MicroShift firewall sources
+  become: true
+  ansible.posix.firewalld:
+    zone: trusted
+    source: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 10.42.0.0/16
+    - 169.254.169.1
+
+- name: Configure MicroShift firewall ports
+  become: true
+  ansible.posix.firewalld:
+    zone: public
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 6443/tcp
+    - 2379/tcp
+    - 2380/tcp
+
+- name: Configure MicroShift inotify limits
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-microshift.conf
+    mode: "0644"
+    content: |
+      fs.inotify.max_user_watches = 524288
+      fs.inotify.max_user_instances = 16384
+  register: microshift_sysctl_config
+
+- name: Apply MicroShift sysctl limits
+  become: true
+  ansible.builtin.command: sysctl --system
+  changed_when: microshift_sysctl_config.changed
+  when: microshift_sysctl_config.changed

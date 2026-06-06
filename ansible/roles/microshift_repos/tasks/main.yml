@@ -1,0 +1,120 @@
+---
+- name: Validate MicroShift RPM channel
+  ansible.builtin.assert:
+    that:
+      - microshift_rpm_channel in ['github-release', 'copr-stable', 'copr-nightly', 'custom-repo']
+    fail_msg: "microshift_rpm_channel must be one of: github-release, copr-stable, copr-nightly, custom-repo."
+
+- name: Validate custom MicroShift RPM repository URL
+  ansible.builtin.assert:
+    that:
+      - microshift_rpm_repo_url is string
+      - microshift_rpm_repo_url | length > 0
+    fail_msg: microshift_rpm_repo_url is required when microshift_rpm_channel is custom-repo.
+  when: microshift_rpm_channel == 'custom-repo'
+
+- name: Disable MicroShift COPRs for GitHub release channel
+  become: true
+  community.general.copr:
+    state: disabled
+    name: "{{ item }}"
+  loop:
+    - '@microshift-io/microshift-nightly'
+    - '@microshift-io/microshift'
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Remove stale MicroShift/OpenShift repo files for GitHub release channel
+  become: true
+  ansible.builtin.shell: |
+    rm -f /etc/yum.repos.d/openshift-mirror-beta.repo
+    rm -f /etc/yum.repos.d/microshift-local.repo
+    find /etc/yum.repos.d/ -iname 'microshift-deps*' -delete
+  changed_when: false
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Install GitHub release repository prerequisites
+  become: true
+  ansible.builtin.package:
+    name:
+      - curl
+      - tar
+    state: present
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Ensure GitHub release cache directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ microshift_release_cache_dir }}"
+    - "{{ microshift_release_repo_dir }}"
+    - "{{ microshift_release_scripts_dir }}"
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Download MicroShift GitHub release RPM bundle
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ microshift_release_rpm_url }}"
+    dest: "{{ microshift_release_cache_dir }}/microshift-rpms-{{ ansible_architecture }}.tgz"
+    mode: "0644"
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Extract MicroShift GitHub release RPM bundle
+  become: true
+  ansible.builtin.unarchive:
+    src: "{{ microshift_release_cache_dir }}/microshift-rpms-{{ ansible_architecture }}.tgz"
+    dest: "{{ microshift_release_repo_dir }}"
+    remote_src: true
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Download MicroShift RPM repository helper script
+  become: true
+  ansible.builtin.get_url:
+    url: "https://github.com/microshift-io/microshift/raw/{{ microshift_release_tag }}/src/rpm/create_repos.sh"
+    dest: "{{ microshift_release_scripts_dir }}/create_repos.sh"
+    mode: "0755"
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Download MicroShift RPM postinstall script
+  become: true
+  ansible.builtin.get_url:
+    url: "https://github.com/microshift-io/microshift/raw/{{ microshift_release_tag }}/src/rpm/postinstall.sh"
+    dest: "{{ microshift_release_scripts_dir }}/postinstall.sh"
+    mode: "0755"
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Configure MicroShift GitHub release local and dependency repositories
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ microshift_release_scripts_dir }}/create_repos.sh"
+      - -create
+      - "{{ microshift_release_repo_dir }}"
+  changed_when: true
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Disable MicroShift nightly COPR when stable channel is selected
+  become: true
+  community.general.copr:
+    state: disabled
+    name: '@microshift-io/microshift-nightly'
+  when: microshift_rpm_channel == 'copr-stable'
+
+- name: Enable configured MicroShift COPR
+  become: true
+  community.general.copr:
+    state: enabled
+    name: "{{ microshift_rpm_copr }}"
+  when: microshift_rpm_channel in ['copr-stable', 'copr-nightly']
+
+- name: Configure custom MicroShift RPM repository
+  become: true
+  ansible.builtin.yum_repository:
+    name: "{{ microshift_rpm_repo_name }}"
+    description: "{{ microshift_rpm_repo_description }}"
+    baseurl: "{{ microshift_rpm_repo_url }}"
+    enabled: true
+    gpgcheck: "{{ microshift_rpm_repo_gpgcheck | bool }}"
+  when: microshift_rpm_channel == 'custom-repo'

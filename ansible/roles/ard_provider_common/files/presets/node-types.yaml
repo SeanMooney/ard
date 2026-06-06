@@ -18,3 +18,11 @@ ard_render_node_types:
       - ssh
       - nested_virt
     flavor: devstack-compute
+
+  microshift:
+    groups:
+      - microshift
+    profiles:
+      - ssh
+      - nested_virt
+    flavor: microshift-node

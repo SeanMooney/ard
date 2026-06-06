@@ -1,0 +1,38 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+  ard:
+    provider: libvirt
+    provider_profile: local-libvirt
+    deployment_name: molecule-microshift
+    resource_name_prefix: ard-molecule-microshift
+    topology: microshift-single-node
+    render_image: centos-stream-10
+    service_profiles: []
+    libvirt:
+      network_name: ard-molecule-microshift
+      network_cidr: 192.168.101.0/24
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

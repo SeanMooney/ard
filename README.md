@@ -136,9 +136,10 @@ ARD_DEPLOYMENT_DIR   full workspace path
 ARD_PROVIDER         provider, currently libvirt
 ARD_TOPOLOGY         topology preset
 ARD_TARGET_BRANCH    DevStack target branch, default master
-ARD_SERVICES         comma-separated service profiles, default devstack,ovn,tempest
+ARD_WORKLOAD         workload to deploy, default devstack; use microshift for MicroShift
+ARD_SERVICES         comma-separated service profiles, default devstack,ovn,tempest; empty for MicroShift
 ARD_PROVIDER_PROFILE provider profile, default local-libvirt
-ARD_IMAGE            optional image key override
+ARD_IMAGE            optional image key override; defaults to centos-stream-10 for MicroShift
 ARD_NETWORK_CIDR     libvirt management CIDR, default 192.168.96.0/24
 ARD_RENDER_FILE      optional render intent file loaded before Make vars
 ARD_NODE             inventory node for make ssh, default controller
@@ -314,6 +315,10 @@ Current image keys:
 ```text
 debian-13
 ubuntu-24.04
+centos-stream-10
+fedora-eln
+almalinux-10
+rocky-linux-10
 ```
 
 Current flavor keys:
@@ -321,6 +326,7 @@ Current flavor keys:
 ```text
 devstack-control   8 vCPU, 16 GiB RAM, 80 GiB disk
 devstack-compute   8 vCPU,  8 GiB RAM, 80 GiB disk
+microshift-node    8 vCPU,  8 GiB RAM, 80 GiB disk
 ```
 
 The default local image is Debian 13 genericcloud.

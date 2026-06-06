@@ -1,0 +1,5 @@
+---
+- name: Load MicroShift defaults
+  ansible.builtin.debug:
+    msg: MicroShift defaults loaded
+  changed_when: false

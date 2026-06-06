@@ -27,7 +27,7 @@
 
 - `make render` -> `ansible/playbooks/provider/render.yaml`
 - `make apply` -> `ansible/playbooks/provider/apply.yaml`
-- `make deploy` -> `ansible/playbooks/provider/deploy-devstack.yaml`
+- `make deploy` -> `ansible/playbooks/provider/deploy-devstack.yaml` by default, or `ansible/playbooks/workloads/microshift/deploy.yaml` with `ARD_WORKLOAD=microshift`
 - `make verify` -> `ansible/playbooks/provider/verify.yaml`
 - `make destroy` -> `ansible/playbooks/provider/destroy.yaml`
 - `make cleanup` -> `ansible/playbooks/provider/cleanup.yaml`
@@ -37,5 +37,5 @@
 - **Provider behavior:** `ansible/playbooks/provider/` and `ansible/roles/ard_provider_*`
 - **Static provider entry points:** `ansible/roles/ard_static_*`
 - **KubeVirt provider placeholder:** not yet documented
-- **Workload composition:** `ansible/playbooks/workloads/`
+- **Workload composition:** `ansible/playbooks/workloads/`; select MicroShift with `ARD_WORKLOAD=microshift`
 - **Libvirt implementation details:** `ansible/roles/ard_libvirt_*`

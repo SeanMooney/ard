@@ -1,0 +1,117 @@
+---
+- name: Validate MicroShift networking selection
+  ansible.builtin.assert:
+    that:
+      - microshift_networking in ['ovnk', 'kindnet']
+    fail_msg: "microshift_networking must be ovnk or kindnet."
+
+- name: Install MicroShift COPR dependency repositories package first
+  become: true
+  ansible.builtin.package:
+    name: microshift-io-dependencies
+    state: present
+  when: microshift_rpm_channel in ['copr-stable', 'copr-nightly']
+
+- name: Build MicroShift RPM package list
+  ansible.builtin.set_fact:
+    microshift_rpm_packages: >-
+      {{
+        ['microshift']
+        + (['microshift-networking'] if microshift_networking == 'ovnk' else ['microshift-kindnet'])
+        + (['microshift-topolvm'] if microshift_install_topolvm | bool else [])
+        + (['microshift-olm'] if microshift_install_olm | bool else [])
+        + microshift_client_packages
+      }}
+
+- name: Install MicroShift RPM packages
+  become: true
+  ansible.builtin.package:
+    name: "{{ microshift_rpm_packages }}"
+    state: present
+
+- name: Prepare TopoLVM backing disk file
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    mkdir -p "$(dirname {{ microshift_topolvm_lvm_disk }})"
+    if [ ! -f {{ microshift_topolvm_lvm_disk }} ]; then
+      truncate --size={{ microshift_topolvm_lvm_size }} {{ microshift_topolvm_lvm_disk }}
+    fi
+  args:
+    executable: /bin/bash
+    creates: "{{ microshift_topolvm_lvm_disk }}"
+  when: microshift_install_topolvm | bool
+
+- name: Ensure MicroShift service drop-in directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/microshift.service.d
+    state: directory
+    mode: "0755"
+  when: microshift_install_topolvm | bool
+
+- name: Configure TopoLVM backing volume group service hook
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/microshift.service.d/99-lvm-config.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPre=/bin/bash -c 'vgs "{{ microshift_topolvm_vg_name }}" || vgcreate -f -y "{{ microshift_topolvm_vg_name }}" "$(losetup --find --show --nooverlap "{{ microshift_topolvm_lvm_disk }}")"'
+  when: microshift_install_topolvm | bool
+
+- name: Run MicroShift release postinstall script
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ microshift_release_scripts_dir }}/postinstall.sh"
+  changed_when: true
+  when: microshift_rpm_channel == 'github-release'
+
+- name: Enable and start MicroShift service
+  become: true
+  ansible.builtin.systemd:
+    name: microshift.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for MicroShift kubeconfig
+  become: true
+  ansible.builtin.wait_for:
+    path: "{{ microshift_kubeconfig }}"
+    timeout: "{{ microshift_validate_timeout }}"
+
+- name: Ensure root kubeconfig directory exists
+  become: true
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    mode: "0700"
+
+- name: Create root kubeconfig symlink
+  become: true
+  ansible.builtin.file:
+    src: "{{ microshift_kubeconfig }}"
+    dest: /root/.kube/config
+    state: link
+    force: true
+
+- name: Ensure workload user kubeconfig directory exists
+  become: true
+  ansible.builtin.file:
+    path: "/home/{{ microshift_user }}/.kube"
+    state: directory
+    owner: "{{ microshift_user }}"
+    group: "{{ microshift_user }}"
+    mode: "0700"
+
+- name: Copy kubeconfig for workload user
+  become: true
+  ansible.builtin.copy:
+    src: "{{ microshift_kubeconfig }}"
+    dest: "/home/{{ microshift_user }}/.kube/config"
+    owner: "{{ microshift_user }}"
+    group: "{{ microshift_user }}"
+    mode: "0600"
+    remote_src: true

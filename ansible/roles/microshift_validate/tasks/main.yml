@@ -1,0 +1,160 @@
+---
+- name: Check MicroShift service is active
+  become: true
+  ansible.builtin.command: systemctl is-active microshift.service
+  register: microshift_service_active
+  changed_when: false
+
+- name: Wait for MicroShift node readiness
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - wait
+      - --for=condition=Ready
+      - nodes
+      - --all
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+
+- name: Check for failed or pending MicroShift pods
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig {{ microshift_kubeconfig }} get pods -A -o json |
+      jq -e '[.items[] | select(.status.phase == "Pending" or .status.phase == "Failed" or .status.phase == "Unknown")] | length == 0'
+  args:
+    executable: /bin/bash
+  register: microshift_pod_health
+  changed_when: false
+  until: microshift_pod_health.rc == 0
+  retries: 60
+  delay: 10
+
+- name: Create MicroShift smoke namespace
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - create
+      - namespace
+      - "{{ microshift_smoke_namespace }}"
+  register: microshift_smoke_namespace_create
+  changed_when: "'created' in microshift_smoke_namespace_create.stdout"
+  failed_when: >-
+    microshift_smoke_namespace_create.rc != 0 and
+    'AlreadyExists' not in microshift_smoke_namespace_create.stderr
+  when: microshift_run_smoke_test | bool
+
+- name: Apply MicroShift PVC and BusyBox smoke pod
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig {{ microshift_kubeconfig }} -n {{ microshift_smoke_namespace }} apply -f - <<'EOF'
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: smoke-pvc
+    spec:
+      storageClassName: {{ microshift_storage_class_names[microshift_default_storage_class] }}
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 128Mi
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: smoke-busybox
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: busybox
+          image: {{ microshift_smoke_image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          command: ["/bin/sh", "-c"]
+          args:
+            - echo microshift-smoke > /data/result && cat /data/result && sleep 3600
+          volumeMounts:
+            - name: smoke-storage
+              mountPath: /data
+      volumes:
+        - name: smoke-storage
+          persistentVolumeClaim:
+            claimName: smoke-pvc
+    EOF
+  args:
+    executable: /bin/bash
+  register: microshift_smoke_apply
+  changed_when: "'created' in microshift_smoke_apply.stdout or 'configured' in microshift_smoke_apply.stdout"
+  when: microshift_run_smoke_test | bool
+
+- name: Wait for smoke PVC to bind
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_smoke_namespace }}"
+      - wait
+      - --for=jsonpath={.status.phase}=Bound
+      - pvc/smoke-pvc
+      - --timeout=300s
+  changed_when: false
+  when: microshift_run_smoke_test | bool
+
+- name: Wait for smoke BusyBox pod readiness
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_smoke_namespace }}"
+      - wait
+      - --for=condition=Ready
+      - pod/smoke-busybox
+      - --timeout=300s
+  changed_when: false
+  when: microshift_run_smoke_test | bool
+
+- name: Read smoke BusyBox logs
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_smoke_namespace }}"
+      - logs
+      - smoke-busybox
+  register: microshift_smoke_logs
+  changed_when: false
+  when: microshift_run_smoke_test | bool
+
+- name: Verify smoke BusyBox wrote expected output
+  ansible.builtin.assert:
+    that:
+      - "'microshift-smoke' in microshift_smoke_logs.stdout"
+    fail_msg: "MicroShift smoke pod did not produce expected output."
+  when: microshift_run_smoke_test | bool
