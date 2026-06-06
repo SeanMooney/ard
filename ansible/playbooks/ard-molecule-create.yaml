@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/provider/molecule-create.yaml
-- import_playbook: provider/molecule-create.yaml

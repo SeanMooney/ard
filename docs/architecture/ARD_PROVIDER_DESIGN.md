@@ -59,8 +59,8 @@ compute-2:
 
 Existing roles and playbooks to preserve:
 
-- `ansible/deploy_multinode_devstack.yaml`
-- `ansible/devstack_common.yaml`
+- `ansible/playbooks/workloads/devstack/deploy-multinode.yaml`
+- `ansible/playbooks/workloads/devstack/common.yaml`
 - `ansible/roles/devstack_common/`
 - `ansible/roles/devstack_controller/`
 - `ansible/roles/devstack_compute/`
@@ -112,16 +112,12 @@ Makefile
 
 ansible/
   playbooks/
-    ard-render.yaml
-    ard-apply.yaml
-    ard-create.yaml              # compatibility wrapper for ard-apply.yaml
-    ard-deploy-devstack.yaml
-    ard-verify.yaml
-    ard-destroy.yaml
-    ard-cleanup.yaml
-    ard-collect-logs.yaml
-    ard-site.yaml
-    ard-kubevirt-ensure-resources.yaml
+    provider/render.yaml
+    provider/apply.yaml
+    provider/deploy-devstack.yaml
+    provider/verify.yaml
+    provider/destroy.yaml
+    provider/cleanup.yaml
 
   files/
     kubevirt/
@@ -777,7 +773,7 @@ HOST_IP: "{{ hostvars[inventory_hostname]['nodepool']['private_ipv4'] }}"
 
 ## 9. Common Provider Playbooks
 
-### 9.1 `ard-render.yaml`
+### 9.1 `provider/render.yaml`
 
 Creates or refreshes a deployment workspace from defaults. It writes `deployment.yaml`, `nodes.yaml`, and the layered files under `devstack/` without creating provider resources.
 
@@ -789,9 +785,9 @@ Creates or refreshes a deployment workspace from defaults. It writes `deployment
     - ard_provider_render
 ```
 
-### 9.2 `ard-apply.yaml` / `ard-create.yaml`
+### 9.2 `provider/apply.yaml`
 
-Reads a deployment workspace, creates provider resources, and writes dynamic inventory/state. `ard-create.yaml` can remain as a compatibility wrapper for users and Molecule scenarios that already expect a create phase.
+Reads a deployment workspace, creates provider resources, and writes dynamic inventory/state.
 
 ```yaml
 - name: Apply ARD provider deployment
@@ -806,7 +802,7 @@ Reads a deployment workspace, creates provider resources, and writes dynamic inv
     - ard_provider_state
 ```
 
-### 9.3 `ard-deploy-devstack.yaml`
+### 9.3 `provider/deploy-devstack.yaml`
 
 Re-discovers provider inventory and deploys DevStack.
 
@@ -824,23 +820,10 @@ Re-discovers provider inventory and deploys DevStack.
     - ard_devstack_config
 
 - name: Deploy ARD multinode DevStack
-  import_playbook: ../deploy_multinode_devstack.yaml
+  import_playbook: ../workloads/devstack/deploy-multinode.yaml
 ```
 
-### 9.4 `ard-site.yaml`
-
-Full local flow. It can render a deployment workspace if needed, apply it, deploy DevStack, and verify.
-
-```yaml
-- import_playbook: ard-render.yaml
-- import_playbook: ard-apply.yaml
-- import_playbook: ard-deploy-devstack.yaml
-
-- name: Verify ARD deployment
-  import_playbook: ard-verify.yaml
-```
-
-### 9.5 `ard-destroy.yaml`
+### 9.4 `provider/destroy.yaml`
 
 Collects logs and destroys provider resources for a deployment workspace. It keeps the deployment folder so inputs, generated inventory, provider state, and logs remain available for inspection.
 
@@ -854,7 +837,7 @@ Collects logs and destroys provider resources for a deployment workspace. It kee
     - ard_provider_destroy
 ```
 
-### 9.6 `ard-cleanup.yaml`
+### 9.5 `provider/cleanup.yaml`
 
 Removes local deployment workspace state after destroy.
 
@@ -1474,12 +1457,12 @@ ARD_EXTRA_VARS ?= ard_provider=$(ARD_PROVIDER) ard_deployment_dir=$(ARD_DEPLOYME
 
 .PHONY: render
 render:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-render.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/render.yaml \
 		-e $(ARD_EXTRA_VARS)
 
 .PHONY: apply
 apply:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-apply.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/apply.yaml \
 		-e ard_deployment_dir=$(ARD_DEPLOYMENT_DIR)
 
 .PHONY: create
@@ -1487,28 +1470,23 @@ create: apply
 
 .PHONY: deploy
 deploy:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-deploy-devstack.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/deploy-devstack.yaml \
 		-e ard_deployment_dir=$(ARD_DEPLOYMENT_DIR)
 
 .PHONY: verify
 verify:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-verify.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/verify.yaml \
 		-e ard_deployment_dir=$(ARD_DEPLOYMENT_DIR)
 
 .PHONY: destroy
 destroy:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-destroy.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/destroy.yaml \
 		-e ard_deployment_dir=$(ARD_DEPLOYMENT_DIR)
 
 .PHONY: cleanup
 cleanup:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-cleanup.yaml \
+	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/provider/cleanup.yaml \
 		-e ard_deployment_dir=$(ARD_DEPLOYMENT_DIR)
-
-.PHONY: site
-site:
-	ansible-playbook -i $(ARD_INVENTORY) ansible/playbooks/ard-site.yaml \
-		-e $(ARD_EXTRA_VARS)
 
 .PHONY: kubevirt-resources
 kubevirt-resources:
@@ -1527,12 +1505,10 @@ make deploy ARD_DEPLOYMENT=devstack-a
 make destroy ARD_DEPLOYMENT=devstack-a
 make cleanup ARD_DEPLOYMENT=devstack-a
 
-make site ARD_PROVIDER=libvirt ARD_DEPLOYMENT=devstack-libvirt-a
-make site ARD_PROVIDER=kubevirt ARD_DEPLOYMENT=devstack-kubevirt-a
 make kubevirt-resources ARD_KUBEVIRT_NAMESPACE=ard-devstack
 ```
 
-The KubeVirt provider should use `VirtualMachineInstancetype` and `VirtualMachinePreference` resources if they already exist. It should not create them by default. `make kubevirt-resources` is the explicit setup path to create or update the repo-carried defaults in the target namespace. An Ansible equivalent, `ard-kubevirt-ensure-resources.yaml`, can provide the same behavior for non-Make workflows.
+The KubeVirt provider should use `VirtualMachineInstancetype` and `VirtualMachinePreference` resources if they already exist. It should not create them by default. `make kubevirt-resources` is the explicit setup path to create or update the repo-carried defaults in the target namespace.
 
 ## 14. Molecule Integration
 
@@ -1570,7 +1546,7 @@ provisioner:
       network_cidr: 192.168.99.0/24
 ```
 
-`create.yml` reads `molecule.yml`, writes generated render variables under the ignored deployment directory, calls `ard-render.yaml`, and then calls `ard-apply.yaml`. The same pattern applies to KubeVirt once that provider is implemented.
+`create.yml` reads `molecule.yml`, writes generated render variables under the ignored deployment directory, calls `provider/render.yaml`, and then calls `provider/apply.yaml`. The same pattern applies to KubeVirt once that provider is implemented.
 
 ## 15. Zuul Integration
 
@@ -1593,7 +1569,7 @@ Preferred patterns:
     - ard_provider_inventory
 
 - name: Deploy DevStack
-  import_playbook: ansible/deploy_multinode_devstack.yaml
+  import_playbook: ansible/playbooks/workloads/devstack/deploy-multinode.yaml
 ```
 
 ### 15.2 Pre-run creates, run re-discovers
@@ -1620,9 +1596,9 @@ For KubeVirt, post-run log collection should work from the OpenShift API even if
   - `submodules/zuul-jobs`
   - `submodules/openstack-zuul-jobs`
 - Re-check that ARD's `devstack_controller` and `devstack_compute` roles still call the current upstream `write-devstack-local-conf` and `run-devstack` roles with compatible variable names.
-- Add `ard-create.yaml`.
-- Add `ard-deploy-devstack.yaml`.
-- Add `ard-destroy.yaml`.
+- Add `provider/apply.yaml`.
+- Add `provider/deploy-devstack.yaml`.
+- Add `provider/destroy.yaml`.
 - Add dispatcher roles:
   - `ard_provider_preflight`
   - `ard_provider_image`
@@ -1643,7 +1619,7 @@ For KubeVirt, post-run log collection should work from the OpenShift API even if
 - Create controller + compute-1.
 - Then controller + compute-1 + compute-2.
 - Match current Vagrant scenario groups.
-- Run existing `deploy_multinode_devstack.yaml`.
+- Run existing `deploy-multinode.yaml`.
 
 ### Phase 4: Molecule libvirt scenario without Vagrant
 

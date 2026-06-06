@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/provider/deploy-devstack.yaml
-- import_playbook: provider/deploy-devstack.yaml

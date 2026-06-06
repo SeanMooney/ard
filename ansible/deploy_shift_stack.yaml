@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/openshift/deploy-shift-stack.yaml
-- import_playbook: playbooks/workloads/openshift/deploy-shift-stack.yaml

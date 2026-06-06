@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/provider/cleanup.yaml
-- import_playbook: provider/cleanup.yaml

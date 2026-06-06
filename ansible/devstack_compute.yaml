@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/devstack/compute.yaml
-- import_playbook: playbooks/workloads/devstack/compute.yaml
