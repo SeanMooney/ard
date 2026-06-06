@@ -6,6 +6,8 @@ SKIP_PACKAGES=${SKIP_PACKAGES:-0}
 SKIP_UV_INSTALL=${SKIP_UV_INSTALL:-0}
 SKIP_SUBMODULES=${SKIP_SUBMODULES:-0}
 
+APT_UPDATED=0
+
 log() {
     printf '==> %s\n' "$*"
 }
@@ -57,19 +59,32 @@ select_package_manager() {
     log "Detected ${PRETTY_NAME:-${ID:-unknown}} using ${PACKAGE_MANAGER}"
 }
 
-install_minimal_bootstrap_packages() {
-    [[ "${SKIP_PACKAGES}" == "1" ]] && return 0
+install_os_packages() {
+    local -a packages=("$@")
 
+    [[ "${SKIP_PACKAGES}" == "1" ]] && return 0
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        log "No packages requested; skipping install"
+        return 0
+    fi
+
+    log "Installing package(s): ${packages[*]}"
     case "${PACKAGE_MANAGER}" in
         apt)
-            run sudo apt-get update
-            run sudo apt-get install -y python3 python3-pip curl ca-certificates
+            if [[ "${APT_UPDATED}" != "1" ]]; then
+                run sudo apt-get update
+                APT_UPDATED=1
+            fi
+            run sudo apt-get install -y "${packages[@]}"
             ;;
         dnf)
-            run sudo dnf -y --setopt=install_weak_deps=False install \
-                python3 python3-pip curl ca-certificates
+            run sudo dnf -y --setopt=install_weak_deps=False install "${packages[@]}"
             ;;
     esac
+}
+
+install_minimal_bootstrap_packages() {
+    install_os_packages python3 python3-pip curl ca-certificates
 }
 
 ensure_uv() {
@@ -99,7 +114,6 @@ ensure_uv() {
 }
 
 install_bindep_packages() {
-    [[ "${SKIP_PACKAGES}" == "1" ]] && return 0
     require_file bindep.txt
 
     log "Resolving OS packages with bindep"
@@ -115,16 +129,7 @@ install_bindep_packages() {
         return 0
     fi
 
-    log "Installing ${#packages[@]} bindep package(s): ${packages[*]}"
-    case "${PACKAGE_MANAGER}" in
-        apt)
-            sudo apt-get update
-            sudo apt-get install -y "${packages[@]}"
-            ;;
-        dnf)
-            sudo dnf -y --setopt=install_weak_deps=False install "${packages[@]}"
-            ;;
-    esac
+    install_os_packages "${packages[@]}"
 }
 
 sync_python_environment() {
@@ -149,10 +154,9 @@ check_command() {
 
 check_local_libvirt() {
     log "Checking local ARD/libvirt commands"
-    check_command virsh
-    check_command qemu-img
-    check_command cloud-localds
-    check_command setfacl
+    for cmd in virsh qemu-img cloud-localds setfacl; do
+        check_command "${cmd}"
+    done
 
     if [[ "${DRY_RUN}" != "1" ]]; then
         if virsh --connect qemu:///system uri >/dev/null 2>&1; then
