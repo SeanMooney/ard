@@ -8,9 +8,6 @@ python3-pip
 acl
 podman
 
-# Python virtual environment support on Debian-family hosts
-python3-venv [platform:dpkg]
-
 # Local libvirt provider dependencies on Debian/Ubuntu
 qemu-utils [platform:dpkg]
 libvirt-clients [platform:dpkg]
