@@ -1,8 +1,3 @@
 ---
-- name: Cleanup ARD deployment workspace
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  roles:
-    - ard_provider_common
-    - ard_provider_cleanup
+# Compatibility wrapper. Canonical path: ansible/playbooks/provider/cleanup.yaml
+- import_playbook: provider/cleanup.yaml

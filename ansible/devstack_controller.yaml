@@ -1,6 +1,3 @@
 ---
-- name: Apply role devstack_controller
-  gather_facts: false
-  hosts: controller
-  roles:
-    - role: devstack_controller
+# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/devstack/controller.yaml
+- import_playbook: playbooks/workloads/devstack/controller.yaml

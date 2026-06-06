@@ -1,0 +1,63 @@
+---
+- name: Verify ARD deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - ard_provider_common
+  tasks:
+    - name: Require ARD deployment directory
+      ansible.builtin.assert:
+        that:
+          - ard_deployment_dir is defined
+          - ard_deployment_dir | length > 0
+        fail_msg: "Pass -e ard_deployment_dir=/path/to/deployment"
+
+    - name: Check generated inventory exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/inventory.yaml"
+      register: ard_verify_inventory
+
+    - name: Require generated inventory
+      ansible.builtin.assert:
+        that:
+          - ard_verify_inventory.stat.exists
+        fail_msg: "{{ ard_deployment_dir }}/inventory.yaml does not exist; run ard-apply first."
+
+    - name: Ping all ARD nodes
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - all
+          - -m
+          - ansible.builtin.ping
+      changed_when: false
+
+    - name: Check DevStack checkout on controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -m
+          - ansible.builtin.command
+          - -a
+          - test -d /opt/repos/devstack
+      changed_when: false
+
+    - name: Run Tempest smoke when requested
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -m
+          - ansible.builtin.shell
+          - -a
+          - cd /opt/stack/tempest && .tox/tempest/bin/tempest run --smoke
+      changed_when: false
+      when: ard_verify_tempest_smoke | default(false) | bool

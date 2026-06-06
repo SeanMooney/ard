@@ -1,0 +1,177 @@
+---
+- name: Load ARD deployment variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Initialize static defaults and node list
+  ansible.builtin.set_fact:
+    ard_static_nodes_source: "{{ ard_static_nodes | default([]) }}"
+    ard_static_default_user: "{{ ard_static_default_user | default('stack') }}"
+    ard_static_default_port: "{{ ard_static_default_port | default(22) }}"
+    ard_static_default_private_key_file: "{{ ard_static_default_private_key_file | default(lookup('env', 'HOME') + '/.ssh/id_ed25519_stack') }}"
+    ard_static_node_list: []
+    ard_static_inventory_data: {}
+
+- name: Build static nodes from inline declarations
+  ansible.builtin.set_fact:
+    ard_static_node_list: >-
+      {{
+        ard_static_node_list +
+        [
+          {
+            'name': item.name,
+            'hostname': (item.hostname | default(item.name)),
+            'ansible_host': item.ansible_host,
+            'ansible_user': item.ansible_user | default(ard_static_default_user),
+            'ansible_port': item.ansible_port | default(ard_static_default_port),
+            'ansible_private_key_file': item.ansible_private_key_file | default(item.private_key_file | default(ard_static_default_private_key_file)),
+            'ansible_become': item.ansible_become | default(ard_static_become | default(false)),
+            'ansible_ssh_common_args': item.ansible_ssh_common_args | default('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'),
+            'groups': (((item.groups | default([])) + (ard_static_workload_groups | default({})).get(item.name, [])) | unique)
+          }
+        ]
+      }}
+  loop: "{{ ard_static_nodes_source }}"
+  when: ard_static_nodes_source | length > 0
+
+- name: Load static inventory file for nodes
+  ansible.builtin.set_fact:
+    ard_static_inventory_data: "{{ lookup('file', ard_static_inventory) | from_yaml }}"
+  when: ard_static_nodes_source | length == 0
+
+- name: Build static nodes from an existing inventory
+  ansible.builtin.set_fact:
+    ard_static_node_list: >-
+      {{
+        ard_static_node_list +
+        [
+          {
+            'name': item.key,
+            'hostname': item.value.hostname | default(item.key),
+            'ansible_host': item.value.ansible_host | default(item.key),
+            'ansible_user': item.value.ansible_user | default(ard_static_default_user),
+            'ansible_port': item.value.ansible_port | default(ard_static_default_port),
+            'ansible_private_key_file': item.value.ansible_key | default(item.value.ansible_private_key_file | default(ard_static_default_private_key_file)),
+            'ansible_become': item.value.ansible_become | default(ard_static_become | default(false)),
+            'ansible_ssh_common_args': item.value.ansible_ssh_common_args | default('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'),
+            'groups': (ard_static_workload_groups | default({})).get(item.key, item.value.groups | default([])) | default([])
+          }
+        ]
+      }}
+  loop: "{{ ard_static_inventory_data.get('all', {}).get('hosts', {}) | default({}) | dict2items }}"
+  when:
+    - ard_static_nodes_source | length == 0
+    - (ard_static_inventory_data | default({})).get('all', {}).get('hosts', {}) is mapping
+    - (ard_static_inventory_data | default({})).get('all', {}).get('hosts', {}) | length > 0
+
+- name: Require static node definitions
+  ansible.builtin.assert:
+    that:
+      - ard_static_node_list | length > 0
+    fail_msg: "No usable static nodes were loaded from ard_static_nodes or ard_static_inventory."
+
+- name: Render normalized ARD static node list
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/nodes.yaml"
+    mode: "0644"
+    content: |
+      {{ ( {'ard_nodes': ard_static_node_list} | to_nice_yaml(indent=2, sort_keys=False) ) | regex_replace('^', '---\n', 1) }}
+
+- name: Render ARD inventory from inline nodes
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/inventory.yaml"
+    mode: "0644"
+    content: |
+      ---
+      all:
+        hosts:
+      {% for node in ard_static_node_list %}
+          {{ node.name }}:
+            ansible_host: {{ node.ansible_host }}
+            ansible_user: {{ node.ansible_user }}
+      {% if node.ansible_port | int != 22 %}
+            ansible_port: {{ node.ansible_port }}
+      {% endif %}
+      {% if node.ansible_private_key_file %}
+            ansible_private_key_file: {{ node.ansible_private_key_file }}
+      {% endif %}
+            ansible_ssh_common_args: "{{ node.ansible_ssh_common_args }}"
+            ansible_become: {{ node.ansible_become }}
+            ard_deployment_name: {{ ard_deployment_name }}
+            nodepool:
+              private_ipv4: {{ node.ansible_host }}
+              public_ipv4: {{ node.ansible_host }}
+            zuul:
+              executor:
+                log_root: /tmp/zuul_logs
+                work_root: /tmp/work_root
+      {% endfor %}
+        children:
+          ard_provider_nodes:
+            hosts:
+      {% for node in ard_static_node_list %}
+              {{ node.name }}:
+      {% endfor %}
+      {% set group_names = [] %}
+      {% for node in ard_static_node_list %}
+      {% for group in node.groups %}
+      {% if group not in group_names %}{% set _ = group_names.append(group) %}{% endif %}
+      {% endfor %}
+      {% endfor %}
+      {% for group_name in group_names %}
+          {{ group_name }}:
+            hosts:
+      {% for node in ard_static_node_list if group_name in node.groups %}
+              {{ node.name }}:
+      {% endfor %}
+      {% endfor %}
+  when: ard_static_nodes_source | length > 0
+
+- name: Copy provided static inventory into deployment workspace
+  ansible.builtin.copy:
+    src: "{{ ard_static_inventory }}"
+    dest: "{{ ard_deployment_dir }}/inventory.yaml"
+    mode: "0644"
+  when:
+    - ard_static_nodes_source | length == 0
+    - ard_static_inventory | default('') | length > 0
+
+- name: Add ARD static nodes to active inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    ansible_host: "{{ item.ansible_host }}"
+    ansible_user: "{{ item.ansible_user }}"
+    ansible_port: "{{ item.ansible_port }}"
+    ansible_private_key_file: "{{ item.ansible_private_key_file }}"
+    ansible_ssh_common_args: "{{ item.ansible_ssh_common_args }}"
+    ansible_become: "{{ item.ansible_become }}"
+    ard_deployment_name: "{{ ard_deployment_name }}"
+    nodepool:
+      private_ipv4: "{{ item.ansible_host }}"
+      public_ipv4: "{{ item.ansible_host }}"
+    zuul:
+      executor:
+        log_root: /tmp/zuul_logs
+        work_root: /tmp/work_root
+  loop: "{{ ard_static_node_list }}"
+
+- name: Write static provider-state file
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: |
+      ---
+      ard_provider: static
+      ard_deployment_name: {{ ard_deployment_name }}
+      ard_static_source: {{
+        'inline'
+        if (ard_static_nodes_source | length > 0)
+        else ('inventory:' + ard_static_inventory)
+      }}
+      ard_static_nodes:
+      {% for node in ard_static_node_list %}
+        - name: {{ node.name }}
+          ansible_host: {{ node.ansible_host }}
+          ansible_user: {{ node.ansible_user }}
+      {% endfor %}

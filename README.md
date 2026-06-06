@@ -5,8 +5,12 @@ deployments. The primary local workflow uses Ansible provider playbooks to
 provision libvirt VMs, generate an ARD/Zuul-like inventory, and then run the
 existing DevStack deployment roles inside those VMs.
 
-The current local provider target is libvirt. KubeVirt/OpenShift
-Virtualization is design work for a later phase.
+The current local provider target is libvirt. KubeVirt is planned as a provider, OpenShift-related workloads are supported, and `static` is now available for deployments on pre-provisioned SSH hosts.
+
+Docs navigation was reorganized; see:
+- `docs/repo-navigation.md` for repo layout and entry points
+- `docs/README.md` for the documentation index
+- `ansible/README.md` for Ansible structure and canonical playbook paths
 
 ## Quick start
 

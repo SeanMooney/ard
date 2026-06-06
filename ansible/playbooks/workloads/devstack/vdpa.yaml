@@ -1,0 +1,5 @@
+---
+- name: Apply role configure_vdpa
+  hosts: all
+  roles:
+    - configure_vdpa

@@ -54,12 +54,12 @@ default:
 	$(MAKE) verify
 
 render:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-render.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/render.yaml \
 		$(ARD_RENDER_FILE_ARG) \
 		-e "$(ARD_RENDER_EXTRA_VARS)"
 
 apply:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-apply.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/apply.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 ping:
@@ -78,19 +78,19 @@ ssh-print:
 
 deploy:
 	uv run ansible-playbook -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
-		ansible/playbooks/ard-deploy-devstack.yaml \
+		ansible/playbooks/provider/deploy-devstack.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 verify:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-verify.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/verify.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 destroy:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-destroy.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/destroy.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 destroy-clean-generated:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-destroy.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/destroy.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS) ard_destroy_cleanup_generated=true"
 
 clean-generated:
@@ -99,7 +99,7 @@ clean-generated:
 		$(ARD_DEPLOYMENT_DIR)/rendered
 
 cleanup:
-	uv run ansible-playbook -i localhost, ansible/playbooks/ard-cleanup.yaml \
+	uv run ansible-playbook -i localhost, ansible/playbooks/provider/cleanup.yaml \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 site: render apply deploy verify

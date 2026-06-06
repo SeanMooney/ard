@@ -14,7 +14,7 @@
           - ansible-playbook
           - -i
           - "{{ ard_deployment_dir }}/inventory.yaml"
-          - ansible/playbooks/ard-deploy-devstack.yaml
+          - ansible/playbooks/provider/deploy-devstack.yaml
           - -e
           - ard_deployment_dir={{ ard_deployment_dir }}
       environment:

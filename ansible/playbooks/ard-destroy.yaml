@@ -1,8 +1,3 @@
 ---
-- name: Destroy ARD provider deployment
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  roles:
-    - ard_provider_common
-    - ard_provider_destroy
+# Compatibility wrapper. Canonical path: ansible/playbooks/provider/destroy.yaml
+- import_playbook: provider/destroy.yaml

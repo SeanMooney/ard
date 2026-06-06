@@ -7,3 +7,10 @@ ard_render_provider_profiles:
       controller_flavor: devstack-control
       compute_flavor: devstack-compute
       vm_preference: devstack
+  local-static:
+    provider: static
+    provider_defaults:
+      image: debian-13
+      controller_flavor: devstack-control
+      compute_flavor: devstack-compute
+      vm_preference: devstack

@@ -1,0 +1,5 @@
+---
+- name: Static provider uses existing nodes only
+  ansible.builtin.debug:
+    msg: "Skipping node-provisioning step for static provider; nodes are sourced from static input."
+  changed_when: false

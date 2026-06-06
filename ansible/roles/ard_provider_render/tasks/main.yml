@@ -34,7 +34,7 @@
     ard_deployment_dir: "{{ ard_deployment_dir | default('deployments/devstack-1') }}"
     ard_deployment_name: "{{ ard_deployment_name | default((ard_deployment_dir | default('deployments/devstack-1')) | basename) }}"
     ard_provider: "{{ ard_provider | default('libvirt') }}"
-    ard_provider_profile: "{{ ard_provider_profile | default('local-libvirt') }}"
+    ard_provider_profile: "{{ (ard_provider == 'static' and ard_provider_profile == 'local-libvirt') | ternary('local-static', ard_provider_profile) }}"
     ard_topology: "{{ ard_topology | default('one-controller-one-compute') }}"
     ard_target_branch: "{{ ard_target_branch | default('master') }}"
 
@@ -74,7 +74,7 @@
 - name: Validate supported ARD render presets
   ansible.builtin.assert:
     that:
-      - ard_provider == 'libvirt'
+      - ard_provider in ['libvirt', 'static']
       - ard_topology in ard_render_topologies
       - ard_provider_profile in ard_render_provider_profiles
       - ard_render_service_profile_list | difference(ard_render_services.keys() | list) | length == 0
@@ -110,6 +110,12 @@
       {{ {'devstack': {'common': {'devstack_branch': ard_target_branch}}} |
          combine(ard_render_branches[ard_target_branch] | default({}), recursive=True) }}
     ard_render_provider_profile_config: "{{ ard_render_provider_profiles[ard_provider_profile] }}"
+
+- name: Validate provider profile/provider match
+  ansible.builtin.assert:
+    that:
+      - ard_render_provider_profile_config.provider == ard_provider
+    fail_msg: "Provider profile '{{ ard_provider_profile }}' is for {{ ard_render_provider_profile_config.provider }} but selected provider is {{ ard_provider }}."
 
 - name: Compose ARD provider defaults
   ansible.builtin.set_fact:
@@ -213,6 +219,10 @@
       ard_default_controller_flavor: {{ ard_render_controller_flavor }}
       ard_default_compute_flavor: {{ ard_render_compute_flavor }}
       ard_default_vm_preference: {{ ard_render_vm_preference }}
+      ard_static_inventory: {{ ard_static_inventory | default('') | to_json }}
+      ard_static_nodes: {{ ard_static_nodes | default([]) | to_json }}
+      ard_static_workload_groups: {{ ard_static_workload_groups | default({}) | to_json }}
+      ard_static_validate_ssh: {{ ard_static_validate_ssh | default(true) }}
 
       ard_management_network: {{ ard_management_network }}
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
@@ -268,3 +278,8 @@
     content: |
       {{ ard_render_generated_header }}
       {{ ard_render_devstack_compute | to_nice_yaml(indent=2, sort_keys=False) }}
+
+- name: Render static provider workspace artifacts
+  ansible.builtin.include_role:
+    name: ard_static_inventory
+  when: ard_provider == 'static'
