@@ -9,13 +9,6 @@ This directory is organized as:
 - `roles/` — role library (kept flat for now, no removals).
 - `files/` — static data.
 
-## Compatibility wrappers
-
-Legacy file paths are kept as wrappers while canonical paths are introduced:
-
-- `ansible/playbooks/ard-*.yaml`
-- `ansible/deploy_*.yaml`, `ansible/devstack_*.yaml`, `ansible/vdpa.yaml`
-
 ## Canonical paths used by workflows
 
 | Workflow | Canonical playbook |

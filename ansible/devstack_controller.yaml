@@ -1,3 +1,0 @@
----
-# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/devstack/controller.yaml
-- import_playbook: playbooks/workloads/devstack/controller.yaml

@@ -23,10 +23,6 @@
 - `ansible/roles/` — reusable roles (preserved)
 - `ansible/files/` — static role assets/data
 
-Legacy entry points remain as wrappers for transition:
-- `ansible/playbooks/ard-*.yaml`
-- `ansible/deploy_*.yaml`, `ansible/devstack_*.yaml`, `ansible/vdpa.yaml`
-
 ## Top workflow commands
 
 - `make render` -> `ansible/playbooks/provider/render.yaml`

@@ -10,8 +10,8 @@ The initial supported container runtimes are Docker and Podman. The design keeps
 
 - Implementation happens in the ARD repository.
 - Existing ARD DevStack playbooks and roles remain the deployment layer:
-  - `ansible/deploy_multinode_devstack.yaml`
-  - `ansible/devstack_common.yaml`
+  - `ansible/playbooks/workloads/devstack/deploy-multinode.yaml`
+  - `ansible/playbooks/workloads/devstack/common.yaml`
   - `ansible/roles/devstack_common/`
   - `ansible/roles/devstack_controller/`
   - `ansible/roles/devstack_compute/`
@@ -575,7 +575,7 @@ This role should work even when the dynamic inventory is not present, by inspect
     - ard_oci_inventory
 
 - name: Deploy multinode DevStack
-  import_playbook: ../deploy_multinode_devstack.yaml
+  import_playbook: workloads/devstack/deploy-multinode.yaml
 ```
 
 The exact import path may need adjustment based on Ansible's playbook path rules.
@@ -596,7 +596,7 @@ The exact import path may need adjustment based on Ansible's playbook path rules
     - ard_oci_inventory
 
 - name: Deploy multinode DevStack
-  import_playbook: ../deploy_multinode_devstack.yaml
+  import_playbook: workloads/devstack/deploy-multinode.yaml
 
 - name: Verify OCI DevStack deployment
   import_playbook: oci-verify.yaml
@@ -738,7 +738,7 @@ Preferred patterns:
     - ard_oci_inventory
 
 - name: Deploy DevStack
-  import_playbook: ansible/deploy_multinode_devstack.yaml
+  import_playbook: ansible/playbooks/workloads/devstack/deploy-multinode.yaml
 ```
 
 ### 16.2 Pre-run creates, run re-discovers
@@ -989,7 +989,7 @@ After deployment:
 
 ### Phase 4: Reuse existing ARD DevStack deployment
 
-- Run `deploy_multinode_devstack.yaml` against OCI nodes.
+- Run `deploy-multinode.yaml` against OCI nodes.
 - Fix only deployment assumptions that are invalid in containers.
 - Avoid provider-specific logic in DevStack roles.
 

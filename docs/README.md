@@ -12,4 +12,4 @@
 
 - Provider reorganization: implemented in the canonical Ansible layout
 - Role names: preserved (no role deletions)
-- Compatibility wrappers: retained for legacy playbook entry points
+- Playbook entry points: canonical paths under `ansible/playbooks/`
