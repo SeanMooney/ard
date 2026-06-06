@@ -1,0 +1,5 @@
+---
+- name: Static provider has no dedicated network-provisioning step
+  ansible.builtin.debug:
+    msg: "Skipping network step for static provider; networking is supplied by your existing hosts."
+  changed_when: false

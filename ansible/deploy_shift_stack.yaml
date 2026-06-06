@@ -1,26 +1,3 @@
 ---
-- name: basic setup
-  hosts: all
-  roles:
-    - ensure_stack_user
-    - prepare_dev_tools
-
-- name: deploy openshift
-  hosts: openshift
-  tags: ocp
-  roles:
-    - ensure_crc
-    - ensure_kustomize
-
-- name: deploy openshift
-  hosts: openshift
-  tags: ospo
-  roles:
-    - deploy_install_yamls
-
-
-- name: finalize
-  hosts: all
-  roles:
-    - print_debug_ip
-
+# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/openshift/deploy-shift-stack.yaml
+- import_playbook: playbooks/workloads/openshift/deploy-shift-stack.yaml

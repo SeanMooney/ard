@@ -1,0 +1,6 @@
+---
+- name: Apply role devstack_controller
+  gather_facts: false
+  hosts: controller
+  roles:
+    - role: devstack_controller

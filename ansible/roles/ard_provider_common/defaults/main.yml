@@ -2,6 +2,17 @@
 ard_provider: libvirt
 ard_provider_profile: local-libvirt
 ard_topology: one-controller-one-compute
+
+# Static provider inputs
+ard_static_inventory: ""
+ard_static_nodes: []
+ard_static_workload_groups: {}
+ard_static_become: false
+ard_static_validate_ssh: true
+ard_static_default_user: stack
+ard_static_default_port: 22
+ard_static_default_private_key_file: "{{ lookup('env', 'HOME') + '/.ssh/id_ed25519_stack' }}"
+
 ard_target_branch: master
 ard_service_profiles:
   - devstack

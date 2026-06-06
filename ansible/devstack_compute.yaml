@@ -1,6 +1,3 @@
 ---
-- name: Apply role devstack_compute
-  gather_facts: false
-  hosts: compute
-  roles:
-    - role: devstack_compute
+# Compatibility wrapper. Canonical path: ansible/playbooks/workloads/devstack/compute.yaml
+- import_playbook: playbooks/workloads/devstack/compute.yaml

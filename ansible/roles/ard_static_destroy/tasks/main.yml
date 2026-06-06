@@ -1,0 +1,5 @@
+---
+- name: Static provider does not manage lifecycle
+  ansible.builtin.debug:
+    msg: "Static provider destroy is a no-op for infrastructure resources."
+  changed_when: false

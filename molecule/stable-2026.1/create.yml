@@ -1,2 +1,2 @@
 ---
-- import_playbook: ../../ansible/playbooks/ard-molecule-create.yaml
+- import_playbook: ../../ansible/playbooks/provider/molecule-create.yaml

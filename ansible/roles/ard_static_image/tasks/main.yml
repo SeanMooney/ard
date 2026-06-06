@@ -1,0 +1,5 @@
+---
+- name: Static provider has no image-provisioning step
+  ansible.builtin.debug:
+    msg: "Skipping image step for static provider; nodes are pre-provisioned."
+  changed_when: false

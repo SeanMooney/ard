@@ -1,0 +1,52 @@
+---
+- name: Load ARD deployment variables
+  include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Require a static node source
+  ansible.builtin.assert:
+    that:
+      - (ard_static_nodes | default([]) | length) > 0 or (ard_static_inventory | default('') | length) > 0
+    fail_msg: >-
+      Static provider requires either ard_static_nodes or ard_static_inventory in deployment.yaml.
+      Set one of these values before running render/apply for ard_provider=static.
+
+- name: Normalize static workload group overrides
+  ansible.builtin.assert:
+    that:
+      - (ard_static_workload_groups | default({})) is mapping
+
+- name: Validate inline static nodes
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | string | length > 0
+      - item.ansible_host is defined
+      - item.ansible_host | string | length > 0
+  loop: "{{ ard_static_nodes }}"
+  when: (ard_static_nodes | default([]) | length) > 0
+
+- name: Check provided static inventory exists
+  ansible.builtin.stat:
+    path: "{{ ard_static_inventory }}"
+  register: ard_static_inventory_file
+  when: (ard_static_nodes | default([]) | length) == 0 and (ard_static_inventory | default('') | length) > 0
+
+- name: Require valid static inventory path
+  ansible.builtin.assert:
+    that:
+      - ard_static_inventory_file.stat.exists
+    fail_msg: "Static inventory file not found: {{ ard_static_inventory }}"
+  when: (ard_static_nodes | default([]) | length) == 0 and (ard_static_inventory | default('') | length) > 0
+
+- name: Parse provided static inventory
+  ansible.builtin.set_fact:
+    ard_static_inventory_data: "{{ lookup('file', ard_static_inventory) | from_yaml }}"
+  when: (ard_static_nodes | default([]) | length) == 0 and (ard_static_inventory | default('') | length) > 0
+
+- name: Require usable hosts in static inventory
+  ansible.builtin.assert:
+    that:
+      - (ard_static_inventory_data.get('all', {}).get('hosts', {}) | default({}) | length) > 0
+    fail_msg: "Static inventory file must define YAML inventory hosts under all.hosts."
+  when: (ard_static_nodes | default([]) | length) == 0 and (ard_static_inventory | default('') | length) > 0

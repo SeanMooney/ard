@@ -27,16 +27,23 @@
   set_fact:
     ard_cached_base_image: "{{ ard_image_cache_dir_resolved + '/' + (ard_selected_libvirt_image.cache_filename | default(ard_selected_libvirt_image.url | basename)) }}"
 
+- name: Check pre-existing cached image
+  ansible.builtin.stat:
+    path: "{{ ard_cached_base_image }}"
+  register: ard_cached_base_image_pre_download_stat
+
 - name: Download base cloud image when missing
-  get_url:
+  ansible.builtin.get_url:
     url: "{{ ard_selected_libvirt_image.url }}"
     dest: "{{ ard_cached_base_image }}"
     mode: "0644"
     checksum: "{{ ard_selected_libvirt_image.checksum | default(omit) }}"
-  when: ard_image_download | default(true) | bool
+  when:
+    - ard_image_download | default(true) | bool
+    - not ard_cached_base_image_pre_download_stat.stat.exists
 
 - name: Ensure cached base image exists
-  stat:
+  ansible.builtin.stat:
     path: "{{ ard_cached_base_image }}"
   register: ard_cached_base_image_stat
 
