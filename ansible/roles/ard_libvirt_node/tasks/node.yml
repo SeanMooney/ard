@@ -4,6 +4,7 @@
     ard_node_name: "{{ ard_node.name }}"
     ard_node_resource_name: "{{ ard_node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + ard_node.name) }}"
     ard_node_flavor: "{{ ard_flavors[ard_node.flavor].provider.libvirt }}"
+    ard_node_image: "{{ ard_images[ard_node.image].provider.libvirt }}"
     ard_node_root_disk_gb: "{{ ard_flavors[ard_node.flavor].root_disk_gb | default(80) }}"
     ard_node_management_network: "{{ ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first }}"
     ard_node_networks: "{{ ard_node.networks }}"
@@ -109,8 +110,8 @@
       runcmd:
         - [ systemctl, daemon-reload ]
         - [ systemctl, enable, --now, serial-getty@ttyS0.service ]
-        - [ systemctl, restart, ssh.service ]
-        - [ update-grub ]
+        - [ sh, -c, 'systemctl restart ssh.service || systemctl restart sshd.service || true' ]
+        - [ sh, -c, 'update-grub || grub2-mkconfig -o /boot/grub2/grub.cfg || true' ]
         - [ sh, -c, 'echo "ARD cloud-init runcmd complete on $(hostname)" > /dev/ttyS0 || true' ]
       ssh_pwauth: true
 
@@ -144,7 +145,7 @@
       {% endif %}
       {% if node_network.name == ard_management_network %}
           routes:
-            - to: default
+            - to: 0.0.0.0/0
               via: {{ ard_networks[ard_management_network].gateway }}
           nameservers:
             addresses:

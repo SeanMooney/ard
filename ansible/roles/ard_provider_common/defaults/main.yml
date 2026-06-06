@@ -75,6 +75,54 @@ ard_images:
         cache_filename: noble-server-cloudimg-amd64.img
         format: qcow2
         cloud_init_datasource: NoCloud
+  centos-stream-10:
+    os_family: redhat
+    version: "10-stream"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+        name: centos-stream-10
+        cache_filename: CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+        firmware: bios
+  fedora-eln:
+    os_family: redhat
+    version: eln
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://kojipkgs.fedoraproject.org/compose/eln/Fedora-eln-20260606.n.0/compose/BaseOS/x86_64/images/Fedora-ELN-Cloud-Base-Generic-11-20260606.n.0.x86_64.qcow2
+        name: fedora-eln
+        cache_filename: Fedora-ELN-Cloud-Base-Generic-11-20260606.n.0.x86_64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+        firmware: bios
+  almalinux-10:
+    os_family: redhat
+    version: "10"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2
+        name: almalinux-10
+        cache_filename: AlmaLinux-10-GenericCloud-latest.x86_64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+        firmware: bios
+  rocky-linux-10:
+    os_family: redhat
+    version: "10"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+        name: rocky-linux-10
+        cache_filename: Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+        firmware: bios
 
 ard_flavors:
   devstack-control:
@@ -88,6 +136,16 @@ ard_flavors:
         memory_mb: 16384
         cpu_mode: host-passthrough
   devstack-compute:
+    vcpus: 8
+    memory: 8Gi
+    root_disk_gb: 80
+    nested_virt: true
+    provider:
+      libvirt:
+        vcpus: 8
+        memory_mb: 8192
+        cpu_mode: host-passthrough
+  microshift-node:
     vcpus: 8
     memory: 8Gi
     root_disk_gb: 80

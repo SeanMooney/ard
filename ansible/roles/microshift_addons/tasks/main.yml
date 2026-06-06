@@ -1,0 +1,127 @@
+---
+- name: Wait for MicroShift API before add-ons
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - nodes
+  register: microshift_api_ready
+  changed_when: false
+  until: microshift_api_ready.rc == 0
+  retries: 60
+  delay: 10
+
+- name: Validate default storage class selection
+  ansible.builtin.assert:
+    that:
+      - microshift_default_storage_class in microshift_storage_class_names
+    fail_msg: "microshift_default_storage_class must be one of {{ microshift_storage_class_names.keys() | list }}."
+
+- name: Prepare Local Path Provisioner host directory
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    mkdir -p /opt/local-path-provisioner
+    chmod 0777 /opt/local-path-provisioner
+    if command -v chcon >/dev/null 2>&1; then
+      chcon -Rt container_file_t /opt/local-path-provisioner || true
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: microshift_install_local_path_provisioner | bool
+
+- name: Install Rancher Labs Local Path Provisioner
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_local_path_manifest_url }}"
+  register: microshift_local_path_apply
+  changed_when: "'created' in microshift_local_path_apply.stdout or 'configured' in microshift_local_path_apply.stdout"
+  when: microshift_install_local_path_provisioner | bool
+
+- name: Wait for Local Path Provisioner rollout
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - local-path-storage
+      - rollout
+      - status
+      - deployment/local-path-provisioner
+      - --timeout=300s
+  changed_when: false
+  when: microshift_install_local_path_provisioner | bool
+
+- name: Allow Local Path Provisioner helper pods to use hostPath storage
+  become: true
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - adm
+      - policy
+      - add-scc-to-user
+      - privileged
+      - -z
+      - local-path-provisioner-service-account
+      - -n
+      - local-path-storage
+  register: microshift_local_path_scc
+  changed_when: "'added' in microshift_local_path_scc.stdout"
+  when: microshift_install_local_path_provisioner | bool
+
+- name: Collect storage classes
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - storageclass
+      - -o
+      - name
+  register: microshift_storage_classes
+  changed_when: false
+
+- name: Remove default annotation from non-selected storage classes
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - annotate
+      - "{{ item }}"
+      - storageclass.kubernetes.io/is-default-class-
+      - --overwrite
+  loop: "{{ microshift_storage_classes.stdout_lines }}"
+  changed_when: false
+  when: item != 'storageclass.storage.k8s.io/' ~ microshift_storage_class_names[microshift_default_storage_class]
+
+- name: Mark configured MicroShift default storage class
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - annotate
+      - storageclass
+      - "{{ microshift_storage_class_names[microshift_default_storage_class] }}"
+      - storageclass.kubernetes.io/is-default-class=true
+      - --overwrite
+  changed_when: false

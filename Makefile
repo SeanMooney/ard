@@ -8,11 +8,13 @@ ARD_PROVIDER ?= libvirt
 ARD_DEPLOYMENT ?= devstack-1
 ARD_DEPLOYMENTS_DIR ?= $(CURDIR)/deployments
 ARD_DEPLOYMENT_DIR ?= $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT)
-ARD_TOPOLOGY ?= one-controller-one-compute
+ARD_WORKLOAD ?= devstack
+ARD_DEVSTACK_SERVICES = devstack,ovn,tempest
+ARD_TOPOLOGY ?= $(if $(filter microshift,$(ARD_WORKLOAD)),microshift-single-node,one-controller-one-compute)
 ARD_TARGET_BRANCH ?= master
-ARD_SERVICES ?= devstack,ovn,tempest
+ARD_SERVICES ?= $(if $(filter microshift,$(ARD_WORKLOAD)),,$(ARD_DEVSTACK_SERVICES))
 ARD_PROVIDER_PROFILE ?= local-libvirt
-ARD_IMAGE ?=
+ARD_IMAGE ?= $(if $(filter microshift,$(ARD_WORKLOAD)),centos-stream-10,)
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
 ARD_RENDER_FILE ?=
 ARD_EXTRA_VARS ?=
@@ -24,8 +26,8 @@ ARD_RENDER_FILE_ARG = $(if $(ARD_RENDER_FILE),-e @$(ARD_RENDER_FILE),)
 ARD_RENDER_PROVIDER_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER)),ard_provider=$(ARD_PROVIDER),)
 ARD_RENDER_PROVIDER_PROFILE_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER_PROFILE)),ard_provider_profile=$(ARD_PROVIDER_PROFILE),)
 ARD_RENDER_TARGET_BRANCH_VAR = $(if $(filter command line environment override,$(origin ARD_TARGET_BRANCH)),ard_target_branch=$(ARD_TARGET_BRANCH),)
-ARD_RENDER_TOPOLOGY_VAR = $(if $(filter command line environment override,$(origin ARD_TOPOLOGY)),ard_topology=$(ARD_TOPOLOGY),)
-ARD_RENDER_SERVICES_VAR = $(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),)
+ARD_RENDER_TOPOLOGY_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_topology=$(ARD_TOPOLOGY),$(if $(filter command line environment override,$(origin ARD_TOPOLOGY)),ard_topology=$(ARD_TOPOLOGY),))
+ARD_RENDER_SERVICES_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_service_profiles=,$(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),))
 ARD_RENDER_IMAGE_VAR = $(if $(ARD_IMAGE),ard_render_image=$(ARD_IMAGE),)
 ARD_RENDER_NETWORK_VAR = $(if $(filter command line environment override,$(origin ARD_NETWORK_CIDR)),ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR),)
 
@@ -43,6 +45,10 @@ ARD_RENDER_EXTRA_VARS = \
 ARD_DEPLOYMENT_EXTRA_VARS = \
 	ard_deployment_dir=$(ARD_DEPLOYMENT_DIR) \
 	$(ARD_EXTRA_VARS)
+
+ARD_DEPLOY_PLAYBOOK_devstack = ansible/playbooks/provider/deploy-devstack.yaml
+ARD_DEPLOY_PLAYBOOK_microshift = ansible/playbooks/workloads/microshift/deploy.yaml
+ARD_DEPLOY_PLAYBOOK = $(ARD_DEPLOY_PLAYBOOK_$(ARD_WORKLOAD))
 
 default:
 	-$(MAKE) destroy-clean-generated
@@ -77,8 +83,9 @@ ssh-print:
 	$(MAKE) ssh ARD_SSH_PRINT=1
 
 deploy:
+	$(if $(ARD_DEPLOY_PLAYBOOK),,$(error Unsupported ARD_WORKLOAD '$(ARD_WORKLOAD)'))
 	uv run ansible-playbook -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
-		ansible/playbooks/provider/deploy-devstack.yaml \
+		$(ARD_DEPLOY_PLAYBOOK) \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 verify:

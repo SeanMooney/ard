@@ -1,0 +1,7 @@
+---
+- name: Verify MicroShift deployment with workload smoke test
+  hosts: microshift
+  gather_facts: false
+  roles:
+    - microshift_defaults
+    - microshift_validate

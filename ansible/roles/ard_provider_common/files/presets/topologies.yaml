@@ -46,3 +46,14 @@ ard_render_topologies:
         networks:
           - name: ard-mgmt
             ip_start: 3
+
+  microshift-single-node:
+    controller_runs_compute: false
+    node_pools:
+      - type: microshift
+        count: 1
+        name: microshift
+        hostname: microshift
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
