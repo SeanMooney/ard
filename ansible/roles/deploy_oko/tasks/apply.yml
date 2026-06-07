@@ -1,0 +1,31 @@
+---
+- name: Apply MicroShift compatibility cluster config
+  ansible.builtin.shell: |
+    set -e
+    cat <<'EOF' | {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-config-v1
+      namespace: kube-system
+    data:
+      install-config: ""
+    EOF
+  args:
+    executable: /bin/bash
+  register: _oko_apply_cluster_config
+  changed_when: "'created' in _oko_apply_cluster_config.stdout or 'configured' in _oko_apply_cluster_config.stdout"
+  when: oko_apply_bootstrap | bool
+
+- name: Apply OKO bootstrap manifests
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -k
+      - "{{ oko_bootstrap_workdir }}"
+  register: _oko_apply_bootstrap
+  changed_when: "'created' in _oko_apply_bootstrap.stdout or 'configured' in _oko_apply_bootstrap.stdout"
+  when: oko_apply_bootstrap | bool

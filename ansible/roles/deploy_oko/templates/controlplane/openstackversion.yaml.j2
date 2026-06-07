@@ -1,0 +1,36 @@
+apiVersion: core.openstack.org/v1beta1
+kind: OpenStackVersion
+metadata:
+  name: openstack
+  namespace: {{ oko_namespace }}
+spec:
+  customContainerImages:
+    ansibleeeImage: {{ oko_ansibleee_image | default('quay.io/openstack-k8s-operators/openstack-ansibleee-runner:latest', true) }}
+    cinderAPIImage: {{ oko_registry_url }}/openstack-cinder-api:{{ oko_image_tag }}
+    cinderBackupImage: {{ oko_registry_url }}/openstack-cinder-backup:{{ oko_image_tag }}
+    cinderSchedulerImage: {{ oko_registry_url }}/openstack-cinder-scheduler:{{ oko_image_tag }}
+    cinderVolumeImages:
+      default: {{ oko_registry_url }}/openstack-cinder-volume:{{ oko_image_tag }}
+      nfs: {{ oko_registry_url }}/openstack-cinder-volume:{{ oko_image_tag }}
+    glanceAPIImage: {{ oko_registry_url }}/openstack-glance-api:{{ oko_image_tag }}
+    infraDnsmasqImage: {{ oko_registry_url }}/openstack-neutron-server:{{ oko_image_tag }}
+    keystoneAPIImage: {{ oko_registry_url }}/openstack-keystone:{{ oko_image_tag }}
+    neutronAPIImage: {{ oko_registry_url }}/openstack-neutron-server:{{ oko_image_tag }}
+    novaAPIImage: {{ oko_registry_url }}/openstack-nova-api:{{ oko_image_tag }}
+    novaComputeImage: {{ oko_registry_url }}/openstack-nova-compute:{{ oko_image_tag }}
+    novaConductorImage: {{ oko_registry_url }}/openstack-nova-conductor:{{ oko_image_tag }}
+    novaNovncImage: {{ oko_registry_url }}/openstack-nova-novncproxy:{{ oko_image_tag }}
+    novaSchedulerImage: {{ oko_registry_url }}/openstack-nova-scheduler:{{ oko_image_tag }}
+    openstackClientImage: {{ oko_registry_url }}/openstack-openstackclient:{{ oko_image_tag }}
+    ovnControllerImage: {{ oko_registry_url }}/openstack-ovn-controller:{{ oko_image_tag }}
+    ovnControllerOvsImage: {{ oko_registry_url }}/openstack-ovn-controller:{{ oko_image_tag }}
+    ovnNbDbclusterImage: {{ oko_registry_url }}/openstack-ovn-nb-db-server:{{ oko_image_tag }}
+    ovnNorthdImage: {{ oko_registry_url }}/openstack-ovn-northd:{{ oko_image_tag }}
+    ovnSbDbclusterImage: {{ oko_registry_url }}/openstack-ovn-sb-db-server:{{ oko_image_tag }}
+    placementAPIImage: {{ oko_registry_url }}/openstack-placement-api:{{ oko_image_tag }}
+    edpmIscsidImage: {{ oko_registry_url }}/openstack-iscsid:{{ oko_image_tag }}
+    edpmLogrotateCrondImage: {{ oko_registry_url }}/openstack-cron:{{ oko_image_tag }}
+    edpmNeutronMetadataAgentImage: {{ oko_registry_url }}/openstack-neutron-metadata-agent-ovn:{{ oko_image_tag }}
+    edpmNeutronOvnAgentImage: {{ oko_registry_url }}/openstack-neutron-ovn-agent:{{ oko_image_tag }}
+    edpmNodeExporterImage: {{ oko_registry_url }}/openstack-node-exporter:{{ oko_image_tag }}
+    edpmPodmanExporterImage: {{ oko_registry_url }}/prometheus-podman-exporter:{{ oko_image_tag }}

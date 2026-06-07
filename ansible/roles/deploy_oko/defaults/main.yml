@@ -1,0 +1,131 @@
+---
+# Namespace used for OpenStack control plane and dataplane CRs.
+oko_namespace: openstack
+oko_operator_namespace: openstack-operators
+
+# MicroShift kubeconfig copied by the microshift workload roles.
+oko_kubeconfig: /home/stack/.kube/config
+
+# Rendered Kubernetes inputs. In normal ARD runs ard_deployment_dir is passed by
+# the provider workflow; the fallback keeps standalone role execution possible.
+oko_manifest_workdir: "/home/{{ ansible_user | default('stack', true) }}/ard-oko"
+oko_bootstrap_workdir: "{{ oko_manifest_workdir }}/bootstrap"
+oko_operators_workdir: "{{ oko_manifest_workdir }}/operators"
+oko_network_workdir: "{{ oko_manifest_workdir }}/network"
+oko_controlplane_workdir: "{{ oko_manifest_workdir }}/controlplane"
+oko_dataplane_workdir: "{{ oko_manifest_workdir }}/dataplane"
+oko_generated_workdir: "{{ oko_manifest_workdir }}/generated"
+
+# Kubernetes PV storage for operator/control-plane pods.
+oko_k8s_storage_class: local-path
+
+# Cinder defaults to an NFS backend exported by the MicroShift node.
+oko_cinder_backend: nfs
+oko_nfs_export_path: /srv/ard-nfs/cinder
+oko_nfs_export_owner: root
+oko_nfs_export_group: root
+oko_nfs_export_mode: "0777"
+oko_nfs_export_options: rw,sync,no_root_squash,no_subtree_check
+oko_nfs_export_file: /etc/exports.d/ard-cinder.exports
+oko_nfs_export_network: "*"
+oko_nfs_server: "{{ ansible_host | default(ansible_default_ipv4.address | default(inventory_hostname)) }}"
+
+# EDPM dataplane settings. ARD's combined OKO topology renders compute hosts in
+# the compute inventory group.
+oko_edpm_group: compute
+oko_edpm_ansible_user: "{{ hostvars[groups[oko_edpm_group][0]].ansible_user | default('cloud-admin', true) }}"
+oko_edpm_nodeset_name: openstack-edpm
+oko_edpm_deployment_name: edpm-deployment
+oko_edpm_ssh_private_key_path: "{{ hostvars[groups[oko_edpm_group][0]].ansible_private_key_file | default(ard_deployment_dir | default('/tmp/ard-oko', true) ~ '/id_ed25519', true) }}"
+oko_edpm_ssh_secret_name: dataplane-ansible-ssh-private-key-secret
+oko_edpm_ctlplane_fixed_ip_start: 192.168.122.100
+oko_edpm_tls_enabled: true
+# Consumed by the upstream libvirt dataplane service via Secret/libvirt-secret
+# as key LibvirtPassword for libvirt SASL authentication.
+oko_libvirt_sasl_password: openstack
+# Consumed by the upstream nova dataplane service for instance live migration.
+# install_yamls creates this as a dedicated ECDSA keypair secret.
+oko_nova_migration_ssh_secret_name: nova-migration-ssh-key
+oko_nova_migration_ssh_key_dir: "{{ oko_manifest_workdir }}/secrets"
+oko_nova_migration_ssh_key_path: "{{ oko_nova_migration_ssh_key_dir }}/nova-migration-ssh-key"
+
+# Operator installation uses the upstream OpenStack operator index by default.
+# Cert-manager, MetalLB, and NMState are deliberately not enabled here because
+# vanilla MicroShift often does not provide the redhat-operators catalog source
+# used by install_yamls for those dependencies.
+oko_install_operators: true
+oko_operator_catalog_source: openstack-operator-index
+oko_operator_catalog_image: quay.io/openstack-k8s-operators/openstack-operator-index:latest
+oko_openstack_subscription_channel: alpha
+oko_openstack_subscription_name: openstack-operator
+oko_apply_openstack_operator_cr: true
+oko_wait_for_operator_crds: true
+
+# Control-plane/dataplane application is still separated so the generated input
+# can be inspected or combined with another base before running the full stack.
+oko_apply_bootstrap: true
+oko_apply_network_resources: false
+oko_apply_controlplane_resources: false
+oko_apply_dataplane_resources: false
+oko_wait_for_openstack: true
+oko_wait_timeout: 1800
+
+# First-pass network input. The default profile renders OKO-compatible Network
+# and NAD resources but leaves apply disabled until validated on a live
+# MicroShift host. Interface names mirror install_yamls/oko-shared-nothing-ra
+# defaults and can be overridden per deployment.
+oko_network_profile: collapsed
+oko_ctlplane_cidr: 192.168.122.0/24
+oko_ctlplane_gateway: 192.168.122.1
+oko_ctlplane_dns_domain: ctlplane.example.com
+oko_microshift_ctlplane_ip: 192.168.122.2
+oko_ctlplane_allocation_start: 192.168.122.100
+oko_ctlplane_allocation_end: 192.168.122.200
+oko_ctlplane_nad_start: 192.168.122.30
+oko_ctlplane_nad_end: 192.168.122.70
+oko_dns_loadbalancer_ip: 192.168.122.81
+oko_dns_forwarder: "{{ ansible_default_ipv4.gateway | default(oko_ctlplane_gateway, true) }}"
+# ARD OKO topology attaches a dedicated isolated libvirt network named
+# datacenter as the second NIC on MicroShift and EDPM nodes. Network-isolated
+# OKO NADs are layered on this interface.
+oko_datacenter_interface: eth1
+# Match install_yamls' network-isolation model: the added datacenter NIC is
+# enslaved into a Linux bridge, and ctlplane/datacentre attachments plus
+# MetalLB L2 advertisements use that bridge.
+oko_ctlplane_bridge: ospbr
+oko_ctlplane_master: "{{ oko_ctlplane_bridge }}"
+oko_internalapi_cidr: 172.17.0.0/24
+oko_internalapi_allocation_start: 172.17.0.100
+oko_internalapi_allocation_end: 172.17.0.250
+oko_internalapi_nad_start: 172.17.0.30
+oko_internalapi_nad_end: 172.17.0.70
+# With single-replica OVN DB clusters, NB consumes the first internalapi NAD IP
+# and SB consumes the second. EDPM OVN connects to SB.
+oko_ovn_sb_db_ip: 172.17.0.31
+oko_internalapi_vlan: 20
+oko_internalapi_master: "{{ oko_datacenter_interface }}.{{ oko_internalapi_vlan }}"
+oko_storage_cidr: 172.18.0.0/24
+oko_storage_allocation_start: 172.18.0.100
+oko_storage_allocation_end: 172.18.0.250
+oko_storage_nad_start: 172.18.0.30
+oko_storage_nad_end: 172.18.0.70
+oko_storage_vlan: 21
+oko_storage_master: "{{ oko_datacenter_interface }}.{{ oko_storage_vlan }}"
+oko_tenant_cidr: 172.19.0.0/24
+oko_tenant_allocation_start: 172.19.0.100
+oko_tenant_allocation_end: 172.19.0.250
+oko_tenant_nad_start: 172.19.0.30
+oko_tenant_nad_end: 172.19.0.70
+oko_tenant_vlan: 22
+oko_tenant_master: "{{ oko_datacenter_interface }}.{{ oko_tenant_vlan }}"
+
+# OpenStack image defaults copied into generated dataplane input; tune per
+# deployment once the operator stack is installed.
+oko_registry_url: quay.io/podified-antelope-centos9
+oko_image_tag: current-podified
+# repo-setup source is currently maintained from main; the release branch below
+# is passed to repo-setup itself to select the OpenStack/RDO content stream.
+oko_repo_setup_source_branch: main
+oko_repo_setup_branch: antelope
+oko_repo_setup_promotion: current-podified
+oko_repo_setup_dist: centos9

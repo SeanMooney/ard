@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ oko_nova_migration_ssh_secret_name }}
+  namespace: {{ oko_namespace }}
+type: kubernetes.io/ssh-auth
+data:
+  ssh-privatekey: {{ _oko_nova_migration_ssh_private.content }}
+  ssh-publickey: {{ _oko_nova_migration_ssh_public.content }}

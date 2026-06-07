@@ -1,0 +1,50 @@
+---
+- name: Wait for MicroShift API before cert-manager
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - nodes
+  register: microshift_cert_manager_api_ready
+  changed_when: false
+  until: microshift_cert_manager_api_ready.rc == 0
+  retries: 60
+  delay: 10
+  when: microshift_install_cert_manager | bool
+
+- name: Install cert-manager manifests
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_cert_manager_manifest_url }}"
+  register: microshift_cert_manager_apply
+  changed_when: "'created' in microshift_cert_manager_apply.stdout or 'configured' in microshift_cert_manager_apply.stdout"
+  when: microshift_install_cert_manager | bool
+
+- name: Wait for cert-manager deployments
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_cert_manager_namespace }}"
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - "--timeout={{ microshift_cert_manager_rollout_timeout }}"
+  changed_when: false
+  loop:
+    - cert-manager
+    - cert-manager-cainjector
+    - cert-manager-webhook
+  when: microshift_install_cert_manager | bool

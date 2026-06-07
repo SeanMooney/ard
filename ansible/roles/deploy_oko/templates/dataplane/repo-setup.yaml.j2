@@ -1,0 +1,36 @@
+---
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneService
+metadata:
+  labels:
+    app.kubernetes.io/name: openstackdataplaneservice
+    app.kubernetes.io/instance: openstackdataplaneservice-repo-setup
+    app.kubernetes.io/part-of: openstack-operator
+    app.kubernetes.io/managed-by: ard
+    app.kubernetes.io/created-by: install_yamls
+  name: repo-setup
+  namespace: {{ oko_namespace }}
+spec:
+  label: repo-setup
+  playbookContents: |
+    - hosts: all
+      strategy: linear
+      tasks:
+        - name: Enable podified-repos
+          become: true
+          ansible.builtin.shell: |
+            set -euxo pipefail
+            workdir="$(mktemp -d /var/tmp/repo-setup.XXXXXX)"
+            trap 'rm -rf "$workdir"' EXIT
+            cd "$workdir"
+            curl --fail --location --show-error \
+              --retry 5 --retry-delay 5 --retry-all-errors \
+              --connect-timeout 20 --max-time 300 \
+              --output repo-setup.tar.gz \
+              https://github.com/openstack-k8s-operators/repo-setup/archive/refs/heads/{{ oko_repo_setup_source_branch }}.tar.gz
+            tar -tzf repo-setup.tar.gz >/dev/null
+            tar -xzf repo-setup.tar.gz
+            cd repo-setup-{{ oko_repo_setup_source_branch }}
+            python3 -m venv ./venv
+            PBR_VERSION=0.0.0 ./venv/bin/pip install ./
+            ./venv/bin/repo-setup {{ oko_repo_setup_promotion }} -d {{ oko_repo_setup_dist }} -b {{ oko_repo_setup_branch }}

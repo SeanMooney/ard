@@ -68,6 +68,28 @@
   changed_when: true
   when: microshift_rpm_channel == 'github-release'
 
+- name: Ensure MicroShift config directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/microshift
+    state: directory
+    mode: "0755"
+
+- name: Configure MicroShift API advertise address
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/microshift/config.yaml
+    mode: "0644"
+    content: |
+      apiServer:
+        advertiseAddress: {{ microshift_api_advertise_address }}
+        subjectAltNames:
+          - {{ microshift_hostname_override }}
+      node:
+        hostnameOverride: {{ microshift_hostname_override }}
+        nodeIP: {{ microshift_node_ip }}
+  register: microshift_config_file
+
 - name: Enable and start MicroShift service
   become: true
   ansible.builtin.systemd:
@@ -75,6 +97,13 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Restart MicroShift when config changes
+  become: true
+  ansible.builtin.systemd:
+    name: microshift.service
+    state: restarted
+  when: microshift_config_file.changed
 
 - name: Wait for MicroShift kubeconfig
   become: true

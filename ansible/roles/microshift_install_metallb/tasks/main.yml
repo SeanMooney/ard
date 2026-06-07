@@ -1,0 +1,143 @@
+---
+- name: Wait for MicroShift API before MetalLB
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - nodes
+  register: microshift_metallb_api_ready
+  changed_when: false
+  until: microshift_metallb_api_ready.rc == 0
+  retries: 60
+  delay: 10
+  when: microshift_install_metallb | bool
+
+- name: Install MetalLB native manifests
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_metallb_manifest_url }}"
+  register: microshift_metallb_apply
+  changed_when: "'created' in microshift_metallb_apply.stdout or 'configured' in microshift_metallb_apply.stdout"
+  when: microshift_install_metallb | bool
+
+- name: Install FRR-K8s CRDs for OKO infra operator compatibility
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ item }}"
+  loop: "{{ microshift_frr_k8s_crd_urls }}"
+  register: microshift_frr_k8s_crds_apply
+  changed_when: "'created' in microshift_frr_k8s_crds_apply.stdout or 'configured' in microshift_frr_k8s_crds_apply.stdout"
+  when:
+    - microshift_install_metallb | bool
+    - microshift_install_frr_k8s_crds | bool
+
+- name: Allow MetalLB controller to use privileged SCC
+  become: true
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - adm
+      - policy
+      - add-scc-to-user
+      - privileged
+      - -z
+      - controller
+      - -n
+      - "{{ microshift_metallb_namespace }}"
+  register: microshift_metallb_controller_scc
+  changed_when: "'added' in microshift_metallb_controller_scc.stdout"
+  when: microshift_install_metallb | bool
+
+- name: Allow MetalLB speaker to use privileged SCC
+  become: true
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - adm
+      - policy
+      - add-scc-to-user
+      - privileged
+      - -z
+      - speaker
+      - -n
+      - "{{ microshift_metallb_namespace }}"
+  register: microshift_metallb_speaker_scc
+  changed_when: "'added' in microshift_metallb_speaker_scc.stdout"
+  when: microshift_install_metallb | bool
+
+- name: Configure MetalLB speaker API endpoint for MicroShift host networking
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_metallb_namespace }}" patch daemonset/speaker --type=strategic -p '
+    spec:
+      template:
+        spec:
+          containers:
+            - name: speaker
+              env:
+                - name: KUBERNETES_SERVICE_HOST
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: KUBERNETES_SERVICE_PORT
+                  value: "6443"
+                - name: KUBERNETES_SERVICE_PORT_HTTPS
+                  value: "6443"
+    '
+  args:
+    executable: /bin/bash
+  register: microshift_metallb_speaker_api_patch
+  changed_when: "'patched' in microshift_metallb_speaker_api_patch.stdout"
+  when: microshift_install_metallb | bool
+
+- name: Wait for MetalLB controller rollout
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_metallb_namespace }}"
+      - rollout
+      - status
+      - deployment/controller
+      - "--timeout={{ microshift_metallb_rollout_timeout }}"
+  changed_when: false
+  when: microshift_install_metallb | bool
+
+- name: Wait for MetalLB speaker rollout
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_metallb_namespace }}"
+      - rollout
+      - status
+      - daemonset/speaker
+      - "--timeout={{ microshift_metallb_rollout_timeout }}"
+  changed_when: false
+  when: microshift_install_metallb | bool

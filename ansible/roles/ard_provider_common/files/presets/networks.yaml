@@ -4,8 +4,8 @@ ard_render_networks:
     mode: nat
     provider_network: ard-mgmt
     mac_prefix: "52:54:00"
-  tenant:
+  datacenter:
     mode: isolated
-    provider_network: tenant
+    provider_network: datacenter
     mac_prefix: "52:54:00"
     mac_id: 130

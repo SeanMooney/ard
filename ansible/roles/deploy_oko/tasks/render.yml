@@ -1,0 +1,128 @@
+---
+- name: Create OKO manifest directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ oko_manifest_workdir }}"
+    - "{{ oko_bootstrap_workdir }}"
+    - "{{ oko_operators_workdir }}"
+    - "{{ oko_network_workdir }}"
+    - "{{ oko_controlplane_workdir }}"
+    - "{{ oko_dataplane_workdir }}"
+    - "{{ oko_generated_workdir }}"
+
+- name: Render safe bootstrap kustomization
+  ansible.builtin.template:
+    src: "bootstrap/{{ item }}.j2"
+    dest: "{{ oko_bootstrap_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - namespace.yaml
+    - ard-oko-config.yaml
+
+- name: Render operator kustomization
+  ansible.builtin.template:
+    src: "operators/{{ item }}.j2"
+    dest: "{{ oko_operators_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - namespace.yaml
+    - operatorgroup.yaml
+    - catalogsource.yaml
+    - subscription.yaml
+    - openstack.yaml
+    - openstack-kustomization.yaml
+
+- name: Render network kustomization
+  ansible.builtin.template:
+    src: "network/{{ item }}.j2"
+    dest: "{{ oko_network_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - netconfig.yaml
+    - metallb-ctlplane.yaml
+    - nad-datacentre.yaml
+    - nad-ctlplane.yaml
+    - nad-internalapi.yaml
+    - nad-storage.yaml
+    - nad-tenant.yaml
+
+- name: Render control-plane kustomization
+  ansible.builtin.template:
+    src: "controlplane/{{ item }}.j2"
+    dest: "{{ oko_controlplane_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - osp-secret.yaml
+    - controlplane.yaml
+    - cinder-nfs-secret.yaml
+
+- name: Create Nova migration SSH key directory
+  ansible.builtin.file:
+    path: "{{ oko_nova_migration_ssh_key_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Generate Nova migration SSH keypair
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -f
+      - "{{ oko_nova_migration_ssh_key_path }}"
+      - -t
+      - ecdsa-sha2-nistp521
+      - -N
+      - ""
+    creates: "{{ oko_nova_migration_ssh_key_path }}"
+
+- name: Read Nova migration private key
+  ansible.builtin.slurp:
+    src: "{{ oko_nova_migration_ssh_key_path }}"
+  register: _oko_nova_migration_ssh_private
+
+- name: Read Nova migration public key
+  ansible.builtin.slurp:
+    src: "{{ oko_nova_migration_ssh_key_path }}.pub"
+  register: _oko_nova_migration_ssh_public
+
+- name: Render dataplane kustomization
+  ansible.builtin.template:
+    src: "dataplane/{{ item }}.j2"
+    dest: "{{ oko_dataplane_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - repo-setup.yaml
+    - ovncontroller-config.yaml
+    - libvirt-secret.yaml
+    - nova-migration-ssh-key.yaml
+    - dataplane.yaml
+
+- name: Render legacy generated OpenStack input kustomization
+  ansible.builtin.template:
+    src: "generated/{{ item }}.j2"
+    dest: "{{ oko_generated_workdir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - cinder-nfs-patch.yaml
+    - cinder-nfs-secret.yaml
+    - dataplane.yaml
+
+- name: Render manifest README
+  ansible.builtin.template:
+    src: README.md.j2
+    dest: "{{ oko_manifest_workdir }}/README.md"
+    mode: "0644"
+
+- name: Render dataplane job monitor helper
+  ansible.builtin.template:
+    src: monitor-dataplane-jobs.sh.j2
+    dest: "{{ oko_manifest_workdir | dirname }}/monitor-dataplane-jobs.sh"
+    mode: "0755"

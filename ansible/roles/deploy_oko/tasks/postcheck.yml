@@ -1,0 +1,19 @@
+---
+- name: Re-check namespace bootstrap resource
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - "{{ oko_namespace }}"
+      - get
+      - configmap/ard-oko-config
+  changed_when: false
+
+- name: Show rendered OKO manifest location
+  ansible.builtin.debug:
+    msg:
+      - "OKO bootstrap applied from {{ oko_bootstrap_workdir }}"
+      - "Generated OpenStack inputs are in {{ oko_generated_workdir }}"
+      - "Cinder NFS backend defaults to {{ oko_cinder_nfs_share | default(oko_nfs_server ~ ':' ~ oko_nfs_export_path) }}"

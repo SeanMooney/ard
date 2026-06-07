@@ -1,0 +1,19 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tenant
+  namespace: {{ oko_namespace }}
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "tenant",
+      "type": "macvlan",
+      "master": "{{ oko_tenant_master }}",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "{{ oko_tenant_cidr }}",
+        "range_start": "{{ oko_tenant_nad_start }}",
+        "range_end": "{{ oko_tenant_nad_end }}"
+      }
+    }

@@ -1,0 +1,43 @@
+apiVersion: network.openstack.org/v1beta1
+kind: NetConfig
+metadata:
+  name: netconfig
+  namespace: {{ oko_namespace }}
+spec:
+  networks:
+    - name: ctlplane
+      dnsDomain: ctlplane.example.com
+      subnets:
+        - name: subnet1
+          allocationRanges:
+            - start: {{ oko_ctlplane_allocation_start }}
+              end: {{ oko_ctlplane_allocation_end }}
+          cidr: {{ oko_ctlplane_cidr }}
+          gateway: {{ oko_ctlplane_gateway }}
+    - name: internalapi
+      dnsDomain: internalapi.example.com
+      subnets:
+        - name: subnet1
+          allocationRanges:
+            - start: {{ oko_internalapi_allocation_start }}
+              end: {{ oko_internalapi_allocation_end }}
+          cidr: {{ oko_internalapi_cidr }}
+          vlan: {{ oko_internalapi_vlan }}
+    - name: storage
+      dnsDomain: storage.example.com
+      subnets:
+        - name: subnet1
+          allocationRanges:
+            - start: {{ oko_storage_allocation_start }}
+              end: {{ oko_storage_allocation_end }}
+          cidr: {{ oko_storage_cidr }}
+          vlan: {{ oko_storage_vlan }}
+    - name: tenant
+      dnsDomain: tenant.example.com
+      subnets:
+        - name: subnet1
+          allocationRanges:
+            - start: {{ oko_tenant_allocation_start }}
+              end: {{ oko_tenant_allocation_end }}
+          cidr: {{ oko_tenant_cidr }}
+          vlan: {{ oko_tenant_vlan }}

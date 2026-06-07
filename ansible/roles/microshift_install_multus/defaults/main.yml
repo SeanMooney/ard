@@ -1,0 +1,10 @@
+---
+microshift_install_multus: true
+microshift_install_whereabouts: true
+microshift_multus_namespace: kube-system
+microshift_multus_manifest_url: https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/master/deployments/multus-daemonset-thick.yml
+microshift_whereabouts_manifest_url: https://raw.githubusercontent.com/k8snetworkplumbingwg/whereabouts/master/doc/crds/daemonset-install.yaml
+microshift_whereabouts_ippools_crd_url: https://raw.githubusercontent.com/k8snetworkplumbingwg/whereabouts/master/doc/crds/whereabouts.cni.cncf.io_ippools.yaml
+microshift_whereabouts_overlappingrangeipreservations_crd_url: https://raw.githubusercontent.com/k8snetworkplumbingwg/whereabouts/master/doc/crds/whereabouts.cni.cncf.io_overlappingrangeipreservations.yaml
+microshift_multus_rollout_timeout: 300s
+microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig

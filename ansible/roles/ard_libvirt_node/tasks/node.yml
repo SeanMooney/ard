@@ -4,7 +4,8 @@
     ard_node_name: "{{ ard_node.name }}"
     ard_node_resource_name: "{{ ard_node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + ard_node.name) }}"
     ard_node_flavor: "{{ ard_flavors[ard_node.flavor].provider.libvirt }}"
-    ard_node_image: "{{ ard_images[ard_node.image].provider.libvirt }}"
+    ard_node_image_name: "{{ ard_node.image | default(ard_default_image) }}"
+    ard_node_image: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.libvirt }}"
     ard_node_root_disk_gb: "{{ ard_flavors[ard_node.flavor].root_disk_gb | default(80) }}"
     ard_node_management_network: "{{ ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first }}"
     ard_node_networks: "{{ ard_node.networks }}"
@@ -29,7 +30,7 @@
     content: |
       #cloud-config
       hostname: {{ ard_node.hostname | default(ard_node.name) }}
-      manage_etc_hosts: true
+      manage_etc_hosts: {{ ard_node.manage_etc_hosts | default(true) | bool | lower }}
       ssh_authorized_keys:
         - {{ ard_stack_public_key }}
       users:
@@ -165,13 +166,48 @@
     mode: "0644"
     remote_src: true
 
-- name: Create node qcow2 disk from cached base image
+- name: Set per-node cached base image path
+  set_fact:
+    ard_node_cached_base_image: "{{ ard_image_cache_dir_resolved + '/' + (ard_node_image.cache_filename | default(ard_node_image.url | basename)) }}"
+
+- name: Check pre-existing per-node cached image
+  ansible.builtin.stat:
+    path: "{{ ard_node_cached_base_image }}"
+  register: ard_node_cached_base_image_pre_download_stat
+
+- name: Download per-node base cloud image when missing
+  ansible.builtin.get_url:
+    url: "{{ ard_node_image.url }}"
+    dest: "{{ ard_node_cached_base_image }}"
+    mode: "0644"
+    checksum: "{{ ard_node_image.checksum | default(omit) }}"
+  when:
+    - ard_image_download | default(true) | bool
+    - not ard_node_cached_base_image_pre_download_stat.stat.exists
+
+- name: Ensure per-node cached base image exists
+  ansible.builtin.stat:
+    path: "{{ ard_node_cached_base_image }}"
+  register: ard_node_cached_base_image_stat
+
+- name: Fail when per-node cached base image is unavailable
+  assert:
+    that:
+      - ard_node_cached_base_image_stat.stat.exists
+    fail_msg: "Cached image {{ ard_node_cached_base_image }} for node {{ ard_node_name }} is missing and ard_image_download is disabled or failed."
+
+- name: Create node qcow2 disk from per-node cached base image
   command: >-
     qemu-img convert -O qcow2
-    {{ ard_cached_base_image }}
+    {{ ard_node_cached_base_image }}
     {{ ard_node_overlay }}
   args:
     creates: "{{ ard_node_overlay }}"
+
+- name: Ensure node qcow2 disk is writable before resize
+  file:
+    path: "{{ ard_node_overlay }}"
+    mode: "0644"
 
 - name: Resize node qcow2 disk
   command: "qemu-img resize {{ ard_node_overlay }} {{ ard_node_root_disk_gb }}G"
@@ -187,14 +223,31 @@
 
 - name: Grant libvirt-qemu access to node storage
   command: "setfacl -m u:libvirt-qemu:rx {{ item }}"
+  register: ard_node_storage_acl
   changed_when: false
+  failed_when: false
   loop:
     - "{{ ard_node_overlay }}"
     - "{{ ard_node_seed }}"
 
+- name: Fall back to world-readable node storage when file ACLs are unsupported
+  file:
+    path: "{{ item.item }}"
+    mode: "0644"
+  when: item.rc != 0
+  loop: "{{ ard_node_storage_acl.results }}"
+
 - name: Grant libvirt-qemu write access to node console log
   command: "setfacl -m u:libvirt-qemu:rw {{ ard_node_console_log }}"
+  register: ard_node_console_acl
   changed_when: false
+  failed_when: false
+
+- name: Fall back to world-writable node console log when file ACLs are unsupported
+  file:
+    path: "{{ ard_node_console_log }}"
+    mode: "0666"
+  when: ard_node_console_acl.rc != 0
 
 - name: Check whether libvirt domain exists
   command: "virsh --connect {{ ard_libvirt_uri }} dominfo {{ ard_node_resource_name }}"

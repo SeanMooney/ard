@@ -1,0 +1,12 @@
+---
+- name: Apply OpenStack operator manifests
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -k
+      - "{{ oko_operators_workdir }}"
+  register: _oko_apply_operators
+  changed_when: "'created' in _oko_apply_operators.stdout or 'configured' in _oko_apply_operators.stdout"

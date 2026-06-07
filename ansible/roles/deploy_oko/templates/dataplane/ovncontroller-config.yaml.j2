@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ovncontroller-config
+  namespace: {{ oko_namespace }}
+data:
+  # Optional edpm_ovn role overrides merged into OVS external_ids.
+  # Core OVN DB endpoint is supplied via nodeTemplate ansibleVars.edpm_ovn_dbs.
+  ovsdb-config: |
+    {}

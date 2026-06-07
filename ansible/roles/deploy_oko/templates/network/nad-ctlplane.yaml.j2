@@ -1,0 +1,19 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ctlplane
+  namespace: {{ oko_namespace }}
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "ctlplane",
+      "type": "macvlan",
+      "master": "{{ oko_ctlplane_master }}",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "{{ oko_ctlplane_cidr }}",
+        "range_start": "{{ oko_ctlplane_nad_start }}",
+        "range_end": "{{ oko_ctlplane_nad_end }}"
+      }
+    }

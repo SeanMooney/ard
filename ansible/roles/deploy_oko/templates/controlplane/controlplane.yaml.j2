@@ -1,0 +1,173 @@
+apiVersion: core.openstack.org/v1beta1
+kind: OpenStackControlPlane
+metadata:
+  name: openstack
+  namespace: {{ oko_namespace }}
+spec:
+  secret: osp-secret
+  storageClass: {{ oko_k8s_storage_class | quote }}
+  dns:
+    enabled: true
+    template:
+      dnsDataLabelSelectorValue: dnsdata
+      options:
+        - key: server
+          values:
+            - {{ oko_dns_forwarder }}
+      override:
+        service:
+          metadata:
+            annotations:
+              metallb.universe.tf/address-pool: ctlplane
+              metallb.universe.tf/allow-shared-ip: ctlplane
+              metallb.universe.tf/loadBalancerIPs: {{ oko_dns_loadbalancer_ip }}
+          spec:
+            type: LoadBalancer
+            externalTrafficPolicy: Local
+      replicas: 1
+  galera:
+    templates:
+      openstack:
+        replicas: 1
+        secret: osp-secret
+        storageClass: {{ oko_k8s_storage_class | quote }}
+        storageRequest: 500Mi
+      openstack-cell1:
+        replicas: 1
+        secret: osp-secret
+        storageClass: {{ oko_k8s_storage_class | quote }}
+        storageRequest: 500Mi
+  rabbitmq:
+    templates:
+      rabbitmq:
+        replicas: 1
+        persistence:
+          storage: 1Gi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+      rabbitmq-cell1:
+        replicas: 1
+        persistence:
+          storage: 1Gi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 768Mi
+  memcached:
+    templates:
+      memcached:
+        replicas: 1
+  keystone:
+    enabled: true
+    template:
+      databaseInstance: openstack
+      memcachedInstance: memcached
+      rabbitMqClusterName: rabbitmq
+      secret: osp-secret
+  placement:
+    enabled: true
+    template:
+      databaseInstance: openstack
+      secret: osp-secret
+  glance:
+    enabled: true
+    template:
+      databaseInstance: openstack
+      secret: osp-secret
+      keystoneEndpoint: default
+      storage:
+        storageClass: {{ oko_k8s_storage_class | quote }}
+        storageRequest: 10Gi
+      imageCache:
+        size: 1Gi
+      glanceAPIs:
+        default:
+          type: single
+          replicas: 1
+  cinder:
+    enabled: true
+    template:
+      databaseInstance: openstack
+      secret: osp-secret
+      cinderAPI:
+        replicas: 1
+      cinderScheduler:
+        replicas: 1
+      cinderBackup:
+        replicas: 0
+      cinderVolumes:
+        nfs:
+          replicas: 1
+          customServiceConfig: |
+            [DEFAULT]
+            enabled_backends = nfs
+            [nfs]
+            volume_backend_name = nfs
+            volume_driver = cinder.volume.drivers.nfs.NfsDriver
+            nfs_snapshot_support = true
+            nas_secure_file_operations = false
+            nas_secure_file_permissions = false
+          customServiceConfigSecrets:
+            - cinder-nfs-shares
+  ovn:
+    enabled: true
+    template:
+      ovnDBCluster:
+        ovndbcluster-nb:
+          replicas: 1
+          dbType: NB
+          storageRequest: 10Gi
+          networkAttachment: internalapi
+        ovndbcluster-sb:
+          replicas: 1
+          dbType: SB
+          storageRequest: 10Gi
+          networkAttachment: internalapi
+      ovnNorthd:
+        replicas: 1
+      ovnController:
+        networkAttachment: tenant
+        nicMappings:
+          datacentre: {{ oko_ctlplane_master }}
+  neutron:
+    enabled: true
+    template:
+      databaseInstance: openstack
+      secret: osp-secret
+  nova:
+    enabled: true
+    template:
+      secret: osp-secret
+      apiDatabaseInstance: openstack
+      apiMessageBusInstance: rabbitmq
+      cellTemplates:
+        cell0:
+          cellDatabaseAccount: nova-cell0
+          conductorServiceTemplate:
+            replicas: 0
+          hasAPIAccess: true
+        cell1:
+          cellDatabaseAccount: nova-cell1
+          cellDatabaseInstance: openstack-cell1
+          cellMessageBusInstance: rabbitmq-cell1
+          conductorServiceTemplate:
+            replicas: 1
+          hasAPIAccess: true
+  telemetry:
+    enabled: false
+  swift:
+    enabled: false
+  ironic:
+    enabled: false
+  barbican:
+    enabled: false
+  manila:
+    enabled: false

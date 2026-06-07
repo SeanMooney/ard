@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ oko_namespace }}
+resources:
+  - osp-secret.yaml
+  - cinder-nfs-secret.yaml
+  - controlplane.yaml

@@ -15,9 +15,17 @@ microshift_rpm_repo_name: microshift-custom
 microshift_rpm_repo_description: Custom MicroShift RPM repository
 microshift_rpm_repo_gpgcheck: false
 
+microshift_node_ip: "{{ ansible_default_ipv4.address }}"
+microshift_api_advertise_address: "{{ microshift_node_ip }}"
+microshift_hostname_override: "{{ inventory_hostname }}"
+
 microshift_networking: ovnk
 microshift_install_topolvm: false
 microshift_install_local_path_provisioner: true
+microshift_install_multus: true
+microshift_install_whereabouts: true
+microshift_install_metallb: true
+microshift_install_cert_manager: true
 microshift_local_path_manifest_url: https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 microshift_default_storage_class: local-path
 microshift_storage_class_names:
@@ -26,9 +34,7 @@ microshift_storage_class_names:
 
 microshift_install_olm: true
 microshift_client_packages: []
-microshift_postinstall_operators:
-  - metallb
-microshift_install_metallb: false
+microshift_postinstall_operators: []
 
 microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig
 microshift_run_smoke_test: true

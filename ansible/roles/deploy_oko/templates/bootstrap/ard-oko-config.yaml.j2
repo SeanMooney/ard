@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ard-oko-config
+  namespace: {{ oko_namespace }}
+data:
+  k8sStorageClass: {{ oko_k8s_storage_class | quote }}
+  cinderBackend: {{ oko_cinder_backend | quote }}
+  cinderNfsShare: {{ (oko_cinder_nfs_share | default('')) | quote }}
+  edpmGroup: {{ oko_edpm_group | quote }}
+  edpmNodes: {{ (oko_edpm_nodes | map(attribute='name') | list | join(',')) | quote }}

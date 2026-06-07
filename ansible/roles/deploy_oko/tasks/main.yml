@@ -1,0 +1,36 @@
+---
+- name: Run OKO preflight checks
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Configure default Cinder NFS storage
+  ansible.builtin.import_tasks: storage-nfs.yml
+  when: oko_cinder_backend == 'nfs'
+
+- name: Render OKO manifests
+  ansible.builtin.import_tasks: render.yml
+
+- name: Apply OKO bootstrap manifests
+  ansible.builtin.import_tasks: apply.yml
+
+- name: Apply OpenStack operator manifests
+  ansible.builtin.import_tasks: operators-apply.yml
+  when: oko_install_operators | bool
+
+- name: Wait for OpenStack operator CRDs
+  ansible.builtin.import_tasks: operators-wait.yml
+  when:
+    - oko_install_operators | bool
+    - oko_wait_for_operator_crds | bool
+
+- name: Apply OKO network manifests
+  ansible.builtin.import_tasks: network-apply.yml
+
+- name: Apply OKO control-plane/dataplane manifests
+  ansible.builtin.import_tasks: openstack-apply.yml
+
+- name: Wait for OKO resources
+  ansible.builtin.import_tasks: wait.yml
+  when: oko_wait_for_openstack | bool
+
+- name: Run OKO postchecks
+  ansible.builtin.import_tasks: postcheck.yml
