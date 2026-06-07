@@ -8,6 +8,9 @@ existing DevStack deployment roles inside those VMs.
 The current local provider target is libvirt. KubeVirt/OpenShift
 Virtualization is design work for a later phase.
 
+For contributor-oriented architecture and workflow details, read the
+[ARD From Scratch developer guide](developer-guide.md).
+
 ## Quick start
 
 Bootstrap the repository and host dependencies:
