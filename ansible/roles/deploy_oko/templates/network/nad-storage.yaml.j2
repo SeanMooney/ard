@@ -1,0 +1,19 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: storage
+  namespace: {{ oko_namespace }}
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "storage",
+      "type": "macvlan",
+      "master": "{{ oko_storage_master }}",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "{{ oko_storage_cidr }}",
+        "range_start": "{{ oko_storage_nad_start }}",
+        "range_end": "{{ oko_storage_nad_end }}"
+      }
+    }

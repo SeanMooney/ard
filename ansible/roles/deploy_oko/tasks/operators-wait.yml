@@ -1,0 +1,63 @@
+---
+- name: Wait for OpenStack operator root CRD
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - crd
+      - openstacks.operator.openstack.org
+  register: _oko_root_crd_wait
+  changed_when: false
+  until: _oko_root_crd_wait.rc == 0
+  retries: "{{ (oko_wait_timeout | int / 10) | round(0, 'ceil') | int }}"
+  delay: 10
+
+- name: Apply OpenStack operator root CR
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ oko_operators_workdir }}/openstack.yaml"
+  register: _oko_apply_operator_cr
+  changed_when: "'created' in _oko_apply_operator_cr.stdout or 'configured' in _oko_apply_operator_cr.stdout"
+  when: oko_apply_openstack_operator_cr | bool
+
+- name: Wait for OpenStack operator deployment readiness
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - wait
+      - openstack/openstack
+      - -n
+      - "{{ oko_operator_namespace }}"
+      - --for=condition=Ready
+      - "--timeout={{ oko_wait_timeout }}s"
+  changed_when: false
+  when: oko_apply_openstack_operator_cr | bool
+
+- name: Wait for OpenStack service CRDs
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - crd
+      - "{{ item }}"
+  register: _oko_operator_crd_wait
+  changed_when: false
+  until: _oko_operator_crd_wait.rc == 0
+  retries: "{{ (oko_wait_timeout | int / 10) | round(0, 'ceil') | int }}"
+  delay: 10
+  loop:
+    - openstackcontrolplanes.core.openstack.org
+    - netconfigs.network.openstack.org
+    - openstackdataplanenodesets.dataplane.openstack.org
+    - openstackdataplanedeployments.dataplane.openstack.org

@@ -64,6 +64,7 @@
 - name: Grant libvirt-qemu traverse access to XDG state parents
   command: "setfacl -m u:libvirt-qemu:x {{ item }}"
   changed_when: false
+  failed_when: false
   loop:
     - "{{ lookup('env', 'HOME') }}"
     - "{{ lookup('env', 'HOME') }}/.local"
@@ -73,3 +74,4 @@
 - name: Grant libvirt-qemu access to ARD libvirt image tree
   command: "setfacl -R -m u:libvirt-qemu:rx {{ ard_libvirt_image_dir }}"
   changed_when: false
+  failed_when: false

@@ -1,0 +1,6 @@
+---
+- name: Deploy OpenStack K8s Operators on MicroShift
+  hosts: "{{ oko_target_hosts | default('microshift') }}"
+  gather_facts: true
+  roles:
+    - deploy_oko

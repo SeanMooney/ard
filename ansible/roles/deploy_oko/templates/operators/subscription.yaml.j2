@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ oko_openstack_subscription_name }}
+  namespace: {{ oko_operator_namespace }}
+spec:
+  name: openstack-operator
+  channel: {{ oko_openstack_subscription_channel }}
+  source: {{ oko_operator_catalog_source }}
+  sourceNamespace: {{ oko_operator_namespace }}
+  installPlanApproval: Automatic

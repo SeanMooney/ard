@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Follow the currently running OpenStack dataplane AnsibleEE job.
+#
+# Usage:
+#   ./monitor-dataplane-jobs.sh [namespace] [deployment]
+#
+# Defaults:
+#   namespace:  {{ oko_namespace }}
+#   deployment: {{ oko_edpm_deployment_name }}
+#
+# Environment overrides:
+#   KUBECONFIG  Kubernetes config path, default {{ oko_kubeconfig }}
+#   OC          oc/kubectl-compatible client, default oc
+#   INTERVAL    polling interval in seconds, default 5
+
+set -euo pipefail
+
+NS="${1:-{{ oko_namespace }}}"
+DEP="${2:-{{ oko_edpm_deployment_name }}}"
+KUBECONFIG="${KUBECONFIG:-{{ oko_kubeconfig }}}"
+OC="${OC:-oc}"
+INTERVAL="${INTERVAL:-5}"
+
+k() {
+    "$OC" --kubeconfig "$KUBECONFIG" -n "$NS" "$@"
+}
+
+deployment_ready() {
+    k get openstackdataplanedeployment "$DEP" \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true
+}
+
+current_running_job() {
+    k get jobs -l app=openstackansibleee \
+        --sort-by=.metadata.creationTimestamp \
+        -o custom-columns=NAME:.metadata.name,ACTIVE:.status.active \
+        --no-headers 2>/dev/null \
+        | awk -v dep="$DEP" '$1 ~ dep && ($2 == "1" || $2+0 > 0) { job=$1 } END { if (job != "") print job }'
+}
+
+echo "Following currently running dataplane job for deployment '$DEP' in namespace '$NS'"
+echo "KUBECONFIG=$KUBECONFIG"
+echo "Press Ctrl-C to stop."
+echo
+
+last_job=""
+
+while true; do
+    if [ "$(deployment_ready)" = "True" ]; then
+        echo "Dataplane deployment '$DEP' is Ready=True"
+        exit 0
+    fi
+
+    job="$(current_running_job)"
+
+    if [ -z "$job" ]; then
+        echo "[$(date -Is)] No running dataplane AnsibleEE job found; waiting..."
+        k get openstackdataplanedeployment "$DEP" -o wide 2>/dev/null || true
+        k get jobs -l app=openstackansibleee -o wide 2>/dev/null || true
+        sleep "$INTERVAL"
+        continue
+    fi
+
+    if [ "$job" != "$last_job" ]; then
+        echo
+        echo "==== $(date -Is) following job/$job ===="
+        last_job="$job"
+    fi
+
+    k logs -f "job/$job" --all-containers --pod-running-timeout=5m || true
+
+    # logs returns when the job pod completes/fails or during transient API/pod
+    # changes. Loop again and follow whichever job is currently active.
+    sleep "$INTERVAL"
+done

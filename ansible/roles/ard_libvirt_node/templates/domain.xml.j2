@@ -1,8 +1,18 @@
+{% set ard_node_vcpus = ard_node_flavor.vcpus | int %}
+{% set ard_node_cpu_sockets = ard_node_flavor.cpu_sockets | default(1) | int %}
+{% set ard_node_cpu_threads = ard_node_flavor.cpu_threads | default(1) | int %}
+{% set ard_node_cpu_cores = (ard_node_vcpus // (ard_node_cpu_sockets * ard_node_cpu_threads)) | int %}
+{% set ard_node_root_disk_bus = ard_node_flavor.disk_bus | default('virtio') %}
+{% set ard_node_root_disk_dev = 'sda' if ard_node_root_disk_bus == 'scsi' else 'vda' %}
+{% set ard_node_seed_disk_dev = 'sdb' if ard_node_root_disk_bus == 'scsi' else 'sda' %}
 <domain type='kvm'>
   <name>{{ ard_node_resource_name }}</name>
   <memory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</memory>
   <currentMemory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</currentMemory>
-  <vcpu placement='static'>{{ ard_node_flavor.vcpus }}</vcpu>
+  <vcpu placement='static'>{{ ard_node_vcpus }}</vcpu>
+{% if ard_node_flavor.iothreads is defined %}
+  <iothreads>{{ ard_node_flavor.iothreads }}</iothreads>
+{% endif %}
 {% set ard_node_firmware = ard_node_image.firmware | default(ard_libvirt_firmware | default('efi')) %}
   <os{% if ard_node_firmware == 'efi' %} firmware='efi'{% endif %}>
     <type arch='x86_64' machine='q35'>hvm</type>
@@ -18,22 +28,34 @@
     <acpi/>
     <apic/>
   </features>
-  <cpu mode='{{ ard_node_flavor.cpu_mode | default("host-passthrough") }}' check='none'/>
+  <cpu mode='{{ ard_node_flavor.cpu_mode | default("host-passthrough") }}' check='none'>
+    <topology sockets='{{ ard_node_cpu_sockets }}' cores='{{ ard_node_cpu_cores }}' threads='{{ ard_node_cpu_threads }}'/>
+{% if ard_node_flavor.cpu_cache_mode is defined %}
+    <cache mode='{{ ard_node_flavor.cpu_cache_mode }}'/>
+{% endif %}
+  </cpu>
   <clock offset='utc'/>
   <on_poweroff>destroy</on_poweroff>
   <on_reboot>restart</on_reboot>
   <on_crash>destroy</on_crash>
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
+{% if ard_node_root_disk_bus == 'scsi' %}
+    <controller type='scsi' index='0' model='virtio-scsi'>
+{% if ard_node_flavor.iothreads is defined %}
+      <driver iothread='1'/>
+{% endif %}
+    </controller>
+{% endif %}
     <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2' cache='none' discard='unmap'/>
+      <driver name='qemu' type='qcow2' cache='{{ ard_node_flavor.disk_cache | default("none") }}' discard='unmap'/>
       <source file='{{ ard_node_overlay }}'/>
-      <target dev='vda' bus='virtio'/>
+      <target dev='{{ ard_node_root_disk_dev }}' bus='{{ ard_node_root_disk_bus }}'/>
     </disk>
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
       <source file='{{ ard_node_seed }}'/>
-      <target dev='sda' bus='sata'/>
+      <target dev='{{ ard_node_seed_disk_dev }}' bus='sata'/>
       <readonly/>
     </disk>
 {% for node_network in ard_node_networks %}

@@ -1,0 +1,17 @@
+apiVersion: operator.openstack.org/v1beta1
+kind: OpenStack
+metadata:
+  name: openstack
+  namespace: {{ oko_operator_namespace }}
+  labels:
+    app.kubernetes.io/name: openstack
+    app.kubernetes.io/managed-by: ard
+spec:
+  operatorOverrides:
+    - name: infra
+      controllerManager:
+        replicas: 1
+        resources:
+          limits:
+            cpu: 600m
+            memory: 2Gi

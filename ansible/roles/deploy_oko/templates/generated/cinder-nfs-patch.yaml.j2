@@ -1,0 +1,26 @@
+# Rendered by ARD deploy_oko. Layer this onto an OpenStackControlPlane
+# manifest when deploying Cinder with the default ARD NFS backend.
+apiVersion: core.openstack.org/v1beta1
+kind: OpenStackControlPlane
+metadata:
+  name: openstack
+  namespace: {{ oko_namespace }}
+spec:
+  storageClass: {{ oko_k8s_storage_class | quote }}
+  cinder:
+    enabled: true
+    template:
+      cinderVolumes:
+        nfs:
+          networkAttachments:
+            - storage
+          replicas: 1
+          customServiceConfig: |
+            [DEFAULT]
+            enabled_backends = nfs
+            [nfs]
+            volume_backend_name = nfs
+            volume_driver = cinder.volume.drivers.nfs.NfsDriver
+            nfs_shares_config = /etc/cinder/nfs_shares
+          customServiceConfigSecrets:
+            - cinder-nfs-shares

@@ -1,0 +1,90 @@
+---
+- name: Ensure OKO ctlplane bridge exists on datacenter network
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    bridge={{ oko_ctlplane_bridge | quote }}
+    iface={{ oko_datacenter_interface | quote }}
+    prefix={{ oko_ctlplane_cidr.split('/')[1] | quote }}
+    addr={{ oko_microshift_ctlplane_ip | quote }}
+
+    if ! nmcli -t -f NAME con show | grep -Fxq "$bridge"; then
+      nmcli con add type bridge con-name "$bridge" ifname "$bridge" >/dev/null
+    fi
+    nmcli con mod "$bridge" \
+      bridge.stp no \
+      ipv4.method manual \
+      ipv4.addresses "$addr/$prefix" \
+      ipv4.never-default yes \
+      ipv6.method disabled
+
+    slave_con="${bridge}-${iface}"
+    if ! nmcli -t -f NAME con show | grep -Fxq "$slave_con"; then
+      nmcli con add type ethernet con-name "$slave_con" ifname "$iface" master "$bridge" >/dev/null
+    fi
+    nmcli con mod "$slave_con" \
+      ipv4.method disabled \
+      ipv6.method disabled \
+      connection.autoconnect yes
+
+    # Existing ARD runs may have configured the IP directly on the datacenter
+    # NIC before the bridge was introduced. Make that connection harmless so
+    # the ctlplane address lives only on the bridge.
+    if nmcli -t -f NAME con show | grep -Fxq "$iface"; then
+      nmcli con mod "$iface" \
+        ipv4.method disabled \
+        ipv4.addresses '' \
+        ipv4.never-default yes \
+        ipv6.method disabled || true
+      nmcli con down "$iface" >/dev/null 2>&1 || true
+    fi
+
+    nmcli con up "$bridge" >/dev/null
+    nmcli con up "$slave_con" >/dev/null
+    ip addr replace "$addr/$prefix" dev "$bridge"
+    ip link set "$bridge" up
+    ip route replace {{ oko_ctlplane_cidr }} dev "$bridge" src "$addr"
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: oko_apply_network_resources | bool
+
+- name: Ensure OKO VLAN NetworkManager connections exist on datacenter network
+  become: true
+  ansible.builtin.shell: |
+    set -e
+    if nmcli -t -f NAME con show | grep -Fxq {{ item.name | quote }}; then
+      nmcli con up {{ item.name | quote }} >/dev/null
+      exit 0
+    fi
+    nmcli con add type vlan con-name {{ item.name | quote }} ifname {{ item.name | quote }} dev {{ item.parent | quote }} id {{ item.vlan | quote }} ipv4.method disabled ipv6.method disabled >/dev/null
+    nmcli con up {{ item.name | quote }} >/dev/null
+    echo created
+  args:
+    executable: /bin/bash
+  loop:
+    - name: "{{ oko_internalapi_master }}"
+      parent: "{{ oko_datacenter_interface }}"
+      vlan: "{{ oko_internalapi_vlan }}"
+    - name: "{{ oko_storage_master }}"
+      parent: "{{ oko_datacenter_interface }}"
+      vlan: "{{ oko_storage_vlan }}"
+    - name: "{{ oko_tenant_master }}"
+      parent: "{{ oko_datacenter_interface }}"
+      vlan: "{{ oko_tenant_vlan }}"
+  register: _oko_vlan_links
+  changed_when: "'created' in _oko_vlan_links.stdout"
+  when: oko_apply_network_resources | bool
+
+- name: Apply OKO network resources
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -k
+      - "{{ oko_network_workdir }}"
+  register: _oko_apply_network
+  changed_when: "'created' in _oko_apply_network.stdout or 'configured' in _oko_apply_network.stdout"
+  when: oko_apply_network_resources | bool

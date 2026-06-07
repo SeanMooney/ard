@@ -1,0 +1,8 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: {{ oko_operator_catalog_source }}
+  namespace: {{ oko_operator_namespace }}
+spec:
+  image: {{ oko_operator_catalog_image }}
+  sourceType: grpc

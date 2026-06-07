@@ -1,0 +1,52 @@
+---
+- name: Install NFS server packages
+  become: true
+  ansible.builtin.package:
+    name: nfs-utils
+    state: present
+
+- name: Create Cinder NFS export directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ oko_nfs_export_path }}"
+    state: directory
+    owner: "{{ oko_nfs_export_owner }}"
+    group: "{{ oko_nfs_export_group }}"
+    mode: "{{ oko_nfs_export_mode }}"
+
+- name: Ensure exports.d exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure Cinder NFS export
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ oko_nfs_export_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ oko_nfs_export_path }} {{ oko_nfs_export_network }}({{ oko_nfs_export_options }})
+  register: _oko_nfs_export
+
+- name: Enable and start NFS server
+  become: true
+  ansible.builtin.systemd:
+    name: nfs-server
+    state: started
+    enabled: true
+
+- name: Reload NFS exports
+  become: true
+  ansible.builtin.command:
+    argv: [exportfs, -rav]
+  changed_when: _oko_nfs_export.changed
+
+- name: Record Cinder NFS server endpoint
+  ansible.builtin.set_fact:
+    oko_cinder_nfs_share: "{{ oko_nfs_server }}:{{ oko_nfs_export_path }}"

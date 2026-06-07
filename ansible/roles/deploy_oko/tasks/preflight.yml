@@ -1,0 +1,71 @@
+---
+- name: Check kubeconfig exists
+  ansible.builtin.stat:
+    path: "{{ oko_kubeconfig }}"
+  register: _oko_kubeconfig_stat
+
+- name: Require MicroShift kubeconfig
+  ansible.builtin.assert:
+    that:
+      - _oko_kubeconfig_stat.stat.exists
+    fail_msg: "MicroShift kubeconfig not found at {{ oko_kubeconfig }}"
+
+- name: Detect oc client
+  ansible.builtin.command:
+    argv: [oc, version, --client=true]
+  register: _oko_oc_client
+  changed_when: false
+  failed_when: false
+
+- name: Detect kubectl client
+  ansible.builtin.command:
+    argv: [kubectl, version, --client=true]
+  register: _oko_kubectl_client
+  changed_when: false
+  failed_when: false
+  when: _oko_oc_client.rc != 0
+
+- name: Select Kubernetes client
+  ansible.builtin.set_fact:
+    oko_kube_client: "{{ 'oc' if _oko_oc_client.rc == 0 else 'kubectl' }}"
+
+- name: Require Kubernetes client
+  ansible.builtin.assert:
+    that:
+      - _oko_oc_client.rc == 0 or (_oko_kubectl_client is defined and _oko_kubectl_client.rc == 0)
+    fail_msg: "Neither oc nor kubectl is available on {{ inventory_hostname }}"
+
+- name: Check MicroShift API access
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - nodes
+  register: _oko_nodes
+  changed_when: false
+
+- name: Check local-path StorageClass
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - storageclass
+      - "{{ oko_k8s_storage_class }}"
+  register: _oko_storageclass
+  changed_when: false
+
+- name: Require EDPM inventory group
+  ansible.builtin.assert:
+    that:
+      - oko_edpm_group in groups
+      - groups[oko_edpm_group] | length > 0
+    fail_msg: "Expected EDPM inventory group '{{ oko_edpm_group }}' with at least one host"
+
+- name: Build EDPM node list from inventory
+  ansible.builtin.set_fact:
+    oko_edpm_nodes: "{{ (oko_edpm_nodes | default([])) + [ {'name': item, 'hostname': hostvars[item].ansible_hostname | default(item), 'ansible_host': hostvars[item].ansible_host | default(item)} ] }}"
+  loop: "{{ groups[oko_edpm_group] }}"

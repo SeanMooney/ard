@@ -36,7 +36,7 @@
   delegate_to: 127.0.0.1
   run_once: yes
   tags: ssh
-  openssh_keypair:
+  community.crypto.openssh_keypair:
     path: "~/.ssh/{{ssh_key_filename}}"
     type: ed25519
     state: present

@@ -1,0 +1,9 @@
+---
+- name: Cleanup OKO molecule workspace
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No-op cleanup placeholder
+      ansible.builtin.debug:
+        msg: OKO cleanup is handled by destroy.yml

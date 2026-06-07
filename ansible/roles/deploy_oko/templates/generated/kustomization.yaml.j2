@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ oko_namespace }}
+resources:
+  - cinder-nfs-secret.yaml
+  - dataplane.yaml
+patches:
+  - path: cinder-nfs-patch.yaml
+    target:
+      group: core.openstack.org
+      version: v1beta1
+      kind: OpenStackControlPlane
+      name: openstack

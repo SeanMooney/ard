@@ -1,0 +1,14 @@
+---
+microshift_install_metallb: true
+microshift_metallb_manifest_url: https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
+# OKO infra-operator watches FRR-K8s resources even when the deployment uses
+# MetalLB native manifests on MicroShift, so install the FRR-K8s CRDs by default.
+microshift_install_frr_k8s_crds: true
+microshift_frr_k8s_crd_urls:
+  - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_bgpsessionstates.yaml
+  - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_frrconfigurations.yaml
+  - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_frrk8sconfigurations.yaml
+  - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_frrnodestates.yaml
+microshift_metallb_namespace: metallb-system
+microshift_metallb_rollout_timeout: 300s
+microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig

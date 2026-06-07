@@ -75,6 +75,18 @@ ard_images:
         cache_filename: noble-server-cloudimg-amd64.img
         format: qcow2
         cloud_init_datasource: NoCloud
+  centos-stream-9:
+    os_family: redhat
+    version: "9-stream"
+    cloud_init: true
+    provider:
+      libvirt:
+        url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
+        name: centos-stream-9
+        cache_filename: CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
+        format: qcow2
+        cloud_init_datasource: NoCloud
+        firmware: bios
   centos-stream-10:
     os_family: redhat
     version: "10-stream"
@@ -155,3 +167,35 @@ ard_flavors:
         vcpus: 8
         memory_mb: 8192
         cpu_mode: host-passthrough
+  oko-microshift-node:
+    vcpus: 12
+    memory: 16Gi
+    root_disk_gb: 100
+    nested_virt: true
+    provider:
+      libvirt:
+        vcpus: 12
+        memory_mb: 16384
+        cpu_mode: host-passthrough
+        cpu_sockets: 1
+        cpu_threads: 2
+        cpu_cache_mode: passthrough
+        iothreads: 1
+        disk_bus: scsi
+        disk_cache: writeback
+  oko-edpm-compute:
+    vcpus: 4
+    memory: 4Gi
+    root_disk_gb: 50
+    nested_virt: true
+    provider:
+      libvirt:
+        vcpus: 4
+        memory_mb: 4096
+        cpu_mode: host-passthrough
+        cpu_sockets: 1
+        cpu_threads: 2
+        cpu_cache_mode: passthrough
+        iothreads: 1
+        disk_bus: scsi
+        disk_cache: writeback

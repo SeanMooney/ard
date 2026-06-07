@@ -1,0 +1,6 @@
+---
+microshift_install_cert_manager: true
+microshift_cert_manager_manifest_url: https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+microshift_cert_manager_namespace: cert-manager
+microshift_cert_manager_rollout_timeout: 300s
+microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig

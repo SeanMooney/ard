@@ -1,0 +1,393 @@
+---
+- name: Wait for MicroShift API before Multus
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - nodes
+  register: microshift_multus_api_ready
+  changed_when: false
+  until: microshift_multus_api_ready.rc == 0
+  retries: 60
+  delay: 10
+  when: microshift_install_multus | bool
+
+- name: Install Multus CNI
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_multus_manifest_url }}"
+  register: microshift_multus_apply
+  changed_when: "'created' in microshift_multus_apply.stdout or 'configured' in microshift_multus_apply.stdout"
+  when: microshift_install_multus | bool
+
+- name: Allow Multus daemonset to use privileged SCC
+  become: true
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - adm
+      - policy
+      - add-scc-to-user
+      - privileged
+      - -z
+      - multus
+      - -n
+      - "{{ microshift_multus_namespace }}"
+  register: microshift_multus_scc
+  changed_when: "'added' in microshift_multus_scc.stdout"
+  when: microshift_install_multus | bool
+
+- name: Wait for NetworkAttachmentDefinition CRD
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - crd
+      - network-attachment-definitions.k8s.cni.cncf.io
+  register: microshift_nad_crd
+  changed_when: false
+  until: microshift_nad_crd.rc == 0
+  retries: 60
+  delay: 5
+  when: microshift_install_multus | bool
+
+- name: Raise Multus daemon memory for MicroShift
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_multus_namespace }}"
+      - patch
+      - daemonset/kube-multus-ds
+      - --type=json
+      - -p
+      - >-
+        [{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"1"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"512Mi"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"100m"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"128Mi"}]
+  register: microshift_multus_memory_patch
+  changed_when: "'patched' in microshift_multus_memory_patch.stdout"
+  when: microshift_install_multus | bool
+
+- name: Configure Multus daemon API endpoint for MicroShift host networking
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_multus_namespace }}"
+      - patch
+      - daemonset/kube-multus-ds
+      - --type=json
+      - -p
+      - >-
+        [{"op":"replace","path":"/spec/template/spec/containers/0/env","value":[
+        {"name":"MULTUS_NODE_NAME","valueFrom":{"fieldRef":{"fieldPath":"spec.nodeName"}}},
+        {"name":"KUBERNETES_SERVICE_HOST","valueFrom":{"fieldRef":{"fieldPath":"status.hostIP"}}},
+        {"name":"KUBERNETES_SERVICE_PORT","value":"6443"},
+        {"name":"KUBERNETES_SERVICE_PORT_HTTPS","value":"6443"}]}]
+  register: microshift_multus_api_patch
+  changed_when: "'patched' in microshift_multus_api_patch.stdout"
+  when: microshift_install_multus | bool
+
+- name: Create Multus API server CA ConfigMap for MicroShift
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_multus_namespace }}" \
+      create configmap multus-apiserver-ca \
+      --from-file=ca.crt=/var/lib/microshift/certs/kube-apiserver-service-network-signer/ca.crt \
+      --dry-run=client -o yaml \
+      | kubectl --kubeconfig "{{ microshift_kubeconfig }}" apply -f -
+  args:
+    executable: /bin/bash
+  register: microshift_multus_apiserver_ca
+  changed_when: "'created' in microshift_multus_apiserver_ca.stdout or 'configured' in microshift_multus_apiserver_ca.stdout"
+  when: microshift_install_multus | bool
+
+- name: Mount MicroShift API server CA for Multus daemon
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_multus_namespace }}" patch daemonset/kube-multus-ds --type=strategic -p '
+    spec:
+      template:
+        spec:
+          automountServiceAccountToken: false
+          volumes:
+            - name: multus-apiserver-serviceaccount
+              projected:
+                defaultMode: 420
+                sources:
+                  - serviceAccountToken:
+                      expirationSeconds: 3600
+                      path: token
+                  - configMap:
+                      name: multus-apiserver-ca
+                      items:
+                        - key: ca.crt
+                          path: ca.crt
+                  - downwardAPI:
+                      items:
+                        - path: namespace
+                          fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+          containers:
+            - name: kube-multus
+              volumeMounts:
+                - name: multus-apiserver-serviceaccount
+                  mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+                  readOnly: true
+    '
+  args:
+    executable: /bin/bash
+  register: microshift_multus_ca_mount
+  changed_when: "'patched' in microshift_multus_ca_mount.stdout"
+  when: microshift_install_multus | bool
+
+- name: Mirror CNI plugins for Multus and MicroShift
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    mkdir -p /opt/cni/bin /run/cni/bin
+    for plugin in bridge host-local loopback macvlan host-device tuning portmap bandwidth firewall sbr static; do
+      if [ -x "/usr/libexec/cni/${plugin}" ]; then
+        cp -a "/usr/libexec/cni/${plugin}" /opt/cni/bin/
+        cp -a "/usr/libexec/cni/${plugin}" /run/cni/bin/
+      fi
+    done
+    if [ -x /run/cni/bin/ovn-k8s-cni-overlay ]; then
+      cp -a /run/cni/bin/ovn-k8s-cni-overlay /opt/cni/bin/
+    fi
+    if [ -x /opt/cni/bin/multus-shim ]; then
+      cp -a /opt/cni/bin/multus-shim /run/cni/bin/
+    fi
+    if [ -x /opt/cni/bin/whereabouts ]; then
+      cp -a /opt/cni/bin/whereabouts /run/cni/bin/
+    fi
+    if [ -x /opt/cni/bin/passthru ]; then
+      cp -a /opt/cni/bin/passthru /run/cni/bin/
+    fi
+    restorecon -Rv /opt/cni/bin /run/cni/bin /etc/cni/net.d >/dev/null 2>&1 || true
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for Multus rollout
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_multus_namespace }}"
+      - rollout
+      - status
+      - daemonset/kube-multus-ds
+      - "--timeout={{ microshift_multus_rollout_timeout }}"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Configure CRI-O to use Multus as default CNI
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/crio/crio.conf.d/99-microshift-multus.conf
+    mode: "0644"
+    content: |
+      [crio.network]
+      cni_default_network = "multus-cni-network"
+  register: microshift_multus_crio_default
+  when: microshift_install_multus | bool
+
+- name: Restart CRI-O after enabling Multus default CNI
+  become: true
+  ansible.builtin.systemd:
+    name: crio
+    state: restarted
+  when:
+    - microshift_install_multus | bool
+    - microshift_multus_crio_default.changed
+
+- name: Install Whereabouts IPPool CRD
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_whereabouts_ippools_crd_url }}"
+  register: microshift_whereabouts_ippools_apply
+  changed_when: "'created' in microshift_whereabouts_ippools_apply.stdout or 'configured' in microshift_whereabouts_ippools_apply.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Install Whereabouts overlapping range reservation CRD
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_whereabouts_overlappingrangeipreservations_crd_url }}"
+  register: microshift_whereabouts_reservations_apply
+  changed_when: "'created' in microshift_whereabouts_reservations_apply.stdout or 'configured' in microshift_whereabouts_reservations_apply.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Install Whereabouts daemonset
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ microshift_whereabouts_manifest_url }}"
+  register: microshift_whereabouts_apply
+  changed_when: "'created' in microshift_whereabouts_apply.stdout or 'configured' in microshift_whereabouts_apply.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Allow Whereabouts daemonset to use privileged SCC
+  become: true
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - adm
+      - policy
+      - add-scc-to-user
+      - privileged
+      - -z
+      - whereabouts
+      - -n
+      - "{{ microshift_multus_namespace }}"
+  register: microshift_whereabouts_scc
+  changed_when: "'added' in microshift_whereabouts_scc.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Configure Whereabouts API endpoint for MicroShift host networking
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_multus_namespace }}" patch daemonset/whereabouts --type=strategic -p '
+    spec:
+      template:
+        spec:
+          automountServiceAccountToken: false
+          volumes:
+            - name: whereabouts-apiserver-serviceaccount
+              projected:
+                defaultMode: 420
+                sources:
+                  - serviceAccountToken:
+                      expirationSeconds: 3600
+                      path: token
+                  - configMap:
+                      name: multus-apiserver-ca
+                      items:
+                        - key: ca.crt
+                          path: ca.crt
+                  - downwardAPI:
+                      items:
+                        - path: namespace
+                          fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+          containers:
+            - name: whereabouts
+              env:
+                - name: KUBERNETES_SERVICE_HOST
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: KUBERNETES_SERVICE_PORT
+                  value: "6443"
+                - name: KUBERNETES_SERVICE_PORT_HTTPS
+                  value: "6443"
+              volumeMounts:
+                - name: whereabouts-apiserver-serviceaccount
+                  mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+                  readOnly: true
+    '
+  args:
+    executable: /bin/bash
+  register: microshift_whereabouts_api_patch
+  changed_when: "'patched' in microshift_whereabouts_api_patch.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Wait for Whereabouts CRDs
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - crd
+      - "{{ item }}"
+  register: microshift_whereabouts_crd
+  changed_when: false
+  until: microshift_whereabouts_crd.rc == 0
+  retries: 60
+  delay: 5
+  loop:
+    - ippools.whereabouts.cni.cncf.io
+    - overlappingrangeipreservations.whereabouts.cni.cncf.io
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool
+
+- name: Wait for Whereabouts rollout
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - "{{ microshift_multus_namespace }}"
+      - rollout
+      - status
+      - daemonset/whereabouts
+      - "--timeout={{ microshift_multus_rollout_timeout }}"
+  changed_when: false
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_whereabouts | bool

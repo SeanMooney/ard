@@ -1,0 +1,19 @@
+---
+- name: Verify OKO skeleton artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
+  tasks:
+    - name: Check rendered OKO README exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/oko/README.md"
+      register: _oko_readme
+
+    - name: Require rendered OKO README
+      ansible.builtin.assert:
+        that:
+          - _oko_readme.stat.exists

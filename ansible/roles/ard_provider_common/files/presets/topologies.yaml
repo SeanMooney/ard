@@ -57,3 +57,29 @@ ard_render_topologies:
         networks:
           - name: ard-mgmt
             ip_start: 2
+
+  oko-microshift-two-compute:
+    controller_runs_compute: false
+    node_pools:
+      - type: microshift
+        count: 1
+        name: microshift
+        hostname: microshift
+        flavor: oko-microshift-node
+        networks:
+          - name: ard-mgmt
+            ip_start: 2
+          - name: datacenter
+            mac_start: 2
+      - type: compute
+        count: 2
+        name_format: "edpm-compute-{index}"
+        hostname_format: "edpm-compute-{index}"
+        manage_etc_hosts: false
+        image: centos-stream-9
+        flavor: oko-edpm-compute
+        networks:
+          - name: ard-mgmt
+            ip_start: 10
+          - name: datacenter
+            mac_start: 10

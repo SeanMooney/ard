@@ -1,0 +1,27 @@
+---
+- name: Apply OpenStack control-plane resources
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -k
+      - "{{ oko_controlplane_workdir }}"
+  register: _oko_apply_controlplane
+  changed_when: "'created' in _oko_apply_controlplane.stdout or 'configured' in _oko_apply_controlplane.stdout"
+  when: oko_apply_controlplane_resources | bool
+
+- name: Apply OpenStack dataplane resources
+  ansible.builtin.shell: |
+    set -euo pipefail
+    # Apply services before the deployment CR. The dataplane operator may launch
+    # jobs immediately when OpenStackDataPlaneDeployment is created, so relying
+    # on kubectl/kustomize apply ordering can run stale service definitions.
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/repo-setup.yaml
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/dataplane.yaml
+  args:
+    executable: /bin/bash
+  register: _oko_apply_dataplane
+  changed_when: "'created' in _oko_apply_dataplane.stdout or 'configured' in _oko_apply_dataplane.stdout"
+  when: oko_apply_dataplane_resources | bool

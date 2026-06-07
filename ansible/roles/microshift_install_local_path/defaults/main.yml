@@ -1,0 +1,8 @@
+---
+microshift_install_local_path_provisioner: true
+microshift_local_path_manifest_url: https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+microshift_default_storage_class: local-path
+microshift_storage_class_names:
+  local-path: local-path
+  topolvm: topolvm-provisioner
+microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig
