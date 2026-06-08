@@ -1,0 +1,29 @@
+---
+- name: Check for OpenStackControlPlane resource
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - "{{ oko_namespace }}"
+      - get
+      - openstackcontrolplane/openstack
+  register: _oko_controlplane_exists
+  changed_when: false
+  failed_when: false
+
+- name: Wait for OpenStackControlPlane Ready
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - "{{ oko_namespace }}"
+      - wait
+      - openstackcontrolplane/openstack
+      - --for=condition=Ready
+      - "--timeout={{ oko_wait_timeout }}s"
+  changed_when: false
+  when: _oko_controlplane_exists.rc == 0

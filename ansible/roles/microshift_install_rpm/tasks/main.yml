@@ -90,6 +90,25 @@
         nodeIP: {{ microshift_node_ip }}
   register: microshift_config_file
 
+- name: Ensure MicroShift OVS init drop-in directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/microshift-ovs-init.service.d
+    state: directory
+    mode: "0755"
+  when: microshift_networking == 'ovnk'
+
+- name: Configure br-ex node IP for MicroShift OVN
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/microshift-ovs-init.service.d/10-br-ex-node-ip.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPost=/bin/bash -c 'ip addr add {{ microshift_node_ip }}/32 dev br-ex 2>/dev/null || true; ip link set br-ex up'
+  register: microshift_ovs_init_dropin
+  when: microshift_networking == 'ovnk'
+
 - name: Enable and start MicroShift service
   become: true
   ansible.builtin.systemd:
@@ -103,7 +122,8 @@
   ansible.builtin.systemd:
     name: microshift.service
     state: restarted
-  when: microshift_config_file.changed
+    daemon_reload: true
+  when: microshift_config_file.changed or (microshift_ovs_init_dropin.changed | default(false))
 
 - name: Wait for MicroShift kubeconfig
   become: true
@@ -144,3 +164,16 @@
     group: "{{ microshift_user }}"
     mode: "0600"
     remote_src: true
+
+- name: Wait for MicroShift node readiness
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - wait
+      - "node/{{ microshift_hostname_override }}"
+      - --for=condition=Ready
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false

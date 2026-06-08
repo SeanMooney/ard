@@ -25,12 +25,30 @@
 - name: Apply OKO network manifests
   ansible.builtin.import_tasks: network-apply.yml
 
-- name: Apply OKO control-plane/dataplane manifests
+- name: Apply OKO control-plane manifests
   ansible.builtin.import_tasks: openstack-apply.yml
 
-- name: Wait for OKO resources
-  ansible.builtin.import_tasks: wait.yml
-  when: oko_wait_for_openstack | bool
+- name: Wait for OKO control-plane resources before dataplane
+  ansible.builtin.import_tasks: controlplane-wait.yml
+  when:
+    - oko_apply_controlplane_resources | bool
+    - (oko_wait_for_openstack | bool) or (oko_apply_dataplane_resources | bool)
+
+- name: Require control-plane readiness gate before dataplane
+  ansible.builtin.assert:
+    that:
+      - oko_apply_controlplane_resources | bool
+    fail_msg: Dataplane apply requires control-plane resources to be applied and Ready first.
+  when: oko_apply_dataplane_resources | bool
+
+- name: Apply OKO dataplane manifests
+  ansible.builtin.import_tasks: dataplane-apply.yml
+
+- name: Wait for OKO dataplane resources
+  ansible.builtin.import_tasks: dataplane-wait.yml
+  when:
+    - oko_wait_for_openstack | bool
+    - oko_apply_dataplane_resources | bool
 
 - name: Run OKO postchecks
   ansible.builtin.import_tasks: postcheck.yml
