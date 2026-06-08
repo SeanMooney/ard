@@ -34,6 +34,13 @@
     - oko_apply_controlplane_resources | bool
     - (oko_wait_for_openstack | bool) or (oko_apply_dataplane_resources | bool)
 
+- name: Apply RabbitMQ LoadBalancer class workaround
+  ansible.builtin.import_tasks: rabbitmq-lb-workaround.yml
+  when:
+    - oko_apply_controlplane_resources | bool
+    - oko_rabbitmq_lb_workaround_enabled | bool
+    - (oko_wait_for_openstack | bool) or (oko_apply_dataplane_resources | bool)
+
 - name: Require control-plane readiness gate before dataplane
   ansible.builtin.assert:
     that:

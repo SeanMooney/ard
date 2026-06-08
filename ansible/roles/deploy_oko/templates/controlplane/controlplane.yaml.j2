@@ -23,6 +23,9 @@ spec:
               metallb.universe.tf/loadBalancerIPs: {{ oko_dns_loadbalancer_ip }}
           spec:
             type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+            loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
             externalTrafficPolicy: Local
       replicas: 1
   galera:
@@ -40,6 +43,27 @@ spec:
   rabbitmq:
     templates:
       rabbitmq:
+        # Temporary ARD workaround: infra-operator currently accepts but does
+        # not propagate RabbitMq override.service.spec.loadBalancerClass.  When
+        # enabled, keep operator-owned RabbitMQ Services as ClusterIP and create
+        # separate ARD-owned classed LoadBalancer Services after control-plane
+        # readiness for EDPM-facing VIP/DNS connectivity.
+        override:
+          service:
+{% if oko_rabbitmq_lb_workaround_enabled | bool %}
+            spec:
+              type: ClusterIP
+{% else %}
+            metadata:
+              annotations:
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_rabbitmq_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+{% endif %}
         replicas: 1
         persistence:
           storage: 1Gi
@@ -51,6 +75,22 @@ spec:
             cpu: 500m
             memory: 768Mi
       rabbitmq-cell1:
+        override:
+          service:
+{% if oko_rabbitmq_lb_workaround_enabled | bool %}
+            spec:
+              type: ClusterIP
+{% else %}
+            metadata:
+              annotations:
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_rabbitmq_cell1_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+{% endif %}
         replicas: 1
         persistence:
           storage: 1Gi
@@ -67,32 +107,57 @@ spec:
         replicas: 1
   keystone:
     enabled: true
+    apiOverride:
+      route:
+        spec:
+          host: keystone-public-openstack.{{ oko_route_domain }}
     template:
+      override:
+        service:
+          internal:
+            metadata:
+              annotations:
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/allow-shared-ip: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
       databaseInstance: openstack
       memcachedInstance: memcached
       rabbitMqClusterName: rabbitmq
       secret: osp-secret
-      override:
-        service:
-          public:
-            endpointURL: https://keystone-internal.{{ oko_namespace }}.svc:5000
-            metadata:
-              annotations:
-                core.openstack.org/ingress_create: "false"
   placement:
     enabled: true
+    apiOverride:
+      route:
+        spec:
+          host: placement-public-openstack.{{ oko_route_domain }}
     template:
-      databaseInstance: openstack
-      secret: osp-secret
       override:
         service:
-          public:
-            endpointURL: https://placement-internal.{{ oko_namespace }}.svc:8778
+          internal:
             metadata:
               annotations:
-                core.openstack.org/ingress_create: "false"
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/allow-shared-ip: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+      databaseInstance: openstack
+      secret: osp-secret
   glance:
     enabled: true
+    apiOverrides:
+      default:
+        route:
+          spec:
+            host: glance-public-openstack.{{ oko_route_domain }}
     template:
       databaseInstance: openstack
       secret: osp-secret
@@ -104,29 +169,45 @@ spec:
         size: 1Gi
       glanceAPIs:
         default:
-          type: single
-          replicas: 1
           override:
             service:
-              public:
-                endpointURL: https://glance-default-internal.{{ oko_namespace }}.svc:9292
+              internal:
                 metadata:
                   annotations:
-                    core.openstack.org/ingress_create: "false"
+                    metallb.universe.tf/address-pool: ctlplane
+                    metallb.universe.tf/allow-shared-ip: ctlplane
+                    metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+                spec:
+                  type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+                  loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+          type: single
+          replicas: 1
   cinder:
     enabled: true
+    apiOverride:
+      route:
+        spec:
+          host: cinder-public-openstack.{{ oko_route_domain }}
     template:
       databaseInstance: openstack
       secret: osp-secret
       cinderAPI:
-        replicas: 1
         override:
           service:
-            public:
-              endpointURL: https://cinder-internal.{{ oko_namespace }}.svc:8776
+            internal:
               metadata:
                 annotations:
-                  core.openstack.org/ingress_create: "false"
+                  metallb.universe.tf/address-pool: ctlplane
+                  metallb.universe.tf/allow-shared-ip: ctlplane
+                  metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+              spec:
+                type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+                loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+        replicas: 1
       cinderScheduler:
         replicas: 1
       cinderBackup:
@@ -167,28 +248,67 @@ spec:
           datacentre: {{ oko_ctlplane_master }}
   neutron:
     enabled: true
+    apiOverride:
+      route:
+        spec:
+          host: neutron-public-openstack.{{ oko_route_domain }}
     template:
-      databaseInstance: openstack
-      secret: osp-secret
       override:
         service:
-          public:
-            endpointURL: https://neutron-internal.{{ oko_namespace }}.svc:9696
+          internal:
             metadata:
               annotations:
-                core.openstack.org/ingress_create: "false"
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/allow-shared-ip: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+      databaseInstance: openstack
+      secret: osp-secret
   nova:
     enabled: true
+    apiOverride:
+      route:
+        spec:
+          host: nova-public-openstack.{{ oko_route_domain }}
+    cellOverride:
+      cell1:
+        noVNCProxy:
+          route:
+            spec:
+              host: nova-novncproxy-cell1-public-openstack.{{ oko_route_domain }}
     template:
-      secret: osp-secret
       apiServiceTemplate:
         override:
           service:
-            public:
-              endpointURL: https://nova-internal.{{ oko_namespace }}.svc:8774
+            internal:
               metadata:
                 annotations:
-                  core.openstack.org/ingress_create: "false"
+                  metallb.universe.tf/address-pool: ctlplane
+                  metallb.universe.tf/allow-shared-ip: ctlplane
+                  metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+              spec:
+                type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+                loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+      metadataServiceTemplate:
+        override:
+          service:
+            metadata:
+              annotations:
+                metallb.universe.tf/address-pool: ctlplane
+                metallb.universe.tf/allow-shared-ip: ctlplane
+                metallb.universe.tf/loadBalancerIPs: {{ oko_internal_api_loadbalancer_ip }}
+            spec:
+              type: LoadBalancer
+{% if oko_loadbalancer_class | default('') | length > 0 %}
+              loadBalancerClass: {{ oko_loadbalancer_class }}
+{% endif %}
+      secret: osp-secret
       apiDatabaseInstance: openstack
       apiMessageBusInstance: rabbitmq
       cellTemplates:

@@ -88,3 +88,87 @@
   register: _oko_apply_network
   changed_when: "'created' in _oko_apply_network.stdout or 'configured' in _oko_apply_network.stdout"
   when: oko_apply_network_resources | bool
+
+- name: Discover OpenShift router service address
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - openshift-ingress
+      - get
+      - service/router-default
+      - -o
+      - "jsonpath={.spec.clusterIP}"
+  register: _oko_router_service_ip
+  changed_when: false
+  when: oko_apply_network_resources | bool
+
+- name: Configure MicroShift host route name resolution
+  become: true
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ARD OKO public route hosts"
+    block: |
+      {% for host in oko_route_hosts %}
+      {{ _oko_router_service_ip.stdout }} {{ host }}
+      {% endfor %}
+  when: oko_apply_network_resources | bool
+
+- name: Configure cluster DNS for OKO public route hosts
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    python3 - <<'PY' | tee /tmp/ard-oko-route-dns.out
+    import subprocess
+    import yaml
+
+    kubeconfig = {{ oko_kubeconfig | to_json }}
+    route_ip = {{ _oko_router_service_ip.stdout | to_json }}
+    route_hosts = {{ oko_route_hosts | to_json }}
+    hosts_lines = "\n".join(f"        {route_ip} {host}" for host in route_hosts)
+    hosts_block = "    hosts {\n" + hosts_lines + "\n        fallthrough\n    }\n"
+
+    raw = subprocess.check_output([
+        "{{ oko_kube_client }}", "--kubeconfig", kubeconfig,
+        "-n", "openshift-dns", "get", "configmap/dns-default", "-o", "yaml",
+    ], text=True)
+    cm = yaml.safe_load(raw)
+    corefile = cm["data"]["Corefile"]
+    start = "      # BEGIN ARD OKO public route hosts\n"
+    end = "      # END ARD OKO public route hosts\n"
+    managed = start + hosts_block + end
+    if start in corefile:
+        before, rest = corefile.split(start, 1)
+        _, after = rest.split(end, 1)
+        new_corefile = before + managed + after
+    else:
+        for marker in (
+            "    kubernetes cluster.local in-addr.arpa ip6.arpa {\n",
+            "      kubernetes cluster.local in-addr.arpa ip6.arpa {\n",
+        ):
+            if marker in corefile:
+                new_corefile = corefile.replace(marker, managed + marker, 1)
+                break
+        else:
+            raise SystemExit("could not find kubernetes plugin in CoreDNS Corefile")
+    if new_corefile != corefile:
+        cm["data"]["Corefile"] = new_corefile
+        with open("/tmp/ard-dns-default.yaml", "w") as f:
+            yaml.safe_dump(cm, f, sort_keys=False)
+        subprocess.check_call([
+            "{{ oko_kube_client }}", "--kubeconfig", kubeconfig,
+            "apply", "-f", "/tmp/ard-dns-default.yaml",
+        ])
+        print("ARD_DNS_CHANGED")
+    PY
+    if grep -q ARD_DNS_CHANGED /tmp/ard-oko-route-dns.out; then
+      {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} -n openshift-dns rollout restart daemonset/dns-default
+      {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} -n openshift-dns rollout status daemonset/dns-default --timeout=300s
+    fi
+  args:
+    executable: /bin/bash
+  register: _oko_cluster_route_dns
+  changed_when: "'ARD_DNS_CHANGED' in _oko_cluster_route_dns.stdout"
+  when: oko_apply_network_resources | bool

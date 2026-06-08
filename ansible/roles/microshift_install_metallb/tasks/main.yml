@@ -84,6 +84,32 @@
   changed_when: "'added' in microshift_metallb_speaker_scc.stdout"
   when: microshift_install_metallb | bool
 
+- name: Configure MetalLB load balancer class
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    class_arg="--lb-class={{ microshift_metallb_loadbalancer_class }}"
+    changed=0
+    for resource in deployment/controller daemonset/speaker; do
+      if ! kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_metallb_namespace }}" \
+          get "$resource" -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -F -- "$class_arg" >/dev/null; then
+        kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n "{{ microshift_metallb_namespace }}" \
+          patch "$resource" --type=json \
+          -p="[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"${class_arg}\"}]"
+        changed=1
+      fi
+    done
+    if [ "$changed" -eq 1 ]; then
+      echo "configured MetalLB load balancer class {{ microshift_metallb_loadbalancer_class }}"
+    fi
+  args:
+    executable: /bin/bash
+  register: microshift_metallb_lb_class_patch
+  changed_when: "'configured MetalLB load balancer class' in microshift_metallb_lb_class_patch.stdout"
+  when:
+    - microshift_install_metallb | bool
+    - microshift_metallb_loadbalancer_class | length > 0
+
 - name: Configure MetalLB speaker API endpoint for MicroShift host networking
   become: true
   ansible.builtin.shell: |

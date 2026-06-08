@@ -10,5 +10,9 @@ microshift_frr_k8s_crd_urls:
   - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_frrk8sconfigurations.yaml
   - https://raw.githubusercontent.com/metallb/frr-k8s/main/config/crd/bases/frrk8s.metallb.io_frrnodestates.yaml
 microshift_metallb_namespace: metallb-system
+# When set, MetalLB only manages Services whose spec.loadBalancerClass matches
+# this value. This is required on MicroShift when another built-in controller
+# also writes LoadBalancer status for unclassed Services.
+microshift_metallb_loadbalancer_class: metallb.io/metallb
 microshift_metallb_rollout_timeout: 300s
 microshift_kubeconfig: /var/lib/microshift/resources/kubeadmin/kubeconfig
