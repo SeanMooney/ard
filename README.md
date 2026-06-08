@@ -12,6 +12,9 @@ Docs navigation was reorganized; see:
 - `docs/README.md` for the documentation index
 - `ansible/README.md` for Ansible structure and canonical playbook paths
 
+For contributor-oriented architecture and workflow details, read the
+[ARD From Scratch developer guide](developer-guide.md).
+
 ## Quick start
 
 Bootstrap the repository and host dependencies:
