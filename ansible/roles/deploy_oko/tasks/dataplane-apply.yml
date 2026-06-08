@@ -1,0 +1,23 @@
+---
+- name: Apply OpenStack dataplane prerequisites and resources
+  ansible.builtin.shell: |
+    set -euo pipefail
+    # Apply services and secrets before the deployment CR. The dataplane
+    # operator may launch jobs immediately when OpenStackDataPlaneDeployment is
+    # created, so relying on kubectl/kustomize apply ordering can race required
+    # service definitions and secret/configmap dependencies.
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/repo-setup.yaml
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/ovncontroller-config.yaml
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/libvirt-secret.yaml
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/nova-migration-ssh-key.yaml
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} -n {{ oko_namespace }} get \
+      openstackdataplaneservice/repo-setup \
+      configmap/ovncontroller-config \
+      secret/libvirt-secret \
+      secret/{{ oko_nova_migration_ssh_secret_name }}
+    {{ oko_kube_client }} --kubeconfig {{ oko_kubeconfig }} apply -f {{ oko_dataplane_workdir }}/dataplane.yaml
+  args:
+    executable: /bin/bash
+  register: _oko_apply_dataplane
+  changed_when: "'created' in _oko_apply_dataplane.stdout or 'configured' in _oko_apply_dataplane.stdout"
+  when: oko_apply_dataplane_resources | bool

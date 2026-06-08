@@ -8,8 +8,8 @@
     - microshift_prereqs
     - microshift_repos
     - microshift_install_rpm
-    - microshift_install_local_path
     - microshift_install_multus
+    - microshift_install_local_path
     - microshift_install_metallb
     - microshift_install_cert_manager
     - microshift_validate

@@ -42,6 +42,12 @@
           - ansible/playbooks/workloads/oko/deploy.yaml
           - -e
           - ard_deployment_dir={{ ard_deployment_dir }}
+          - -e
+          - oko_apply_network_resources=true
+          - -e
+          - oko_apply_controlplane_resources=true
+          - -e
+          - oko_apply_dataplane_resources=true
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"

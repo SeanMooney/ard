@@ -211,6 +211,22 @@
   changed_when: false
   when: microshift_install_multus | bool
 
+- name: Mirror Multus CNI plugins after daemon installation
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    mkdir -p /run/cni/bin
+    for plugin in multus-shim whereabouts passthru; do
+      if [ -x "/opt/cni/bin/${plugin}" ]; then
+        cp -a "/opt/cni/bin/${plugin}" /run/cni/bin/
+      fi
+    done
+    restorecon -Rv /run/cni/bin /etc/cni/net.d >/dev/null 2>&1 || true
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: microshift_install_multus | bool
+
 - name: Configure CRI-O to use Multus as default CNI
   become: true
   ansible.builtin.copy:
@@ -230,6 +246,163 @@
   when:
     - microshift_install_multus | bool
     - microshift_multus_crio_default.changed
+
+- name: Restart MicroShift after enabling Multus default CNI
+  become: true
+  ansible.builtin.systemd:
+    name: microshift.service
+    state: restarted
+  when:
+    - microshift_install_multus | bool
+    - microshift_multus_crio_default.changed
+
+- name: Wait for MicroShift API after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - nodes
+  register: microshift_multus_api_after_restart
+  changed_when: false
+  until: microshift_multus_api_after_restart.rc == 0
+  retries: 60
+  delay: 10
+  when: microshift_install_multus | bool
+
+- name: Wait for MicroShift node readiness after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - wait
+      - "node/{{ microshift_hostname_override }}"
+      - --for=condition=Ready
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Recycle core pods created before Multus CNI switch
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-dns delete pod --all --ignore-not-found
+    kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-service-ca delete pod --all --ignore-not-found
+    if kubectl --kubeconfig "{{ microshift_kubeconfig }}" get ns openshift-operator-lifecycle-manager >/dev/null 2>&1; then
+      kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-operator-lifecycle-manager delete pod --all --ignore-not-found
+    fi
+  args:
+    executable: /bin/bash
+  register: microshift_multus_recycle_core_pods
+  changed_when: "'deleted' in microshift_multus_recycle_core_pods.stdout"
+  when:
+    - microshift_install_multus | bool
+    - microshift_multus_crio_default.changed
+
+- name: Wait for MicroShift node readiness after core pod recycle
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - wait
+      - "node/{{ microshift_hostname_override }}"
+      - --for=condition=Ready
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when:
+    - microshift_install_multus | bool
+    - microshift_multus_crio_default.changed
+
+- name: Wait for OVN node rollout after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-ovn-kubernetes
+      - rollout
+      - status
+      - daemonset/ovnkube-node
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for OVN master rollout after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-ovn-kubernetes
+      - rollout
+      - status
+      - daemonset/ovnkube-master
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for DNS rollout after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-dns
+      - rollout
+      - status
+      - daemonset/dns-default
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for service-ca rollout after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-service-ca
+      - rollout
+      - status
+      - deployment/service-ca
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for OLM deployments after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-operator-lifecycle-manager
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - "--timeout={{ microshift_validate_timeout }}s"
+  loop:
+    - olm-operator
+    - catalog-operator
+  changed_when: false
+  when:
+    - microshift_install_multus | bool
+    - microshift_install_olm | bool
 
 - name: Install Whereabouts IPPool CRD
   become: true

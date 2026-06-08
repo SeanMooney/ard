@@ -72,11 +72,25 @@ spec:
       memcachedInstance: memcached
       rabbitMqClusterName: rabbitmq
       secret: osp-secret
+      override:
+        service:
+          public:
+            endpointURL: https://keystone-internal.{{ oko_namespace }}.svc:5000
+            metadata:
+              annotations:
+                core.openstack.org/ingress_create: "false"
   placement:
     enabled: true
     template:
       databaseInstance: openstack
       secret: osp-secret
+      override:
+        service:
+          public:
+            endpointURL: https://placement-internal.{{ oko_namespace }}.svc:8778
+            metadata:
+              annotations:
+                core.openstack.org/ingress_create: "false"
   glance:
     enabled: true
     template:
@@ -92,6 +106,13 @@ spec:
         default:
           type: single
           replicas: 1
+          override:
+            service:
+              public:
+                endpointURL: https://glance-default-internal.{{ oko_namespace }}.svc:9292
+                metadata:
+                  annotations:
+                    core.openstack.org/ingress_create: "false"
   cinder:
     enabled: true
     template:
@@ -99,6 +120,13 @@ spec:
       secret: osp-secret
       cinderAPI:
         replicas: 1
+        override:
+          service:
+            public:
+              endpointURL: https://cinder-internal.{{ oko_namespace }}.svc:8776
+              metadata:
+                annotations:
+                  core.openstack.org/ingress_create: "false"
       cinderScheduler:
         replicas: 1
       cinderBackup:
@@ -142,10 +170,25 @@ spec:
     template:
       databaseInstance: openstack
       secret: osp-secret
+      override:
+        service:
+          public:
+            endpointURL: https://neutron-internal.{{ oko_namespace }}.svc:9696
+            metadata:
+              annotations:
+                core.openstack.org/ingress_create: "false"
   nova:
     enabled: true
     template:
       secret: osp-secret
+      apiServiceTemplate:
+        override:
+          service:
+            public:
+              endpointURL: https://nova-internal.{{ oko_namespace }}.svc:8774
+              metadata:
+                annotations:
+                  core.openstack.org/ingress_create: "false"
       apiDatabaseInstance: openstack
       apiMessageBusInstance: rabbitmq
       cellTemplates:
