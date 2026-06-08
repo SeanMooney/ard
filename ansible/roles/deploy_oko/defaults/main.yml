@@ -83,8 +83,33 @@ oko_ctlplane_allocation_start: 192.168.122.100
 oko_ctlplane_allocation_end: 192.168.122.200
 oko_ctlplane_nad_start: 192.168.122.30
 oko_ctlplane_nad_end: 192.168.122.70
+oko_internal_api_loadbalancer_ip: 192.168.122.80
 oko_dns_loadbalancer_ip: 192.168.122.81
+# Set on OpenStack LoadBalancer Services so MicroShift's built-in LB status
+# controller ignores them and MetalLB owns status updates.
+oko_loadbalancer_class: metallb.io/metallb
+oko_rabbitmq_loadbalancer_ip: 192.168.122.85
+oko_rabbitmq_cell1_loadbalancer_ip: 192.168.122.86
+# Temporary ARD workaround for infra-operator RabbitMq Services accepting but
+# not propagating spec.override.service.spec.loadBalancerClass.  The role creates
+# separate classed Services and moves dnsmasq host annotations to those Services
+# after the control plane is Ready.
+oko_rabbitmq_lb_workaround_enabled: true
+oko_rabbitmq_lb_workaround_service_name: rabbitmq-ard-lb
+oko_rabbitmq_cell1_lb_workaround_service_name: rabbitmq-cell1-ard-lb
+oko_rabbitmq_lb_workaround_wait_timeout: 300
 oko_dns_forwarder: "{{ ansible_default_ipv4.gateway | default(oko_ctlplane_gateway, true) }}"
+# Route host suffix used for OpenStack public API endpoints. MicroShift does
+# not provide a cluster apps domain, so ARD renders explicit Route hosts.
+oko_route_domain: apps.example.com
+oko_route_hosts:
+  - keystone-public-openstack.{{ oko_route_domain }}
+  - placement-public-openstack.{{ oko_route_domain }}
+  - glance-public-openstack.{{ oko_route_domain }}
+  - cinder-public-openstack.{{ oko_route_domain }}
+  - neutron-public-openstack.{{ oko_route_domain }}
+  - nova-public-openstack.{{ oko_route_domain }}
+  - nova-novncproxy-cell1-public-openstack.{{ oko_route_domain }}
 # ARD OKO topology attaches a dedicated isolated libvirt network named
 # datacenter as the second NIC on MicroShift and EDPM nodes. Network-isolated
 # OKO NADs are layered on this interface.

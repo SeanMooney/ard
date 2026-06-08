@@ -292,6 +292,9 @@
     set -euo pipefail
     kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-dns delete pod --all --ignore-not-found
     kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-service-ca delete pod --all --ignore-not-found
+    if kubectl --kubeconfig "{{ microshift_kubeconfig }}" get ns openshift-ingress >/dev/null 2>&1; then
+      kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-ingress delete pod --all --ignore-not-found
+    fi
     if kubectl --kubeconfig "{{ microshift_kubeconfig }}" get ns openshift-operator-lifecycle-manager >/dev/null 2>&1; then
       kubectl --kubeconfig "{{ microshift_kubeconfig }}" -n openshift-operator-lifecycle-manager delete pod --all --ignore-not-found
     fi
@@ -382,6 +385,39 @@
       - "--timeout={{ microshift_validate_timeout }}s"
   changed_when: false
   when: microshift_install_multus | bool
+
+- name: Check whether ingress namespace exists after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - get
+      - namespace
+      - openshift-ingress
+  register: microshift_multus_ingress_namespace
+  changed_when: false
+  failed_when: false
+  when: microshift_install_multus | bool
+
+- name: Wait for ingress router rollout after Multus restart
+  become: true
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ microshift_kubeconfig }}"
+      - -n
+      - openshift-ingress
+      - rollout
+      - status
+      - deployment/router-default
+      - "--timeout={{ microshift_validate_timeout }}s"
+  changed_when: false
+  when:
+    - microshift_install_multus | bool
+    - microshift_multus_ingress_namespace.rc == 0
 
 - name: Wait for OLM deployments after Multus restart
   become: true

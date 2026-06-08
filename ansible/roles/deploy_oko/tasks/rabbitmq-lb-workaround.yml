@@ -1,0 +1,183 @@
+---
+- name: Wait for operator-owned RabbitMQ Services to become ClusterIP
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG={{ oko_kubeconfig | quote }}
+    deadline=$((SECONDS + {{ oko_rabbitmq_lb_workaround_wait_timeout | int }}))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+      state="$({{ oko_kube_client }} -n {{ oko_namespace | quote }} get svc rabbitmq rabbitmq-cell1 -o json)"
+      STATE="$state" python3 - <<'PY' && exit 0 || true
+    import json
+    import os
+    import sys
+    services = json.loads(os.environ["STATE"]).get("items", [])
+    if len(services) != 2:
+        sys.exit(1)
+    for svc in services:
+        if svc.get("spec", {}).get("type") != "ClusterIP":
+            print(f"{svc['metadata']['name']} type={svc.get('spec', {}).get('type')}", file=sys.stderr)
+            sys.exit(1)
+    sys.exit(0)
+    PY
+      sleep 5
+    done
+    {{ oko_kube_client }} -n {{ oko_namespace | quote }} get svc rabbitmq rabbitmq-cell1 -o yaml
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Create classed RabbitMQ LoadBalancer workaround Services
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG={{ oko_kubeconfig | quote }}
+    {{ oko_kube_client }} -n {{ oko_namespace | quote }} get svc rabbitmq rabbitmq-cell1 >/dev/null
+    python3 - <<'PY'
+    import json
+    import subprocess
+    import sys
+
+    kube = {{ oko_kube_client | to_json }}
+    namespace = {{ oko_namespace | to_json }}
+    lb_class = {{ oko_loadbalancer_class | to_json }}
+    services = [
+        {
+            "source": "rabbitmq",
+            "name": {{ oko_rabbitmq_lb_workaround_service_name | to_json }},
+            "ip": {{ oko_rabbitmq_loadbalancer_ip | to_json }},
+            "hostname": "rabbitmq.openstack.svc",
+        },
+        {
+            "source": "rabbitmq-cell1",
+            "name": {{ oko_rabbitmq_cell1_lb_workaround_service_name | to_json }},
+            "ip": {{ oko_rabbitmq_cell1_loadbalancer_ip | to_json }},
+            "hostname": "rabbitmq-cell1.openstack.svc",
+        },
+    ]
+
+    def run(args, input_data=None):
+        return subprocess.run(
+            args,
+            input=input_data,
+            text=True,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+
+    for item in services:
+        source_raw = run([kube, "-n", namespace, "get", "svc", item["source"], "-o", "json"])
+        source = json.loads(source_raw)
+        ports = []
+        for port in source["spec"].get("ports", []):
+            clean = {
+                key: port[key]
+                for key in ("name", "protocol", "appProtocol", "port", "targetPort")
+                if key in port
+            }
+            ports.append(clean)
+
+        manifest = {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": item["name"],
+                "namespace": namespace,
+                "labels": {
+                    "app.kubernetes.io/managed-by": "ard",
+                    "ard.openstack.org/workaround": "rabbitmq-loadbalancer-class",
+                    "ard.openstack.org/source-service": item["source"],
+                },
+                "annotations": {
+                    "dnsmasq.network.openstack.org/hostname": item["hostname"],
+                    "metallb.universe.tf/address-pool": "ctlplane",
+                    "metallb.universe.tf/loadBalancerIPs": item["ip"],
+                },
+            },
+            "spec": {
+                "type": "LoadBalancer",
+                "loadBalancerClass": lb_class,
+                "selector": source["spec"].get("selector", {}),
+                "ports": ports,
+            },
+        }
+        run([kube, "apply", "-f", "-"], json.dumps(manifest))
+
+        # Move the DNS hostname annotation away from the unclassed operator-owned
+        # Service.  The RabbitMQ operator may recreate it on future reconciles,
+        # but this post-control-plane workaround re-applies the desired state
+        # before dataplane work starts.
+        run([
+            kube,
+            "-n",
+            namespace,
+            "annotate",
+            "svc",
+            item["source"],
+            "dnsmasq.network.openstack.org/hostname-",
+            "--overwrite",
+        ])
+    PY
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Wait for classed RabbitMQ workaround Services to receive MetalLB VIPs
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - "{{ oko_namespace }}"
+      - wait
+      - "service/{{ item.name }}"
+      - "--for=jsonpath={.status.loadBalancer.ingress[0].ip}={{ item.ip }}"
+      - "--timeout={{ oko_rabbitmq_lb_workaround_wait_timeout }}s"
+  loop:
+    - name: "{{ oko_rabbitmq_lb_workaround_service_name }}"
+      ip: "{{ oko_rabbitmq_loadbalancer_ip }}"
+    - name: "{{ oko_rabbitmq_cell1_lb_workaround_service_name }}"
+      ip: "{{ oko_rabbitmq_cell1_loadbalancer_ip }}"
+  changed_when: false
+
+- name: Wait for generated DNSData to use RabbitMQ workaround VIPs
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG={{ oko_kubeconfig | quote }}
+    deadline=$((SECONDS + {{ oko_rabbitmq_lb_workaround_wait_timeout | int }}))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+      dnsdata="$({{ oko_kube_client }} -n {{ oko_namespace | quote }} get dnsdata dns-svc -o json)"
+      DNSDATA="$dnsdata" python3 - <<'PY' && exit 0 || true
+    import json
+    import os
+    import sys
+    data = json.loads(os.environ["DNSDATA"])
+    expected = {
+        {{ oko_rabbitmq_loadbalancer_ip | to_json }}: "rabbitmq.openstack.svc",
+        {{ oko_rabbitmq_cell1_loadbalancer_ip | to_json }}: "rabbitmq-cell1.openstack.svc",
+    }
+    hosts = data.get("spec", {}).get("hosts", [])
+    found = {ip: False for ip in expected}
+    bad = []
+    for entry in hosts:
+        ip = entry.get("ip")
+        names = set(entry.get("hostnames", []))
+        for expected_ip, hostname in expected.items():
+            if hostname in names:
+                if ip == expected_ip:
+                    found[expected_ip] = True
+                else:
+                    bad.append((hostname, ip))
+    if all(found.values()) and not bad:
+        sys.exit(0)
+    print({"found": found, "bad": bad}, file=sys.stderr)
+    sys.exit(1)
+    PY
+      sleep 5
+    done
+    {{ oko_kube_client }} -n {{ oko_namespace | quote }} get dnsdata dns-svc -o yaml
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false

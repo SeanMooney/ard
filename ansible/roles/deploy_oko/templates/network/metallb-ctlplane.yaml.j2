@@ -6,7 +6,10 @@ metadata:
 spec:
   autoAssign: false
   addresses:
+    - {{ oko_internal_api_loadbalancer_ip }}/32
     - {{ oko_dns_loadbalancer_ip }}/32
+    - {{ oko_rabbitmq_loadbalancer_ip }}/32
+    - {{ oko_rabbitmq_cell1_loadbalancer_ip }}/32
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
