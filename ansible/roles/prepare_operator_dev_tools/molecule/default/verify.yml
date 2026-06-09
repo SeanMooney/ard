@@ -1,0 +1,43 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Check Go binary exists
+      ansible.builtin.stat:
+        path: /usr/local/go/bin/go
+      register: _go_bin
+      failed_when: not _go_bin.stat.exists
+
+    - name: Verify Go version
+      ansible.builtin.command: /usr/local/go/bin/go version
+      register: _go_version
+      changed_when: false
+      failed_when: "'go1.24.6' not in _go_version.stdout"
+
+    - name: Check operator-sdk binary
+      ansible.builtin.command: "{{ ansible_user_dir }}/bin/operator-sdk version"
+      register: _sdk
+      changed_when: false
+      failed_when: "'v1.41.1' not in _sdk.stdout"
+
+    - name: Check kustomize binary
+      ansible.builtin.command: "{{ ansible_user_dir }}/bin/kustomize version"
+      changed_when: false
+
+    - name: Check yq binary
+      ansible.builtin.command: "{{ ansible_user_dir }}/bin/yq --version"
+      changed_when: false
+
+    - name: Check kuttl binary
+      ansible.builtin.command: "{{ ansible_user_dir }}/bin/kubectl-kuttl version"
+      changed_when: false
+
+    - name: Verify dnf packages are installed
+      ansible.builtin.command: "rpm -q {{ item }}"
+      loop:
+        - jq
+        - gcc
+        - make
+        - git-core
+      changed_when: false

@@ -1,0 +1,7 @@
+---
+- name: Converge
+  hosts: all
+  tasks:
+    - name: Include prepare_operator_dev_tools
+      ansible.builtin.include_role:
+        name: prepare_operator_dev_tools

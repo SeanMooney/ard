@@ -13,6 +13,10 @@
     - microshift_install_metallb
     - microshift_install_cert_manager
     - microshift_validate
+    - role: prepare_operator_dev_tools
+      when: oko_dev_tools_enabled | default(false) | bool
+    - role: prepare_operator_sources
+      when: oko_dev_repos | default([]) | length > 0
 
 - name: Print MicroShift debug connection details
   hosts: all

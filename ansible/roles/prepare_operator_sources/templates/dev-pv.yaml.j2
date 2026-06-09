@@ -1,0 +1,34 @@
+# PersistentVolume and PersistentVolumeClaim for NFS-exported dev repo: {{ _repo.name }}
+# Managed by the prepare_operator_sources role.
+# Source: {{ oko_dev_nfs_server }}:{{ oko_dev_repos_dir }}/{{ _repo.name }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadOnlyMany
+  # IMPORTANT: Retain prevents the source repo being deleted when the PV is reclaimed.
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}
+  mountOptions:
+    - nfsvers=4.1
+  nfs:
+    path: {{ oko_dev_repos_dir }}/{{ _repo.name }}
+    server: {{ oko_dev_nfs_server }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ _repo.nfs_pvc_name | default(_repo.name ~ '-dev') }}
+  namespace: {{ oko_dev_namespace }}
+spec:
+  storageClassName: {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,426 @@
+#!/bin/bash
+# ard-operator — manage local operator runs as systemd user services
+# Usage:
+#   ard-operator start [KEY=VALUE ...] [--no-webhook] [--dir /path/to/operator]
+#   ard-operator stop  [--dir /path/to/operator]
+#   ard-operator restart [KEY=VALUE ...] [--dir /path/to/operator]
+#   ard-operator status [--dir /path/to/operator]
+#   ard-operator logs [-f] [--dir /path/to/operator]
+#   ard-operator restore [--dir /path/to/operator]
+#   ard-operator list
+#
+# Run from inside an operator source directory, or pass --dir.
+# The operator name is derived from the directory basename.
+# Service name: ard@<operator-name>.service
+#
+# Trailing KEY=VALUE arguments are written into the operator environment file
+# and exported to the make target.
+# Example:
+#   ard-operator start ENABLE_CYBORG=true GOWORK=
+#
+# Workflow:
+#   ard-operator start ENABLE_CYBORG=true   # start operator via make run-with-webhook
+#   # edit code...
+#   ard-operator restart                     # stop + start (full rebuild via make)
+#   ard-operator stop                        # stop service, webhooks cleaned by operator trap
+#   ard-operator restore                     # stop + restore OLM operator
+set -euo pipefail
+
+ARD_CONFIG_DIR="${HOME}/.config/ard/operators"
+ARD_SYSTEMD_DIR="${HOME}/.config/systemd/user"
+ARD_KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
+
+die() { echo "error: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+
+# --- Argument parsing ---
+CMD=""
+OPERATOR_DIR=""
+NO_WEBHOOK=false
+FOLLOW_LOGS=false
+EXTRA_ENV=()
+
+parse_args() {
+    if [[ $# -eq 0 ]]; then
+        usage
+        exit 1
+    fi
+    CMD="$1"; shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dir)
+                shift
+                OPERATOR_DIR="$1"
+                ;;
+            --no-webhook)
+                NO_WEBHOOK=true
+                ;;
+            -f|--follow)
+                FOLLOW_LOGS=true
+                ;;
+            *=*)
+                EXTRA_ENV+=("$1")
+                ;;
+            *)
+                die "unknown argument: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+usage() {
+    cat <<'EOF'
+Usage: ard-operator <command> [options] [KEY=VALUE ...]
+
+Commands:
+  start     Start local operator as a systemd service (runs make run-with-webhook)
+  stop      Stop the systemd service (operator cleanup trap handles webhooks)
+  restart   Stop + start (full rebuild via make)
+  status    Show systemd service status
+  logs      Show service logs (-f to follow)
+  restore   Stop service and restore OLM operator from backup
+  list      List all ard@ operator services and their states
+
+Options:
+  --dir <path>    Operator source directory (default: current directory)
+  --no-webhook    Run with 'make run' instead of 'make run-with-webhook'
+  -f, --follow    Follow logs (with 'logs' command)
+
+Trailing KEY=VALUE arguments are passed as environment to the operator.
+Example:
+  ard-operator start ENABLE_CYBORG=true GOWORK=
+EOF
+}
+
+# --- Helpers ---
+
+detect_operator_dir() {
+    if [[ -n "${OPERATOR_DIR}" ]]; then
+        OPERATOR_DIR="$(cd "${OPERATOR_DIR}" && pwd)"
+    else
+        OPERATOR_DIR="$(pwd)"
+    fi
+    [[ -f "${OPERATOR_DIR}/Makefile" ]] || die "no Makefile found in ${OPERATOR_DIR} — are you in an operator source directory?"
+    [[ -d "${OPERATOR_DIR}/cmd" ]] || die "no cmd/ directory in ${OPERATOR_DIR} — does not look like an operator repo"
+}
+
+operator_name() {
+    basename "${OPERATOR_DIR}"
+}
+
+service_name() {
+    echo "ard@$(operator_name).service"
+}
+
+operator_config_dir() {
+    echo "${ARD_CONFIG_DIR}/$(operator_name)"
+}
+
+detect_ip() {
+    if [[ -n "${ARD_OPERATOR_IP:-}" ]]; then
+        echo "${ARD_OPERATOR_IP}"
+        return
+    fi
+    local ip
+    ip="$(ip -o -4 route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')" || true
+    if [[ -n "${ip}" ]]; then
+        echo "${ip}"
+        return
+    fi
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || true
+    if [[ -n "${ip}" ]]; then
+        echo "${ip}"
+        return
+    fi
+    die "cannot detect host IP — set ARD_OPERATOR_IP"
+}
+
+ensure_systemd_unit() {
+    mkdir -p "${ARD_SYSTEMD_DIR}"
+    local unit_file="${ARD_SYSTEMD_DIR}/ard@.service"
+    cat > "${unit_file}" <<'UNIT'
+[Unit]
+Description=ARD local operator: %i
+After=network.target
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.config/ard/operators/%i/env
+WorkingDirectory=%h/.config/ard/operators/%i/operator
+ExecStart=/bin/bash -c '\
+    if [ "${ARD_WEBHOOK_ENABLED}" = "true" ]; then \
+        exec make run-with-webhook; \
+    else \
+        exec make run; \
+    fi'
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
+UNIT
+    systemctl --user daemon-reload
+}
+
+write_env_file() {
+    local name="$1"
+    local config_dir
+    config_dir="$(operator_config_dir)"
+    mkdir -p "${config_dir}"
+
+    local ip
+    ip="$(detect_ip)"
+
+    local webhook_enabled="true"
+    if ${NO_WEBHOOK}; then
+        webhook_enabled="false"
+    fi
+
+    cat > "${config_dir}/env" <<EOF
+# Generated by ard-operator — do not edit manually
+OPERATOR_DIR=${OPERATOR_DIR}
+OPERATOR_NAME=${name}
+CRC_IP=${ip}
+SKIP_FIREWALL=true
+GOWORK=
+OPERATOR_TEMPLATES=${OPERATOR_DIR}/templates
+KUBECONFIG=${ARD_KUBECONFIG}
+PATH=/usr/local/go/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin
+GOPATH=${HOME}/go
+GOCACHE=${HOME}/.cache/go-build
+ARD_WEBHOOK_ENABLED=${webhook_enabled}
+EOF
+
+    # Append user-supplied KEY=VALUE args
+    if [[ ${#EXTRA_ENV[@]} -gt 0 ]]; then
+        echo "" >> "${config_dir}/env"
+        echo "# User overrides" >> "${config_dir}/env"
+        for kv in "${EXTRA_ENV[@]}"; do
+            echo "${kv}" >> "${config_dir}/env"
+        done
+    fi
+
+    # Symlink so the systemd WorkingDirectory resolves
+    ln -sfn "${OPERATOR_DIR}" "${config_dir}/operator"
+}
+
+save_olm_restore_info() {
+    local name="$1"
+    local config_dir
+    config_dir="$(operator_config_dir)"
+
+    # The operator's run_with_local_webhook.sh handles the actual scale-down.
+    # We just save enough info to restore later.
+    # Check for OpenStack CR (openstack-operator managing sub-operators)
+    local cr_name
+    cr_name="$(oc --kubeconfig "${ARD_KUBECONFIG}" get openstack -n openstack-operators -o name 2>/dev/null)" || true
+    if [[ -n "${cr_name}" ]]; then
+        local short_name="${name%-operator}"
+        echo "${cr_name}" > "${config_dir}/cr-backup.txt"
+        echo "${short_name}" >> "${config_dir}/cr-backup.txt"
+        info "OLM restore info saved (${cr_name}, ${short_name})"
+        return
+    fi
+
+    # Check for standalone CSV
+    local csv_name
+    csv_name="$(oc --kubeconfig "${ARD_KUBECONFIG}" get csv -n openstack-operators \
+        -l "operators.coreos.com/${name}.openstack-operators" \
+        -o name 2>/dev/null)" || true
+    if [[ -n "${csv_name}" ]]; then
+        info "Backing up CSV ${csv_name}..."
+        oc --kubeconfig "${ARD_KUBECONFIG}" get -n openstack-operators "${csv_name}" -o json | \
+            jq -r 'del(.metadata.generation, .metadata.resourceVersion, .metadata.uid)' \
+            > "${config_dir}/csv-backup.json"
+        info "OLM restore info saved (${csv_name})"
+    fi
+}
+
+restore_olm() {
+    local name="$1"
+    local config_dir
+    config_dir="$(operator_config_dir)"
+
+    if [[ -f "${config_dir}/csv-backup.json" ]]; then
+        local csv_name
+        csv_name="$(jq -r '.metadata.name' "${config_dir}/csv-backup.json")"
+        info "Restoring CSV ${csv_name} from backup..."
+        oc --kubeconfig "${ARD_KUBECONFIG}" patch "csv/${csv_name}" -n openstack-operators \
+            --type=merge --patch-file="${config_dir}/csv-backup.json"
+        rm -f "${config_dir}/csv-backup.json"
+        info "OLM operator restored"
+    elif [[ -f "${config_dir}/cr-backup.txt" ]]; then
+        local cr_name short_name
+        cr_name="$(sed -n '1p' "${config_dir}/cr-backup.txt")"
+        short_name="$(sed -n '2p' "${config_dir}/cr-backup.txt")"
+        info "Restoring via OpenStack CR: ${cr_name} (${short_name})"
+        oc --kubeconfig "${ARD_KUBECONFIG}" patch "${cr_name}" -n openstack-operators \
+            --type=merge \
+            -p "{\"spec\": {\"operatorOverrides\": [{\"name\": \"${short_name}\", \"replicas\": 1}]}}"
+        rm -f "${config_dir}/cr-backup.txt"
+        info "OLM operator restored via OpenStack CR"
+    else
+        info "No OLM backup found for ${name} — nothing to restore"
+    fi
+}
+
+is_running() {
+    systemctl --user is-active "$(service_name)" &>/dev/null
+}
+
+# --- Commands ---
+
+cmd_start() {
+    detect_operator_dir
+    local name
+    name="$(operator_name)"
+
+    if is_running; then
+        die "ard@${name} is already running — use 'ard-operator restart' or 'ard-operator stop' first"
+    fi
+
+    info "Starting local operator: ${name}"
+    info "Source: ${OPERATOR_DIR}"
+
+    # Write env file
+    write_env_file "${name}"
+
+    # Save OLM restore info before the operator's script scales it down
+    save_olm_restore_info "${name}"
+
+    # Install and start systemd service
+    # The make target handles: build, certs, webhook patching, CSV scale-down, go run
+    ensure_systemd_unit
+    systemctl --user start "$(service_name)"
+
+    info "ard@${name} started"
+    info "  Logs: ard-operator logs -f --dir ${OPERATOR_DIR}"
+    info "  Stop: ard-operator stop --dir ${OPERATOR_DIR}"
+}
+
+cmd_stop() {
+    detect_operator_dir
+    local name
+    name="$(operator_name)"
+
+    if ! is_running; then
+        info "ard@${name} is not running"
+    else
+        info "Stopping ard@${name}..."
+        systemctl --user stop "$(service_name)"
+    fi
+
+    info "ard@${name} stopped"
+    info "  OLM operator is still scaled down. Use 'ard-operator restore' to bring it back."
+}
+
+cmd_restart() {
+    detect_operator_dir
+    local name
+    name="$(operator_name)"
+    local config_dir
+    config_dir="$(operator_config_dir)"
+
+    [[ -f "${config_dir}/env" ]] || die "no env file for ${name} — run 'ard-operator start' first"
+
+    # Update env with any new KEY=VALUE args
+    if [[ ${#EXTRA_ENV[@]} -gt 0 ]]; then
+        sed -i '/^# User overrides$/,$d' "${config_dir}/env"
+        echo "" >> "${config_dir}/env"
+        echo "# User overrides" >> "${config_dir}/env"
+        for kv in "${EXTRA_ENV[@]}"; do
+            echo "${kv}" >> "${config_dir}/env"
+        done
+    fi
+
+    if is_running; then
+        info "Restarting ard@${name} (full rebuild via make)..."
+        systemctl --user restart "$(service_name)"
+    else
+        info "Starting ard@${name}..."
+        systemctl --user start "$(service_name)"
+    fi
+
+    info "ard@${name} restarted"
+    info "  Logs: ard-operator logs -f --dir ${OPERATOR_DIR}"
+}
+
+cmd_status() {
+    detect_operator_dir
+    systemctl --user status "$(service_name)" --no-pager || true
+}
+
+cmd_logs() {
+    detect_operator_dir
+    local unit
+    unit="$(service_name)"
+    local args=(--no-pager)
+    if ${FOLLOW_LOGS}; then
+        args+=(-f)
+    fi
+    # Try user journal first; fall back to sudo with _SYSTEMD_USER_UNIT filter
+    if journalctl --user -u "${unit}" --no-pager -n 0 &>/dev/null; then
+        journalctl --user -u "${unit}" "${args[@]}"
+    else
+        sudo journalctl _SYSTEMD_USER_UNIT="${unit}" "${args[@]}"
+    fi
+}
+
+cmd_restore() {
+    detect_operator_dir
+    local name
+    name="$(operator_name)"
+
+    if is_running; then
+        info "Stopping ard@${name} first..."
+        systemctl --user stop "$(service_name)"
+    fi
+
+    restore_olm "${name}"
+
+    # Clean up config
+    local config_dir
+    config_dir="$(operator_config_dir)"
+    rm -f "${config_dir}/env" "${config_dir}/operator" 2>/dev/null || true
+    rmdir "${config_dir}" 2>/dev/null || true
+
+    info "ard@${name} fully cleaned up and OLM restored"
+}
+
+cmd_list() {
+    info "ARD operator services:"
+    local found=false
+    for env_file in "${ARD_CONFIG_DIR}"/*/env; do
+        [[ -f "${env_file}" ]] || continue
+        found=true
+        local name
+        name="$(basename "$(dirname "${env_file}")")"
+        local state
+        state="$(systemctl --user is-active "ard@${name}.service" 2>/dev/null || echo "inactive")"
+        local op_dir
+        op_dir="$(grep '^OPERATOR_DIR=' "${env_file}" | cut -d= -f2-)"
+        printf "  %-30s %-10s %s\n" "ard@${name}" "${state}" "${op_dir}"
+    done
+    if ! ${found}; then
+        echo "  (none)"
+    fi
+}
+
+# --- Main ---
+parse_args "$@"
+
+case "${CMD}" in
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    restart) cmd_restart ;;
+    status)  cmd_status ;;
+    logs)    cmd_logs ;;
+    restore) cmd_restore ;;
+    list)    cmd_list ;;
+    help|-h|--help) usage ;;
+    *)       die "unknown command: ${CMD}" ;;
+esac

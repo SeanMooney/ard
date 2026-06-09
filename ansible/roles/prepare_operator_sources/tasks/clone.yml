@@ -1,0 +1,103 @@
+---
+# Per-repo clone/update tasks.
+# Called via include_tasks; current repo entry is available as _repo.
+
+- name: "{{ _repo.name }} | Check if repo directory exists"
+  ansible.builtin.stat:
+    path: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  register: _oko_dev_repo_stat
+
+- name: "{{ _repo.name }} | Clone repo"
+  ansible.builtin.command:
+    argv:
+      - git
+      - clone
+      - "{{ _repo.repo }}"
+      - "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  when: not _oko_dev_repo_stat.stat.exists
+  changed_when: true
+
+- name: "{{ _repo.name }} | Fetch all refs from origin"
+  ansible.builtin.command:
+    argv:
+      - git
+      - fetch
+      - --prune
+      - origin
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  changed_when: false
+
+- name: "{{ _repo.name }} | Fetch PR ref {{ _repo.ref }}"
+  ansible.builtin.command:
+    argv:
+      - git
+      - fetch
+      - origin
+      - "{{ _repo.ref }}"
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  when: _repo.ref is defined
+  changed_when: true
+
+- name: "{{ _repo.name }} | Check out PR ref as local branch pr-under-test"
+  ansible.builtin.command:
+    argv:
+      - git
+      - checkout
+      - -B
+      - pr-under-test
+      - FETCH_HEAD
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  when: _repo.ref is defined
+  register: _oko_dev_checkout_pr
+  changed_when: "'Switched to' in _oko_dev_checkout_pr.stderr or 'reset' in _oko_dev_checkout_pr.stderr"
+
+- name: "{{ _repo.name }} | Check out base branch {{ _repo.base_branch | default('main') }}"
+  ansible.builtin.command:
+    argv:
+      - git
+      - checkout
+      - "{{ _repo.base_branch | default('main') }}"
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  when: _repo.ref is not defined
+  register: _oko_dev_checkout_base
+  changed_when: "'Switched to' in _oko_dev_checkout_base.stderr"
+
+- name: "{{ _repo.name }} | Fast-forward base branch to origin"
+  ansible.builtin.command:
+    argv:
+      - git
+      - merge
+      - --ff-only
+      - "origin/{{ _repo.base_branch | default('main') }}"
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  when: _repo.ref is not defined
+  register: _oko_dev_merge
+  changed_when: "'Already up to date' not in _oko_dev_merge.stdout"
+
+- name: "{{ _repo.name }} | Download Go module dependencies"
+  ansible.builtin.command:
+    argv:
+      - go
+      - mod
+      - download
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  environment:
+    PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+    HOME: "{{ ansible_env.HOME }}"
+    GOPATH: "{{ ansible_env.HOME }}/go"
+  when: _repo.go_prep | default(false) | bool
+  changed_when: false
+
+- name: "{{ _repo.name }} | Run make manifests generate"
+  ansible.builtin.command:
+    argv:
+      - make
+      - manifests
+      - generate
+    chdir: "{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+  environment:
+    PATH: "/usr/local/go/bin:{{ ansible_env.HOME }}/bin:{{ ansible_env.PATH }}"
+    HOME: "{{ ansible_env.HOME }}"
+    GOPATH: "{{ ansible_env.HOME }}/go"
+  when: _repo.go_prep | default(false) | bool
+  changed_when: true

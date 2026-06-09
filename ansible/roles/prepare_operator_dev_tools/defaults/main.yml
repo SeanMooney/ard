@@ -1,0 +1,41 @@
+---
+# defaults file for prepare_operator_dev_tools
+
+# Directory for user-local binaries on the target host.
+# Resolved from ansible_user_dir gathered from the remote host.
+oko_dev_tools_bin_dir: "{{ ansible_user_dir }}/bin"
+
+# Go version installed to /usr/local/go (requires become).
+# Must be a specific upstream release version.
+oko_dev_go_version: "1.24.6"
+
+# operator-sdk version to download. Must be a specific version (vX.Y.Z).
+# The correct release artifact filename is derived automatically based on version.
+oko_dev_sdk_version: "v1.41.1"
+
+# kustomize version to download. Must be a specific version (vX.Y.Z).
+oko_dev_kustomize_version: "v5.0.3"
+
+# kuttl version to download. Must be a specific version (X.Y.Z, no leading v).
+oko_dev_kuttl_version: "0.20.0"
+
+# yq version tag. Use "latest" to always pull the current release.
+oko_dev_yq_version: "latest"
+
+# System packages installed via dnf. Override oko_dev_tools_packages_extra
+# to add packages without replacing this baseline list.
+oko_dev_tools_packages:
+  - jq
+  - gcc
+  - make
+  - skopeo
+  - podman
+  - nfs-utils
+  - openssl
+  - git-core
+  - sqlite
+  - httpd-tools
+  - python3-jinja2
+  - nmap-ncat
+
+oko_dev_tools_packages_extra: []

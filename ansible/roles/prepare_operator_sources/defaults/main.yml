@@ -1,0 +1,36 @@
+---
+# Directory on the MicroShift host where operator source repos are stored.
+# Matches the ARD convention of /opt/repos or ~/repos.
+oko_dev_repos_dir: /opt/repos
+
+# List of repos to clone/update and optionally export via NFS for pod mounts.
+#
+# Each entry supports:
+#   name:            (required) directory name under oko_dev_repos_dir
+#   repo:            (required) git remote URL
+#   base_branch:     branch to track; default: main
+#   ref:             optional: PR ref to fetch and check out, e.g. pull/1102/head
+#   go_prep:         run go mod download + make manifests generate; default: false
+#   nfs_export:      create NFS export + PV + PVC for this repo; default: false
+#   ansibleee_mount: inject extraMount into DataPlaneNodeSet rendered by deploy_oko;
+#                    default: inherits the value of nfs_export
+#   nfs_mount_path:  path to mount inside ansibleee pods;
+#                    default: edpm-ansible collection path
+#   nfs_pv_name:     PV name; default: <name>-dev
+#   nfs_pvc_name:    PVC name; default: <name>-dev
+oko_dev_repos: []
+
+# NFS server and export options.
+# Naming intentionally mirrors the oko_nfs_* conventions in deploy_oko.
+oko_dev_nfs_export_options: rw,sync,no_root_squash,no_subtree_check
+oko_dev_nfs_export_network: "*"
+oko_dev_nfs_server: "{{ ansible_host | default(ansible_default_ipv4.address | default(inventory_hostname)) }}"
+
+# Kubernetes namespace for PV/PVC resources.
+oko_dev_namespace: openstack
+
+# Kubeconfig path for oc apply when creating PV/PVC resources.
+oko_dev_kubeconfig: /home/stack/.kube/config
+
+# Directory to render PV/PVC manifests into before applying.
+oko_dev_manifest_dir: "/home/{{ ansible_user | default('stack', true) }}/ard-oko/dev-sources"

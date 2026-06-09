@@ -1,0 +1,180 @@
+---
+# tasks file for prepare_operator_dev_tools
+
+- name: Verify target host is RedHat family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'RedHat'
+    fail_msg: >-
+      prepare_operator_dev_tools only supports RedHat family hosts
+      (CentOS Stream, RHEL). Got: {{ ansible_facts.os_family }}
+  tags: always
+
+- name: Create user bin directory
+  ansible.builtin.file:
+    path: "{{ oko_dev_tools_bin_dir }}"
+    state: directory
+    mode: "0755"
+  tags: always
+
+- name: Install operator development system packages
+  become: true
+  tags: dependencies
+  block:
+    - name: Install base system packages
+      ansible.builtin.package:
+        name: "{{ oko_dev_tools_packages }}"
+        state: present
+        update_cache: true
+
+    - name: Install extra system packages
+      ansible.builtin.package:
+        name: "{{ oko_dev_tools_packages_extra }}"
+        state: present
+        update_cache: true
+      when: oko_dev_tools_packages_extra | length > 0
+
+- name: Install Go from upstream tarball
+  become: true
+  tags: golang
+  block:
+    - name: Remove distro-packaged Go RPMs
+      ansible.builtin.package:
+        name:
+          - golang
+          - golang-bin
+          - golang-src
+        state: absent
+
+    - name: Check installed Go version
+      ansible.builtin.command:
+        cmd: /usr/local/go/bin/go version
+      register: _go_installed_version
+      changed_when: false
+      failed_when: false
+
+    - name: Remove previous upstream Go installation
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/go
+        - /usr/local/bin/go
+        - /usr/local/bin/gofmt
+      when: >-
+        _go_installed_version.rc != 0 or
+        ('go' + oko_dev_go_version) not in _go_installed_version.stdout
+
+    - name: Download and extract upstream Go tarball
+      ansible.builtin.unarchive:
+        src: "https://golang.org/dl/go{{ oko_dev_go_version }}.linux-amd64.tar.gz"
+        dest: /usr/local
+        remote_src: true
+        extra_opts:
+          - "--exclude"
+          - "go/misc"
+          - "--exclude"
+          - "go/pkg/linux_amd64_race"
+          - "--exclude"
+          - "go/test"
+      when: >-
+        _go_installed_version.rc != 0 or
+        ('go' + oko_dev_go_version) not in _go_installed_version.stdout
+
+    - name: Register Go binary with alternatives
+      ansible.builtin.shell: |
+        set -e
+        update-alternatives --install /usr/local/bin/{{ item }} {{ item }} \
+          /usr/local/go/bin/{{ item }} 1
+      loop:
+        - go
+        - gofmt
+      register: _go_alternatives
+      changed_when: >-
+        _go_installed_version.rc != 0 or
+        ('go' + oko_dev_go_version) not in _go_installed_version.stdout
+
+- name: Show Go PATH hint
+  ansible.builtin.debug:
+    msg: >-
+      Go installed to /usr/local/go. If switching from an RPM-installed Go,
+      clear your shell hash cache with: hash -d go
+  tags: golang
+
+- name: Install operator-sdk
+  tags: operator_sdk
+  block:
+    - name: Derive numeric operator-sdk version
+      ansible.builtin.set_fact:
+        _sdk_numeric: "{{ oko_dev_sdk_version | regex_search('v(.*)', '\\1') | first }}"
+
+    - name: Set operator-sdk release artifact name (< 1.3.0)
+      ansible.builtin.set_fact:
+        _sdk_artifact: "operator-sdk-{{ oko_dev_sdk_version }}-x86_64-linux-gnu"
+      when: _sdk_numeric is version('1.3.0', 'lt', strict=True)
+
+    - name: Set operator-sdk release artifact name (>= 1.3.0)
+      ansible.builtin.set_fact:
+        _sdk_artifact: "operator-sdk_linux_amd64"
+      when: _sdk_numeric is version('1.3.0', 'ge', strict=True)
+
+    - name: Download operator-sdk binary
+      ansible.builtin.get_url:
+        url: "https://github.com/operator-framework/operator-sdk/releases/download/\
+          {{ oko_dev_sdk_version }}/{{ _sdk_artifact }}"
+        dest: "{{ oko_dev_tools_bin_dir }}/operator-sdk"
+        mode: "0755"
+        force: true
+        timeout: 60
+
+- name: Install kustomize
+  tags: kustomize
+  ansible.builtin.unarchive:
+    src: "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F\
+      {{ oko_dev_kustomize_version }}/kustomize_{{ oko_dev_kustomize_version }}_linux_amd64.tar.gz"
+    dest: "{{ oko_dev_tools_bin_dir }}"
+    remote_src: true
+
+- name: Install yq
+  tags: yq
+  block:
+    - name: Set yq download URL (latest)
+      ansible.builtin.set_fact:
+        _yq_url: "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64.tar.gz"
+      when: oko_dev_yq_version == "latest"
+
+    - name: Set yq download URL (specific version)
+      ansible.builtin.set_fact:
+        _yq_url: "https://github.com/mikefarah/yq/releases/download/v{{ oko_dev_yq_version }}/yq_linux_amd64.tar.gz"
+      when: oko_dev_yq_version != "latest"
+
+    - name: Download and extract yq archive
+      ansible.builtin.unarchive:
+        src: "{{ _yq_url }}"
+        dest: "{{ oko_dev_tools_bin_dir }}"
+        remote_src: true
+        mode: "0755"
+
+    - name: Symlink yq_linux_amd64 as yq
+      ansible.builtin.file:
+        src: "{{ oko_dev_tools_bin_dir }}/yq_linux_amd64"
+        dest: "{{ oko_dev_tools_bin_dir }}/yq"
+        state: link
+
+- name: Install kuttl
+  tags: kuttl
+  ansible.builtin.get_url:
+    url: "https://github.com/kudobuilder/kuttl/releases/download/v{{ oko_dev_kuttl_version }}/\
+      kubectl-kuttl_{{ oko_dev_kuttl_version }}_linux_x86_64"
+    dest: "{{ oko_dev_tools_bin_dir }}/kubectl-kuttl"
+    mode: "0755"
+    timeout: 60
+
+- name: Install tb (termbin paste) script
+  tags: dependencies
+  ansible.builtin.copy:
+    dest: "{{ oko_dev_tools_bin_dir }}/tb"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      exec nc termbin.com 9999
