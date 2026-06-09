@@ -1,0 +1,80 @@
+---
+# OKO Dev Workflow — Example variables for testing pre-merge operator PRs
+#
+# This file demonstrates testing nova-operator PR #1102 (Cyborg support)
+# alongside edpm-ansible PR #1180 (edpm_cyborg role) in an ARD MicroShift
+# deployment.
+#
+# Usage — Step 1: Deploy MicroShift with dev tools and cloned repos:
+#
+#   ansible-playbook -i <deployment>/inventory.yaml \
+#     ansible/playbooks/workloads/microshift/deploy.yaml \
+#     -e ard_deployment_dir=<deployment> \
+#     -e @ansible/playbooks/workloads/oko/dev-vars-example.yaml
+#
+# Usage — Step 2: Deploy OKO (renders the dataplane with extraMounts):
+#
+#   ansible-playbook -i <deployment>/inventory.yaml \
+#     ansible/playbooks/workloads/oko/deploy.yaml \
+#     -e ard_deployment_dir=<deployment> \
+#     -e @ansible/playbooks/workloads/oko/dev-vars-example.yaml \
+#     -e oko_apply_network_resources=true \
+#     -e oko_apply_controlplane_resources=true \
+#     -e oko_apply_dataplane_resources=true
+#
+# To render and inspect OKO manifests WITHOUT applying anything:
+#
+#   ansible-playbook -i <deployment>/inventory.yaml \
+#     ansible/playbooks/workloads/oko/deploy.yaml \
+#     -e ard_deployment_dir=<deployment> \
+#     -e @ansible/playbooks/workloads/oko/dev-vars-example.yaml \
+#     -e oko_install_operators=false \
+#     -e oko_apply_bootstrap=false \
+#     -e oko_apply_network_resources=false \
+#     -e oko_apply_controlplane_resources=false \
+#     -e oko_apply_dataplane_resources=false \
+#     -e oko_wait_for_openstack=false
+#
+# After Step 1, inspect the MicroShift host:
+#   ls -la /opt/repos/nova-operator /opt/repos/edpm-ansible
+#   go version
+#   ~/bin/operator-sdk version
+#   sudo exportfs -v
+#   cat /etc/exports.d/ard-dev-edpm-ansible.exports
+#
+# Then on the local host check the rendered manifest:
+#   grep -A20 extraMounts /home/stack/ard-oko/dataplane/dataplane.yaml
+#
+# To run the nova-operator locally against MicroShift (after Step 2 OKO install):
+#   cd /opt/repos/nova-operator
+#   make install                  # apply CRDs from the PR checkout
+#   # scale down the OLM-managed nova operator first:
+#   oc patch csv -n openstack-operators <csv-name> --type json \
+#     -p='[{"op":"replace","path":"/spec/install/spec/deployments/0/spec/replicas","value":"0"}]'
+#   ENABLE_CYBORG=true ENABLE_WEBHOOKS=false GOWORK= \
+#     OPERATOR_TEMPLATES=./templates make run
+
+# Enable operator build tooling installation on the MicroShift host.
+# Installs Go, operator-sdk, kustomize, yq, and kuttl.
+oko_dev_tools_enabled: true
+
+# Repos to clone/update on the MicroShift host.
+# nova-operator: fetched at PR #1102 for local operator run (no NFS needed).
+# edpm-ansible:  fetched at PR #1180 and exported via NFS so ansibleee pods
+#                pick up the cyborg role without rebuilding the runner image.
+oko_dev_repos:
+  - name: nova-operator
+    repo: https://github.com/openstack-k8s-operators/nova-operator
+    base_branch: main
+    ref: pull/1102/head
+    go_prep: true
+    nfs_export: false
+
+  - name: edpm-ansible
+    repo: https://github.com/openstack-k8s-operators/edpm-ansible
+    base_branch: main
+    ref: pull/1180/head
+    go_prep: false
+    nfs_export: true
+    # ansibleee_mount: true  # implied by nfs_export; injects extraMount into DataPlaneNodeSet
+    nfs_mount_path: /usr/share/ansible/collections/ansible_collections/osp/edpm

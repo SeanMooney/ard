@@ -1,0 +1,44 @@
+---
+# Per-repo NFS export configuration.
+# Called via include_tasks; current repo entry is available as _repo.
+
+- name: "{{ _repo.name }} | Install NFS server packages"
+  become: true
+  ansible.builtin.package:
+    name: nfs-utils
+    state: present
+
+- name: "{{ _repo.name }} | Ensure /etc/exports.d directory exists"
+  become: true
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "{{ _repo.name }} | Configure NFS export"
+  become: true
+  ansible.builtin.copy:
+    dest: "/etc/exports.d/ard-dev-{{ _repo.name }}.exports"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ oko_dev_repos_dir }}/{{ _repo.name }} {{ oko_dev_nfs_export_network }}({{ oko_dev_nfs_export_options }})
+  register: _oko_dev_nfs_export
+
+- name: "{{ _repo.name }} | Enable and start NFS server"
+  become: true
+  ansible.builtin.systemd:
+    name: nfs-server
+    state: started
+    enabled: true
+  tags: [requires_host]
+
+- name: "{{ _repo.name }} | Reload NFS exports"
+  become: true
+  ansible.builtin.command:
+    argv: [exportfs, -rav]
+  changed_when: _oko_dev_nfs_export.changed
+  tags: [requires_host]

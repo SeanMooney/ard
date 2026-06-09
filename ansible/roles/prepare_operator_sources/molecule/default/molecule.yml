@@ -1,0 +1,40 @@
+---
+role_name_check: 2
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: podman
+platforms:
+  - name: prepare-operator-sources-default
+    image: quay.io/centos/centos:stream10
+    dockerfile: Dockerfile.j2
+    pre_build_image: false
+    pull: false
+    command: sleep infinity
+    tty: true
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_REMOTE_TMP: /tmp/.ansible/tmp
+  options:
+    skip-tags: requires_host
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+    - prepare
+  destroy_sequence:
+    - dependency
+    - destroy

@@ -1,0 +1,97 @@
+---
+- name: Create operator source repos directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ oko_dev_repos_dir }}"
+    state: directory
+    owner: "{{ ansible_user | default('stack', true) }}"
+    group: "{{ ansible_user | default('stack', true) }}"
+    mode: "0755"
+
+- name: Install ard-operator helper script
+  ansible.builtin.copy:
+    src: ard-operator
+    dest: "{{ oko_dev_tools_bin_dir | default(ansible_user_dir ~ '/bin') }}/ard-operator"
+    mode: "0755"
+
+- name: Create manifest output directory
+  ansible.builtin.file:
+    path: "{{ oko_dev_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Clone or update operator source repos
+  ansible.builtin.include_tasks: clone.yml
+  loop: "{{ oko_dev_repos }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"
+
+- name: Configure per-repo NFS exports
+  ansible.builtin.include_tasks: nfs-export.yml
+  loop: "{{ oko_dev_repos | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"
+
+- name: Render and apply PV/PVC manifests for exported repos
+  ansible.builtin.include_tasks: render-pv.yml
+  loop: "{{ oko_dev_repos | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"
+
+- name: Repo location summary
+  ansible.builtin.debug:
+    msg:
+      - "Repo '{{ _repo.name }}' ready at {{ oko_dev_repos_dir }}/{{ _repo.name }}"
+      - >-
+        {%- if _repo.ref is defined -%}
+        PR ref '{{ _repo.ref }}' checked out as local branch 'pr-under-test'
+        {%- else -%}
+        Tracking '{{ _repo.base_branch | default('main') }}' from origin
+        {%- endif -%}
+  loop: "{{ oko_dev_repos }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"
+
+- name: Local operator run instructions
+  ansible.builtin.debug:
+    msg:
+      - "--- To test {{ _repo.name }} locally against MicroShift ---"
+      - "  cd {{ oko_dev_repos_dir }}/{{ _repo.name }}"
+      - "  make install                     # apply CRDs from PR checkout to MicroShift"
+      - "  # Scale down the OLM-managed operator (see dev-docs/running_local_operator.md):"
+      - "  oc patch csv -n openstack-operators <csv-name> --type json \\"
+      - "    -p='[{\"op\":\"replace\",\"path\":\"/spec/install/spec/deployments/0/spec/replicas\",\"value\":\"0\"}]'"
+      - "  # Run the operator binary locally (webhooks disabled for simplicity):"
+      - "  ENABLE_CYBORG=true ENABLE_WEBHOOKS=false GOWORK= OPERATOR_TEMPLATES=./templates make run"
+      - ""
+      - "  Or use the ard-operator helper:"
+      - "  cd {{ oko_dev_repos_dir }}/{{ _repo.name }}"
+      - "  ard-operator start ENABLE_CYBORG=true"
+  loop: "{{ oko_dev_repos | selectattr('go_prep', 'defined') | selectattr('go_prep') | list }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"
+
+- name: NFS/PV/PVC mount summary
+  ansible.builtin.debug:
+    msg:
+      - "--- NFS dev mount summary for {{ _repo.name }} ---"
+      - "  NFS export : {{ oko_dev_nfs_server }}:{{ oko_dev_repos_dir }}/{{ _repo.name }}"
+      - "  PV         : {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}"
+      - "  PVC        : {{ _repo.nfs_pvc_name | default(_repo.name ~ '-dev') }} (namespace: {{ oko_dev_namespace }})"
+      - "  Manifest   : {{ oko_dev_manifest_dir }}/{{ _repo.name }}-pv.yaml"
+      - >-
+        {%- if _repo.ansibleee_mount | default(_repo.nfs_export | default(false)) -%}
+        ansibleee mountPath: {{ _repo.nfs_mount_path | default('/usr/share/ansible/collections/ansible_collections/osp/edpm') }}
+        (re-render the dataplane with deploy_oko to apply extraMount)
+        {%- else -%}
+        ansibleee_mount is disabled for this repo
+        {%- endif -%}
+  loop: "{{ oko_dev_repos | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list }}"
+  loop_control:
+    loop_var: _repo
+    label: "{{ _repo.name }}"

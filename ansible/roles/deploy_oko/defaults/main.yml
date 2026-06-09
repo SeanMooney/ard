@@ -154,3 +154,10 @@ oko_repo_setup_source_branch: main
 oko_repo_setup_branch: antelope
 oko_repo_setup_promotion: current-podified
 oko_repo_setup_dist: centos9
+
+# Dev source repos prepared by prepare_operator_sources. When entries have
+# ansibleee_mount: true (or nfs_export: true with no explicit ansibleee_mount),
+# the dataplane template injects extraMounts on the DataPlaneNodeSet so the
+# repo is available inside ansibleee runner pods.
+# See prepare_operator_sources role for the full entry schema.
+oko_dev_repos: []

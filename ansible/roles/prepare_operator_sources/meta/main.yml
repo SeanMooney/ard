@@ -1,0 +1,18 @@
+galaxy_info:
+  author: ard contributors
+  description: >-
+    Clone/update operator source repos on the MicroShift host and optionally
+    configure per-repo NFS exports with PV/PVC for ansibleee pod mounts.
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - openstack
+    - microshift
+    - operator
+    - development
+
+dependencies: []

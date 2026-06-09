@@ -1,0 +1,43 @@
+---
+- name: Prepare
+  hosts: all
+  tasks:
+    - name: Install git and nfs-utils for molecule testing
+      ansible.builtin.dnf:
+        name:
+          - git-core
+          - nfs-utils
+        state: present
+
+    - name: Create bare test repo directory
+      ansible.builtin.file:
+        path: /tmp/test-upstream.git
+        state: directory
+        mode: "0755"
+
+    - name: Initialise bare test repo
+      ansible.builtin.command:
+        cmd: git init --bare /tmp/test-upstream.git
+        creates: /tmp/test-upstream.git/HEAD
+
+    - name: Create a working clone to seed initial content
+      ansible.builtin.command:
+        cmd: git clone /tmp/test-upstream.git /tmp/test-seed
+        creates: /tmp/test-seed/.git
+
+    - name: Seed an initial commit
+      ansible.builtin.shell: |
+        cd /tmp/test-seed
+        git config user.email "molecule@test"
+        git config user.name "Molecule"
+        echo "# test repo" > README.md
+        git add README.md
+        git commit -m "Initial commit"
+        git push origin HEAD:main
+      args:
+        creates: /tmp/test-seed/README.md
+
+    - name: Clean up seed clone
+      ansible.builtin.file:
+        path: /tmp/test-seed
+        state: absent

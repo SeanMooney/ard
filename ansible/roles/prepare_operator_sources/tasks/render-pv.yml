@@ -1,0 +1,40 @@
+---
+# Render and apply PV/PVC for an NFS-exported repo.
+# Called via include_tasks; current repo entry is available as _repo.
+
+- name: "{{ _repo.name }} | Ensure namespace {{ oko_dev_namespace }} exists"
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_dev_kubeconfig }}"
+      - create
+      - namespace
+      - "{{ oko_dev_namespace }}"
+  register: _oko_dev_ns_create
+  changed_when: _oko_dev_ns_create.rc == 0
+  failed_when:
+    - _oko_dev_ns_create.rc != 0
+    - "'already exists' not in _oko_dev_ns_create.stderr"
+  tags: [requires_host]
+
+- name: "{{ _repo.name }} | Render PV/PVC manifest"
+  ansible.builtin.template:
+    src: dev-pv.yaml.j2
+    dest: "{{ oko_dev_manifest_dir }}/{{ _repo.name }}-pv.yaml"
+    mode: "0644"
+
+- name: "{{ _repo.name }} | Apply PV/PVC to MicroShift"
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_dev_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ oko_dev_manifest_dir }}/{{ _repo.name }}-pv.yaml"
+  register: _oko_dev_pv_apply
+  changed_when: >-
+    'created' in _oko_dev_pv_apply.stdout or
+    'configured' in _oko_dev_pv_apply.stdout
+  tags: [requires_host]

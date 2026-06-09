@@ -1,0 +1,17 @@
+---
+- name: Converge
+  hosts: all
+  vars:
+    ansible_user: root
+  tasks:
+    - name: Include prepare_operator_sources
+      ansible.builtin.include_role:
+        name: prepare_operator_sources
+      vars:
+        oko_dev_repos:
+          - name: test-repo
+            repo: /tmp/test-upstream.git
+            base_branch: main
+            nfs_export: true
+            go_prep: false
+            nfs_mount_path: /usr/share/ansible/collections/ansible_collections/osp/edpm

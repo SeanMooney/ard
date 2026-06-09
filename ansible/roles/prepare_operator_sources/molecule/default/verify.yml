@@ -1,0 +1,68 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Check repo directory exists
+      ansible.builtin.stat:
+        path: /opt/repos/test-repo
+      register: _repo_dir
+      failed_when: not _repo_dir.stat.exists or not _repo_dir.stat.isdir
+
+    - name: Check repo is a git checkout
+      ansible.builtin.stat:
+        path: /opt/repos/test-repo/.git
+      register: _repo_git
+      failed_when: not _repo_git.stat.exists
+
+    - name: Check current branch is main
+      ansible.builtin.command:
+        cmd: git -C /opt/repos/test-repo branch --show-current
+      register: _branch
+      changed_when: false
+      failed_when: _branch.stdout | trim != 'main'
+
+    - name: Check NFS export file was rendered
+      ansible.builtin.stat:
+        path: /etc/exports.d/ard-dev-test-repo.exports
+      register: _exports_file
+      failed_when: not _exports_file.stat.exists
+
+    - name: Verify NFS export file content
+      ansible.builtin.slurp:
+        src: /etc/exports.d/ard-dev-test-repo.exports
+      register: _exports_content
+
+    - name: Assert NFS export contains correct path
+      ansible.builtin.assert:
+        that:
+          - "'/opt/repos/test-repo' in (_exports_content.content | b64decode)"
+        fail_msg: "NFS export file does not contain expected repo path"
+
+    - name: Check manifest output directory exists
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user_id }}/ard-oko/dev-sources"
+      register: _manifest_dir
+      failed_when: not _manifest_dir.stat.exists or not _manifest_dir.stat.isdir
+
+    - name: Check PV/PVC manifest was rendered
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user_id }}/ard-oko/dev-sources/test-repo-pv.yaml"
+      register: _pv_manifest
+      failed_when: not _pv_manifest.stat.exists
+
+    - name: Read PV/PVC manifest
+      ansible.builtin.slurp:
+        src: "/home/{{ ansible_user_id }}/ard-oko/dev-sources/test-repo-pv.yaml"
+      register: _pv_content
+
+    - name: Assert PV/PVC manifest contains expected resources
+      ansible.builtin.assert:
+        that:
+          - "'PersistentVolume' in _pv_decoded"
+          - "'PersistentVolumeClaim' in _pv_decoded"
+          - "'test-repo-dev' in _pv_decoded"
+          - "'/opt/repos/test-repo' in _pv_decoded"
+      vars:
+        _pv_decoded: "{{ _pv_content.content | b64decode }}"
+        fail_msg: "PV/PVC manifest missing expected content"

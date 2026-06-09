@@ -105,6 +105,23 @@ spec:
             name: neutron-edpm
           prefix: neutron_
     ansibleSSHPrivateKeySecret: {{ oko_edpm_ssh_secret_name }}
+{% set _ansibleee_mounts = oko_dev_repos | selectattr('ansibleee_mount', 'defined') | selectattr('ansibleee_mount') | list
+   + oko_dev_repos | rejectattr('ansibleee_mount', 'defined') | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list %}
+{% if _ansibleee_mounts | length > 0 %}
+    extraMounts:
+{% for _repo in _ansibleee_mounts %}
+      - extraVolType: {{ _repo.name }}-dev
+        volumes:
+        - name: {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}
+          persistentVolumeClaim:
+            claimName: {{ _repo.nfs_pvc_name | default(_repo.name ~ '-dev') }}
+            readOnly: true
+        mounts:
+        - name: {{ _repo.nfs_pv_name | default(_repo.name ~ '-dev') }}
+          mountPath: {{ _repo.nfs_mount_path | default('/usr/share/ansible/collections/ansible_collections/osp/edpm') }}
+          readOnly: true
+{% endfor %}
+{% endif %}
   nodes:
 {% set ctlplane_prefix = oko_edpm_ctlplane_fixed_ip_start.rsplit('.', 1)[0] %}
 {% set ctlplane_start = oko_edpm_ctlplane_fixed_ip_start.rsplit('.', 1)[1] | int %}
