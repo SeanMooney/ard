@@ -35,6 +35,18 @@
           - ansible.builtin.ping
       changed_when: false
 
+    - name: Check if controller group exists in inventory
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - --list-hosts
+      changed_when: false
+      failed_when: false
+      register: ard_verify_controller_group
+
     - name: Check DevStack checkout on controller
       ansible.builtin.command:
         argv:
@@ -47,6 +59,7 @@
           - -a
           - test -d /opt/repos/devstack
       changed_when: false
+      when: ard_verify_controller_group.rc == 0
 
     - name: Run Tempest smoke when requested
       ansible.builtin.command:
@@ -60,4 +73,6 @@
           - -a
           - cd /opt/stack/tempest && .tox/tempest/bin/tempest run --smoke
       changed_when: false
-      when: ard_verify_tempest_smoke | default(false) | bool
+      when:
+        - ard_verify_tempest_smoke | default(false) | bool
+        - ard_verify_controller_group.rc == 0

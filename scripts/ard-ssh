@@ -81,8 +81,8 @@ def main() -> int:
         return 0
 
     print(printable, file=sys.stderr)
-    subprocess.run(command, check=False)
-    return 0
+    result = subprocess.run(command, check=False)
+    return result.returncode
 
 
 if __name__ == "__main__":
