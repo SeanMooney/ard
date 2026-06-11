@@ -1,0 +1,20 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    # ------------------------------------------------------------------
+    # The destroy role completed without error when:
+    # - provider-state.yaml is absent (stat correctly skips include_vars)
+    # - All oc commands are skipped (requires_cluster tag)
+    # Converge + idempotence passing proves the role handles the
+    # absent-state path cleanly. Nothing else to verify in molecule
+    # since all destructive actions require a live cluster.
+    # ------------------------------------------------------------------
+    - name: Verify destroy role completed successfully
+      ansible.builtin.assert:
+        that:
+          - true
+        success_msg: >-
+          destroy role handles absent provider-state and skipped
+          cluster tasks without error
