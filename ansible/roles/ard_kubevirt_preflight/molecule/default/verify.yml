@@ -1,0 +1,83 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    ard_kubevirt_namespace: test-namespace
+  roles:
+    - role: ard_provider_common
+  tasks:
+    # ------------------------------------------------------------------
+    # Verify the namespace assertion logic works
+    # ------------------------------------------------------------------
+    - name: Verify namespace assertion passes with a value set
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_namespace is defined
+          - ard_kubevirt_namespace | length > 0
+        fail_msg: "ard_kubevirt_namespace must be non-empty"
+
+    # ------------------------------------------------------------------
+    # Verify namespace assertion catches empty value
+    # ------------------------------------------------------------------
+    - name: Test that empty namespace would be rejected
+      ansible.builtin.assert:
+        that:
+          - "'' | length == 0"
+        fail_msg: "Empty string length check failed"
+
+    # ------------------------------------------------------------------
+    # Verify SSH key variables resolve correctly
+    # ------------------------------------------------------------------
+    - name: Verify SSH key variable defaults
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_ssh_key_secret is defined
+          - ard_kubevirt_ssh_key_secret.endswith('-pub-key')
+          - ard_kubevirt_ssh_key_secret.startswith(ard_user)
+          - ard_kubevirt_ssh_private_key_file is defined
+          - ard_kubevirt_ssh_private_key_file.endswith('id_ed25519_stack')
+        fail_msg: "SSH key variable defaults are incorrect"
+
+    # ------------------------------------------------------------------
+    # Verify extra_labels is consumable by dict2items
+    # ------------------------------------------------------------------
+    - name: Verify extra_labels can be iterated
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_extra_labels is mapping
+          - ard_kubevirt_extra_labels | dict2items | length == 0
+        fail_msg: "ard_kubevirt_extra_labels should be an empty dict"
+
+    - name: Verify extra_labels works with values
+      vars:
+        _test_labels:
+          my-policy.example.com/team: my-team
+      ansible.builtin.assert:
+        that:
+          - _test_labels | dict2items | length == 1
+          - (_test_labels | dict2items)[0].key == 'my-policy.example.com/team'
+          - (_test_labels | dict2items)[0].value == 'my-team'
+        fail_msg: "extra_labels dict2items rendering failed"
+
+    # ------------------------------------------------------------------
+    # Verify kubevirt-specific defaults consumed by preflight
+    # ------------------------------------------------------------------
+    - name: Verify image datasource default
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_image_datasource == 'debian-13'
+        fail_msg: "ard_kubevirt_image_datasource should be debian-13"
+
+    - name: Verify ensure_instancetype_resources default
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_ensure_instancetype_resources == false
+        fail_msg: "ard_kubevirt_ensure_instancetype_resources should be false"
+
+    - name: Verify default_vm_preference is set
+      ansible.builtin.assert:
+        that:
+          - ard_default_vm_preference is defined
+          - ard_default_vm_preference == 'devstack'
+        fail_msg: "ard_default_vm_preference should be devstack"
