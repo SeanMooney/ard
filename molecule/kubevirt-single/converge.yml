@@ -1,0 +1,14 @@
+---
+# KubeVirt single-node scenario: create.yml handles provisioning.
+# Converge is a no-op placeholder — workload deployment is not
+# tested in this scenario (that would be kubevirt-devstack).
+- name: KubeVirt single-node converge (no-op)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Converge placeholder
+      ansible.builtin.debug:
+        msg: >-
+          VM provisioning was handled by molecule create.
+          This scenario only validates provider lifecycle.

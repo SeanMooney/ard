@@ -49,16 +49,6 @@
           - name: stack
             password: {{ stack_user_password | default('tester') }}
             type: text
-      package_update: true
-      packages:
-        - python3
-        - sudo
-        - openssh-server
-        - qemu-guest-agent
-        - git
-        - rsync
-        - curl
-        - ca-certificates
       write_files:
         - path: /etc/default/grub.d/99-ard-serial-console.cfg
           owner: root:root

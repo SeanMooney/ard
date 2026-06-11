@@ -1,0 +1,75 @@
+---
+- name: Verify ARD KubeVirt deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
+  tasks:
+    - name: Ping all generated inventory hosts
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - all
+          - -m
+          - ansible.builtin.ping
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: false
+
+    - name: Verify SSH access and stack user on controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "whoami"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _whoami
+      changed_when: false
+
+    - name: Assert stack user
+      ansible.builtin.assert:
+        that:
+          - "'stack' in _whoami.stdout"
+        fail_msg: "Expected stack user, got: {{ _whoami.stdout }}"
+
+    - name: Verify hostname was set by cloud-init
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -m
+          - ansible.builtin.command
+          - -a
+          - hostname
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _hostname
+      changed_when: false
+
+    - name: Assert hostname
+      ansible.builtin.assert:
+        that:
+          - "'controller' in _hostname.stdout"
+        fail_msg: "Expected hostname 'controller', got: {{ _hostname.stdout }}"

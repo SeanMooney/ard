@@ -7,3 +7,5 @@ pull-secret
 deployments/*
 !deployments/.keep
 molecule/*/deployment/
+local-vars.yaml
+molecule/*/local-vars.yaml

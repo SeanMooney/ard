@@ -1,0 +1,47 @@
+---
+- name: Build proxy environment
+  ansible.builtin.set_fact:
+    _proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if ard_http_proxy else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if ard_https_proxy else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if ard_no_proxy else {})
+      }}
+
+- name: Configure proxy in /etc/environment
+  become: true
+  ansible.builtin.blockinfile:
+    path: /etc/environment
+    marker: "# {mark} ARD proxy configuration"
+    block: |
+      http_proxy="{{ ard_http_proxy }}"
+      https_proxy="{{ ard_https_proxy }}"
+      HTTP_PROXY="{{ ard_http_proxy }}"
+      HTTPS_PROXY="{{ ard_https_proxy }}"
+      no_proxy="{{ ard_no_proxy }}"
+      NO_PROXY="{{ ard_no_proxy }}"
+  when: ard_http_proxy | length > 0
+
+- name: Update package cache
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  environment: "{{ _proxy_env }}"
+  retries: 3
+  delay: 10
+  register: _apt_update
+  until: _apt_update is succeeded
+  when: ansible_os_family == 'Debian'
+
+- name: Install ARD base packages
+  become: true
+  ansible.builtin.package:
+    name: "{{ ard_base_packages }}"
+    state: present
+  environment: "{{ _proxy_env }}"
+  retries: 3
+  delay: 10
+  register: _pkg_install
+  until: _pkg_install is succeeded
