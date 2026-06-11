@@ -1,0 +1,38 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+  ard:
+    provider: kubevirt
+    provider_profile: kubevirt
+    deployment_name: smooney-ardtest-mn
+    topology: one-controller-one-compute
+    service_profiles:
+      - devstack
+      - ovn
+      - tempest
+    kubevirt:
+      namespace: rhos-workload-evolution--runtime-int
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

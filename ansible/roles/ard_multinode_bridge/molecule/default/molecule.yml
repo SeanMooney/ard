@@ -1,0 +1,46 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: yaml
+    # This role's molecule test uses the full provider pipeline.
+    # MOLECULE_PROJECT_DIRECTORY must point to the repo root.
+    MOLECULE_PROJECT_DIRECTORY: "${MOLECULE_PROJECT_DIRECTORY}/../../.."
+  ard:
+    provider: libvirt
+    provider_profile: local-libvirt
+    deployment_name: molecule-bridge
+    resource_name_prefix: ard-molecule-bridge
+    topology: one-controller-one-compute
+    service_profiles:
+      - devstack
+    libvirt:
+      network_name: ard-molecule-bridge
+      network_cidr: 192.168.98.0/24
+    node_overrides:
+      controller:
+        flavor: bridge-test
+      compute-1:
+        flavor: bridge-test
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

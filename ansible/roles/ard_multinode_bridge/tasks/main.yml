@@ -1,0 +1,27 @@
+---
+# Single-node topologies have no switch or peers groups - nothing to bridge.
+- name: Skip bridge setup for single-node topologies
+  ansible.builtin.debug:
+    msg: "No switch/peers groups defined - single-node topology, skipping bridge setup."
+  when: >-
+    groups['switch'] is not defined
+    or groups['peers'] is not defined
+    or groups['switch'] | length == 0
+    or groups['peers'] | length == 0
+
+- name: Run bridge common setup
+  ansible.builtin.include_tasks: common.yml
+  when: >-
+    groups['switch'] is defined
+    and groups['peers'] is defined
+    and groups['switch'] | length > 0
+    and groups['peers'] | length > 0
+
+- name: Run bridge switch (spine) setup
+  ansible.builtin.include_tasks: switch.yml
+  when: >-
+    groups['switch'] is defined
+    and groups['peers'] is defined
+    and groups['switch'] | length > 0
+    and groups['peers'] | length > 0
+    and inventory_hostname in groups['switch']

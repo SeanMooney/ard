@@ -1,0 +1,14 @@
+# Managed by Ansible (ard_multinode_bridge) — do not edit manually.
+[Unit]
+Description=ARD multinode bridge ({{ ard_bridge_name }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ard-bridge-setup.sh start
+ExecStop=/usr/local/bin/ard-bridge-setup.sh stop
+
+[Install]
+WantedBy=multi-user.target

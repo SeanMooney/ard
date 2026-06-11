@@ -1,0 +1,50 @@
+---
+- name: Skip if no datacenter IP assigned
+  ansible.builtin.debug:
+    msg: "No datacenter_ipv4 defined for this host, skipping."
+  when: nodepool.datacenter_ipv4 is not defined
+
+- name: Detect datacenter interface
+  when: nodepool.datacenter_ipv4 is defined
+  block:
+    - name: Gather network facts
+      ansible.builtin.setup:
+        gather_subset:
+          - network
+
+    - name: Find secondary interface (not primary, not loopback)
+      ansible.builtin.set_fact:
+        _dc_iface: >-
+          {{ ard_datacenter_iface if ard_datacenter_iface else
+             (ansible_interfaces
+              | reject('equalto', 'lo')
+              | reject('equalto', ansible_default_ipv4.interface | default(''))
+              | reject('search', '^(docker|veth|br-|virbr|tun|tap|dummy)')
+              | sort
+              | first) }}
+
+    - name: Display detected datacenter interface
+      ansible.builtin.debug:
+        msg: "Configuring {{ _dc_iface }} with {{ nodepool.datacenter_ipv4 }}/{{ ard_datacenter_prefix_len }}"
+
+    - name: Assign IP to datacenter interface
+      become: true
+      ansible.builtin.command:
+        cmd: >-
+          ip addr add {{ nodepool.datacenter_ipv4 }}/{{ ard_datacenter_prefix_len }}
+          dev {{ _dc_iface }}
+      register: _dc_ip_add
+      changed_when: _dc_ip_add.rc == 0
+      failed_when: _dc_ip_add.rc != 0 and 'already' not in _dc_ip_add.stderr and 'File exists' not in _dc_ip_add.stderr
+
+    - name: Bring datacenter interface up
+      become: true
+      ansible.builtin.command:
+        cmd: "ip link set {{ _dc_iface }} up"
+      changed_when: true
+
+    - name: Set MTU on datacenter interface
+      become: true
+      ansible.builtin.command:
+        cmd: "ip link set {{ _dc_iface }} mtu 1400"
+      changed_when: true

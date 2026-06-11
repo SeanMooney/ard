@@ -56,6 +56,9 @@ ard_kubevirt_extra_labels: {}
 ard_kubevirt_ssh_key_secret: "{{ ard_user }}-pub-key"
 ard_kubevirt_ssh_access: loadbalancer
 ard_kubevirt_headless_service: "{{ ard_deployment_name | default('') }}-headless"
+ard_kubevirt_datacenter_network: true
+ard_kubevirt_datacenter_network_name: "{{ ard_deployment_name | default('') }}-net-datacenter"
+ard_kubevirt_datacenter_cidr: "10.0.100.0/24"
 ard_kubevirt_delete_namespace: false
 ard_kubevirt_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
 ard_kubevirt_controller_service_ports:
@@ -252,3 +255,15 @@ ard_flavors:
         iothreads: 1
         disk_bus: scsi
         disk_cache: writeback
+  bridge-test:
+    vcpus: 2
+    memory: 1Gi
+    root_disk_gb: 10
+    nested_virt: false
+    provider:
+      kubevirt:
+        instancetype: devstack-8c8g
+      libvirt:
+        vcpus: 2
+        memory_mb: 1024
+        cpu_mode: host-passthrough

@@ -178,7 +178,7 @@ molecule/
     verify.yml
     destroy.yml
 
-  kubevirt-multinode/
+  kubevirt-devstack-aio-1compute/
     molecule.yml
     create.yml
     converge.yml

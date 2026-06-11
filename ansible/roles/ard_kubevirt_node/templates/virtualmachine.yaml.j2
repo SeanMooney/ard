@@ -62,10 +62,19 @@ spec:
           interfaces:
             - {{ ard_kubevirt_network_mode }}: {}
               name: default
+{% if ard_kubevirt_datacenter_network | default(false) | bool %}
+            - bridge: {}
+              name: datacenter
+{% endif %}
       networks:
         - name: default
           pod:
             vmNetworkCIDR: "{{ ard_kubevirt_vm_network_cidr }}"
+{% if ard_kubevirt_datacenter_network | default(false) | bool %}
+        - name: datacenter
+          multus:
+            networkName: "{{ ard_kubevirt_datacenter_network_name }}"
+{% endif %}
       subdomain: "{{ ard_kubevirt_headless_service }}"
       volumes:
         - dataVolume:

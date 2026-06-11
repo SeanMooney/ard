@@ -76,6 +76,20 @@
     label: "{{ item.item.name }}"
   tags: requires_cluster
 
+- name: Build datacenter IP map
+  ansible.builtin.set_fact:
+    _datacenter_ips: "{{ _datacenter_ips | default({}) | combine({item.name: _dc_ip}) }}"
+  vars:
+    _dc_prefix: "{{ ard_kubevirt_datacenter_cidr | regex_replace('\\.[0-9]+/.*$', '.') }}"
+    _peer_names: "{{ ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list }}"
+    _dc_ip: >-
+      {{ _dc_prefix }}{{ 1 if ('controller' in item.groups or 'switch' in item.groups) else (_peer_names.index(item.name) + 2) }}
+  loop: "{{ ard_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: ard_kubevirt_datacenter_network | default(false) | bool
+  tags: requires_cluster
+
 - name: Write inventory.yaml
   ansible.builtin.copy:
     dest: "{{ ard_deployment_dir }}/inventory.yaml"
@@ -88,6 +102,7 @@
       {% set is_controller = 'controller' in node.groups %}
       {% set node_ip = _node_ips[node.name] | default('') %}
       {% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
+      {% set dc_offset = 1 if is_controller else 2 + (ard_nodes | selectattr('groups', 'contains', 'peers') | list | map(attribute='name') | list).index(node.name) if 'peers' in node.groups else 0 %}
           {{ node.name }}:
             ansible_host: {{ ansible_host }}
             ansible_user: stack
@@ -98,13 +113,16 @@
             ansible_ssh_common_args: >-
               -o StrictHostKeyChecking=no
               -o UserKnownHostsFile=/dev/null
-              -o ProxyJump=stack@{{ _controller_lb_ip }}
+              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
       {% endif %}
             ard_deployment_name: {{ ard_deployment_name }}
             ard_provider_resource_name: {{ ard_deployment_name }}-{{ node.name }}
             nodepool:
               private_ipv4: {{ node_ip }}
               public_ipv4: {{ ansible_host }}
+      {% if _datacenter_ips is defined and node.name in _datacenter_ips %}
+              datacenter_ipv4: {{ _datacenter_ips[node.name] }}
+      {% endif %}
             zuul:
               executor:
                 log_root: /tmp/zuul_logs
@@ -157,13 +175,17 @@
     ansible_private_key_file: "{{ ard_kubevirt_ssh_private_key_file }}"
     ansible_ssh_common_args: >-
       {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' if 'controller' in item.groups
-         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=stack@' + _controller_lb_ip }}
+         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+              ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+              ~ ' -i ' ~ ard_kubevirt_ssh_private_key_file
+              ~ ' -W %h:%p stack@' ~ _controller_lb_ip ~ '"' }}
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ ard_deployment_name }}-{{ item.name }}"
-    nodepool:
-      private_ipv4: "{{ _node_ips[item.name] | default('') }}"
-      public_ipv4: >-
-        {{ _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')) }}
+    nodepool: >-
+      {{ {'private_ipv4': _node_ips[item.name] | default(''),
+          'public_ipv4': _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default(''))
+         } | combine({'datacenter_ipv4': _datacenter_ips[item.name]} if _datacenter_ips is defined and item.name in _datacenter_ips else {})
+      }}
     zuul:
       executor:
         log_root: /tmp/zuul_logs

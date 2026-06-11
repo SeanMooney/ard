@@ -1,0 +1,7 @@
+---
+- name: _ard_bridge_restart
+  become: true
+  ansible.builtin.systemd:
+    name: ard-bridge
+    daemon_reload: true
+    state: restarted

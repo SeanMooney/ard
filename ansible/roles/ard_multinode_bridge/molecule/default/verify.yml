@@ -1,0 +1,306 @@
+---
+- name: Verify multinode bridge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../../../../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles"
+  tasks:
+    - name: Check bridge exists on controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ip link show br-infra"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _ctrl_bridge
+      changed_when: false
+
+    - name: Assert bridge exists on controller
+      ansible.builtin.assert:
+        that:
+          - "'br-infra' in _ctrl_bridge.stdout"
+        fail_msg: "Bridge br-infra not found on controller"
+
+    - name: Check bridge exists on compute-1
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - compute-1
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ip link show br-infra"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _comp_bridge
+      changed_when: false
+
+    - name: Assert bridge exists on compute-1
+      ansible.builtin.assert:
+        that:
+          - "'br-infra' in _comp_bridge.stdout"
+        fail_msg: "Bridge br-infra not found on compute-1"
+
+    - name: Check controller bridge IPv4 address
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ip addr show br-infra"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _ctrl_addr
+      changed_when: false
+
+    - name: Assert controller has bridge IPv4 .1
+      ansible.builtin.assert:
+        that:
+          - "'172.24.4.1' in _ctrl_addr.stdout"
+        fail_msg: "Controller br-infra missing 172.24.4.1"
+
+    - name: Check compute-1 bridge IPv4 address
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - compute-1
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ip addr show br-infra"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _comp_addr
+      changed_when: false
+
+    - name: Assert compute-1 has bridge IPv4 .2
+      ansible.builtin.assert:
+        that:
+          - "'172.24.4.2' in _comp_addr.stdout"
+        fail_msg: "compute-1 br-infra missing 172.24.4.2"
+
+    - name: Check GRETAP tunnel exists on controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ip link show type gretap"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _ctrl_gretap
+      changed_when: false
+
+    - name: Assert GRETAP tunnel exists on controller
+      ansible.builtin.assert:
+        that:
+          - "_ctrl_gretap.stdout | length > 0"
+        fail_msg: "No GRETAP tunnel found on controller"
+
+    - name: Ping compute-1 bridge IP from controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ping -c 3 -W 5 172.24.4.2"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _ping_result
+      changed_when: false
+
+    - name: Assert cross-node ping succeeds
+      ansible.builtin.assert:
+        that:
+          - "_ping_result.rc == 0"
+        fail_msg: "Cross-node ping from controller to compute-1 failed"
+
+    - name: Ping controller bridge IP from compute-1
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - compute-1
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ping -c 3 -W 5 172.24.4.1"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _ping_reverse
+      changed_when: false
+
+    - name: Assert reverse ping succeeds
+      ansible.builtin.assert:
+        that:
+          - "_ping_reverse.rc == 0"
+        fail_msg: "Cross-node ping from compute-1 to controller failed"
+
+    - name: Check systemd service is active on controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "systemctl is-active ard-bridge"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _svc_status
+      changed_when: false
+
+    - name: Assert service is active
+      ansible.builtin.assert:
+        that:
+          - "'active' in _svc_status.stdout"
+        fail_msg: "ard-bridge service not active on controller"
+
+    - name: Create VLAN 100 on controller bridge
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.shell
+          - -a
+          - >-
+            ip link add link br-infra name br-infra.100 type vlan id 100 2>/dev/null || true;
+            ip addr add 10.99.100.1/24 dev br-infra.100 2>/dev/null || true;
+            ip link set br-infra.100 up
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true
+
+    - name: Create VLAN 100 on compute-1 bridge
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - compute-1
+          - -b
+          - -m
+          - ansible.builtin.shell
+          - -a
+          - >-
+            ip link add link br-infra name br-infra.100 type vlan id 100 2>/dev/null || true;
+            ip addr add 10.99.100.2/24 dev br-infra.100 2>/dev/null || true;
+            ip link set br-infra.100 up
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true
+
+    - name: Ping compute-1 VLAN 100 IP from controller
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - controller
+          - -b
+          - -m
+          - ansible.builtin.command
+          - -a
+          - "ping -c 3 -W 5 10.99.100.2"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      register: _vlan_ping
+      changed_when: false
+
+    - name: Assert VLAN 100 traffic traverses GRETAP tunnel
+      ansible.builtin.assert:
+        that:
+          - "_vlan_ping.rc == 0"
+        fail_msg: "VLAN 100 ping over GRETAP failed — 802.1Q not transparent"
+
+    - name: Clean up VLAN 100 sub-interfaces
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - all
+          - -b
+          - -m
+          - ansible.builtin.shell
+          - -a
+          - "ip link del br-infra.100 2>/dev/null || true"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true

@@ -1,0 +1,23 @@
+---
+- name: Run multinode bridge on ARD nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../../../../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles"
+  tasks:
+    - name: Apply multinode bridge playbook
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - "{{ playbook_dir }}/bridge-playbook.yml"
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true

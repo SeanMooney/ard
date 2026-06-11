@@ -52,3 +52,9 @@
   gather_facts: true
   roles:
     - ard_base_packages
+
+- name: Configure datacenter interface on ARD provider nodes
+  hosts: ard_provider_nodes
+  gather_facts: false
+  roles:
+    - ard_configure_datacenter_iface
