@@ -1,0 +1,13 @@
+---
+- name: Ensure rendered kubevirt directory exists
+  ansible.builtin.file:
+    path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+    state: directory
+    mode: "0755"
+
+- name: Create KubeVirt VirtualMachine resources
+  ansible.builtin.include_tasks: node.yml
+  loop: "{{ ard_nodes }}"
+  loop_control:
+    loop_var: ard_node
+    label: "{{ ard_node.name }}"

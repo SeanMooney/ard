@@ -1,0 +1,105 @@
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: "{{ _node_resource_name }}"
+  namespace: "{{ ard_kubevirt_namespace }}"
+  labels:
+    app.kubernetes.io/part-of: ard
+    app.kubernetes.io/managed-by: ard
+    app.kubernetes.io/instance: "{{ ard_deployment_name }}"
+    ard.teim.app/deployment: "{{ ard_deployment_name }}"
+    ard.teim.app/provider: kubevirt
+    ard.teim.app/node: "{{ ard_node.name }}"
+{% for key, value in ard_kubevirt_extra_labels.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+spec:
+  dataVolumeTemplates:
+    - metadata:
+        name: "{{ _node_volume_name }}"
+      spec:
+        sourceRef:
+          kind: "{{ _node_image_source_kind }}"
+          name: "{{ _node_image_name }}"
+          namespace: "{{ ard_kubevirt_namespace }}"
+        storage:
+          resources:
+            requests:
+              storage: "{{ ard_kubevirt_root_disk_size }}"
+{% if ard_kubevirt_storage_class is not none %}
+          storageClassName: "{{ ard_kubevirt_storage_class }}"
+{% endif %}
+  instancetype:
+    kind: VirtualMachineInstancetype
+    name: "{{ _node_instancetype }}"
+  preference:
+    kind: VirtualMachinePreference
+    name: "{{ ard_default_vm_preference }}"
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ard
+        app.kubernetes.io/instance: "{{ ard_deployment_name }}"
+        ard.teim.app/deployment: "{{ ard_deployment_name }}"
+        ard.teim.app/provider: kubevirt
+        ard.teim.app/node: "{{ ard_node.name }}"
+        network.kubevirt.io/headlessService: "{{ ard_kubevirt_headless_service }}"
+{% for key, value in ard_kubevirt_extra_labels.items() %}
+        {{ key }}: "{{ value }}"
+{% endfor %}
+    spec:
+      accessCredentials:
+        - sshPublicKey:
+            propagationMethod:
+              noCloud: {}
+            source:
+              secret:
+                secretName: "{{ ard_kubevirt_ssh_key_secret }}"
+      domain:
+        devices:
+          interfaces:
+            - {{ ard_kubevirt_network_mode }}: {}
+              name: default
+      networks:
+        - name: default
+          pod:
+            vmNetworkCIDR: "{{ ard_kubevirt_vm_network_cidr }}"
+      subdomain: "{{ ard_kubevirt_headless_service }}"
+      volumes:
+        - dataVolume:
+            name: "{{ _node_volume_name }}"
+          name: rootdisk
+        - cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: {{ _node_hostname }}
+              manage_etc_hosts: true
+              users:
+                - default
+                - name: stack
+                  gecos: ARD Stack User
+                  shell: /bin/bash
+                  sudo: ALL=(ALL) NOPASSWD:ALL
+                  groups: sudo
+                  lock_passwd: false
+                  ssh_authorized_keys:
+                    - {{ ard_stack_public_key }}
+              chpasswd:
+                expire: false
+                users:
+                  - name: stack
+                    password: {{ stack_user_password | default('tester') }}
+                    type: text
+              package_update: true
+              packages:
+                - python3
+                - sudo
+                - openssh-server
+                - qemu-guest-agent
+                - git
+                - rsync
+                - curl
+              ssh_pwauth: true
+          name: cloudinitdisk
