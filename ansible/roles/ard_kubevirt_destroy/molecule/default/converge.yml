@@ -1,0 +1,19 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: true
+  vars:
+    ard_kubevirt_namespace: test-namespace
+    ard_deployment_name: smooney-devstack-1
+    ard_deployment_dir: /tmp/ard-test-deployment
+    ard_nodes:
+      - name: controller
+        hostname: controller
+        flavor: devstack-control
+        image: debian-13
+        groups:
+          - controller
+          - switch
+  roles:
+    - role: ard_provider_common
+    - role: ard_kubevirt_destroy

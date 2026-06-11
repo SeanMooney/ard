@@ -1,0 +1,71 @@
+---
+- name: Check for provider state file
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/provider-state.yaml"
+  register: _provider_state_stat
+
+- name: Load provider state
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: _provider_state
+  when: _provider_state_stat.stat.exists
+
+- name: Delete VirtualMachines by label selector
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - vm
+      - -l
+      - "ard.teim.app/deployment={{ ard_deployment_name }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - --ignore-not-found
+      - --wait=true
+      - --timeout=120s
+  register: _delete_vms
+  changed_when: "'deleted' in _delete_vms.stdout"
+  tags: requires_cluster
+
+- name: Delete Services by label selector
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - svc
+      - -l
+      - "ard.teim.app/deployment={{ ard_deployment_name }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - --ignore-not-found
+  register: _delete_svcs
+  changed_when: "'deleted' in _delete_svcs.stdout"
+  tags: requires_cluster
+
+- name: Delete orphaned DataVolumes by label selector
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - dv
+      - -l
+      - "ard.teim.app/deployment={{ ard_deployment_name }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - --ignore-not-found
+  register: _delete_dvs
+  changed_when: "'deleted' in _delete_dvs.stdout"
+  tags: requires_cluster
+
+- name: Delete namespace
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - namespace
+      - "{{ ard_kubevirt_namespace }}"
+      - --ignore-not-found
+  when: ard_kubevirt_delete_namespace | default(false) | bool
+  register: _delete_ns
+  changed_when: "'deleted' in _delete_ns.stdout"
+  tags: requires_cluster

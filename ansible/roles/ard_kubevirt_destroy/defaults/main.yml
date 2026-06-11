@@ -1,0 +1,3 @@
+---
+# Defaults inherited from ard_provider_common.
+# This role consumes ard_deployment_name and ard_kubevirt_* variables.
