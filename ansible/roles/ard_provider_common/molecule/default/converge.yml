@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Include ard_provider_common role to load defaults
+      ansible.builtin.include_role:
+        name: ard_provider_common
+
+    - name: Load provider-profiles preset for verification
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../files/presets/provider-profiles.yaml"
+        name: _provider_profiles_preset
