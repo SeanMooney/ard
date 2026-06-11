@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ ard_kubevirt_headless_service }}"
+  namespace: "{{ ard_kubevirt_namespace }}"
+  labels:
+    app.kubernetes.io/part-of: ard
+    app.kubernetes.io/managed-by: ard
+    app.kubernetes.io/instance: "{{ ard_deployment_name }}"
+    ard.teim.app/deployment: "{{ ard_deployment_name }}"
+    ard.teim.app/provider: kubevirt
+{% for key, value in ard_kubevirt_extra_labels.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+spec:
+  clusterIP: None
+  selector:
+    ard.teim.app/deployment: "{{ ard_deployment_name }}"
+  ports:
+    - name: placeholder
+      port: 5434
+      protocol: TCP

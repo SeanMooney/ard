@@ -1,0 +1,108 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    ard_kubevirt_namespace: test-namespace
+    ard_deployment_name: smooney-devstack-1
+    ard_deployment_dir: /tmp/ard-test-deployment
+  roles:
+    - role: ard_provider_common
+  tasks:
+    # ------------------------------------------------------------------
+    # Filesystem artifacts
+    # ------------------------------------------------------------------
+    - name: Check rendered kubevirt directory exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+      register: _rendered_dir
+      failed_when: not _rendered_dir.stat.exists or not _rendered_dir.stat.isdir
+
+    - name: Check headless Service manifest exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt/headless-service.yaml"
+      register: _headless_manifest
+      failed_when: not _headless_manifest.stat.exists
+
+    # ------------------------------------------------------------------
+    # Manifest content — slurp from container and parse
+    # ------------------------------------------------------------------
+    - name: Slurp rendered headless Service manifest
+      ansible.builtin.slurp:
+        src: "{{ ard_deployment_dir }}/rendered/kubevirt/headless-service.yaml"
+      register: _headless_raw
+
+    - name: Parse headless Service manifest
+      ansible.builtin.set_fact:
+        _headless_svc: "{{ _headless_raw.content | b64decode | from_yaml }}"
+
+    - name: Verify headless Service kind and API version
+      ansible.builtin.assert:
+        that:
+          - _headless_svc.apiVersion == 'v1'
+          - _headless_svc.kind == 'Service'
+        fail_msg: >-
+          Unexpected apiVersion/kind in headless Service manifest:
+          {{ _headless_svc.apiVersion }}/{{ _headless_svc.kind }}
+
+    - name: Verify headless Service metadata
+      ansible.builtin.assert:
+        that:
+          - _headless_svc.metadata.name == 'smooney-devstack-1-headless'
+          - _headless_svc.metadata.namespace == 'test-namespace'
+          - _headless_svc.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
+          - _headless_svc.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
+          - _headless_svc.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
+          - _headless_svc.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _headless_svc.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
+        fail_msg: "Headless Service metadata labels are incorrect"
+
+    - name: Verify headless Service spec
+      ansible.builtin.assert:
+        that:
+          - _headless_svc.spec.clusterIP == 'None'
+          - _headless_svc.spec.selector['ard.teim.app/deployment'] == 'smooney-devstack-1'
+        fail_msg: "Headless Service spec is incorrect"
+
+    - name: Verify only expected labels present in manifest
+      ansible.builtin.assert:
+        that:
+          - _headless_svc.metadata.labels | length == 5
+          - _headless_svc.metadata.labels.keys() | sort == ['app.kubernetes.io/instance', 'app.kubernetes.io/managed-by', 'app.kubernetes.io/part-of', 'ard.teim.app/deployment', 'ard.teim.app/provider'] | sort
+        fail_msg: "Unexpected labels found in rendered manifest"
+
+    # ------------------------------------------------------------------
+    # Extra labels rendering
+    # ------------------------------------------------------------------
+    - name: Render headless Service with extra labels
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/headless-service.yaml.j2"
+        dest: /tmp/headless-with-labels.yaml
+        mode: "0644"
+      vars:
+        ard_kubevirt_extra_labels:
+          my-policy.example.com/team: my-team
+          my-policy.example.com/env: staging
+
+    - name: Slurp headless Service with extra labels
+      ansible.builtin.slurp:
+        src: /tmp/headless-with-labels.yaml
+      register: _headless_labels_raw
+
+    - name: Parse headless Service with extra labels
+      ansible.builtin.set_fact:
+        _headless_with_labels: "{{ _headless_labels_raw.content | b64decode | from_yaml }}"
+
+    - name: Verify extra labels are rendered in manifest
+      ansible.builtin.assert:
+        that:
+          - _headless_with_labels.metadata.labels['my-policy.example.com/team'] == 'my-team'
+          - _headless_with_labels.metadata.labels['my-policy.example.com/env'] == 'staging'
+        fail_msg: "Extra labels not rendered correctly in manifest"
+
+    - name: Verify core labels still present with extra labels
+      ansible.builtin.assert:
+        that:
+          - _headless_with_labels.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _headless_with_labels.spec.clusterIP == 'None'
+        fail_msg: "Core manifest content corrupted when extra labels present"

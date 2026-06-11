@@ -1,0 +1,24 @@
+---
+- name: Create rendered KubeVirt directory
+  ansible.builtin.file:
+    path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+    state: directory
+    mode: "0755"
+
+- name: Render headless Service manifest
+  ansible.builtin.template:
+    src: headless-service.yaml.j2
+    dest: "{{ ard_deployment_dir }}/rendered/kubevirt/headless-service.yaml"
+    mode: "0644"
+
+- name: Apply headless Service manifest
+  ansible.builtin.command:
+    argv:
+      - oc
+      - apply
+      - -f
+      - "{{ ard_deployment_dir }}/rendered/kubevirt/headless-service.yaml"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  changed_when: true
+  tags: requires_cluster
