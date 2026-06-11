@@ -1,0 +1,18 @@
+---
+- name: Install sysctl forwarding config
+  become: true
+  ansible.builtin.template:
+    src: 99-ard-bridge.conf.j2
+    dest: /etc/sysctl.d/99-ard-bridge.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: ard_bridge_enable_routing | bool
+  notify: _ard_bridge_restart
+
+- name: Apply sysctl forwarding settings
+  become: true
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: true
+  when: ard_bridge_enable_routing | bool

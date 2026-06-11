@@ -1,0 +1,4 @@
+---
+# Peer-specific tasks are handled by the shared service template.
+# This file is kept for symmetry with the dispatch in main.yml.
+# The bridge script and service are installed in common.yml.

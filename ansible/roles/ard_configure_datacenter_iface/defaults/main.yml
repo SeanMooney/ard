@@ -1,0 +1,7 @@
+---
+# The datacenter interface name inside the VM.
+# KubeVirt secondary interfaces typically appear as the second NIC.
+ard_datacenter_iface: ""
+
+# CIDR prefix length for the datacenter IP
+ard_datacenter_prefix_len: 24

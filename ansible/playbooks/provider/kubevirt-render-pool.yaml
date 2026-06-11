@@ -1,14 +1,14 @@
 ---
 # Expand a single topology pool into node entries.
 # Called from kubevirt-render-nodes.yaml via include_tasks loop.
-- name: Expand pool {{ pool.type }} nodes
+- name: "Expand pool {{ pool.type }} nodes"
   ansible.builtin.set_fact:
     _nodes: >-
       {{ _nodes | default([]) + [
         {
-          'name': (pool.name if pool.count == 1 else (pool.name_format | default('node-{index}')) | replace('{index}', (item | string))),
-          'hostname': (pool.hostname if pool.count == 1 else (pool.hostname_format | default(pool.name_format | default('node-{index}'))) | replace('{index}', (item | string))),
-          'provider_resource_name': ard_deployment_name ~ '-' ~ (pool.name if pool.count == 1 else (pool.name_format | default('node-{index}')) | replace('{index}', (item | string))),
+          'name': _name,
+          'hostname': _hostname,
+          'provider_resource_name': ard_deployment_name ~ '-' ~ _name,
           'groups': ard_render_node_types[pool.type].groups | default([pool.type]),
           'image': pool.image | default(ard_default_image),
           'flavor': pool.flavor | default(ard_render_node_types[pool.type].flavor | default(ard_default_controller_flavor if pool.type == 'controller' else ard_default_compute_flavor)),
@@ -16,6 +16,11 @@
           'networks': [{'name': 'ard-mgmt'}]
         }
       ] }}
+  vars:
+    _name: >-
+      {{ pool.name | default((pool.name_format | default('node-{index}')) | replace('{index}', item | string)) }}
+    _hostname: >-
+      {{ pool.hostname | default((pool.hostname_format | default(pool.name_format | default('node-{index}'))) | replace('{index}', item | string)) }}
   loop: "{{ range(1, pool.count + 1) | list }}"
   loop_control:
     label: "{{ pool.type }}-{{ item }}"

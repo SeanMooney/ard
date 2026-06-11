@@ -22,3 +22,37 @@
       - "{{ ard_kubevirt_namespace }}"
   changed_when: true
   tags: requires_cluster
+
+- name: Render UserDefinedNetwork manifest
+  ansible.builtin.template:
+    src: userdefinednetwork.yaml.j2
+    dest: "{{ ard_deployment_dir }}/rendered/kubevirt/datacenter-network.yaml"
+    mode: "0644"
+  when: ard_kubevirt_datacenter_network | bool
+
+- name: Apply UserDefinedNetwork manifest
+  ansible.builtin.command:
+    argv:
+      - oc
+      - apply
+      - -f
+      - "{{ ard_deployment_dir }}/rendered/kubevirt/datacenter-network.yaml"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  changed_when: true
+  when: ard_kubevirt_datacenter_network | bool
+  tags: requires_cluster
+
+- name: Wait for UserDefinedNetwork to be ready
+  ansible.builtin.command:
+    argv:
+      - oc
+      - wait
+      - "userdefinednetwork/{{ ard_kubevirt_datacenter_network_name }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - --for=condition=NetworkCreated
+      - --timeout=60s
+  changed_when: false
+  when: ard_kubevirt_datacenter_network | bool
+  tags: requires_cluster

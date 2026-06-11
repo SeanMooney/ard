@@ -1,0 +1,118 @@
+#!/bin/bash
+# Managed by Ansible (ard_multinode_bridge) — do not edit manually.
+set -e
+
+BRIDGE="{{ ard_bridge_name }}"
+MTU="{{ _ard_bridge_mtu }}"
+IPV4="{{ ard_bridge_ipv4_address }}/{{ ard_bridge_ipv4_subnet }}"
+IPV6="{{ ard_bridge_ipv6_address }}/{{ ard_bridge_ipv6_subnet }}"
+TUNNEL_TYPE="{{ _ard_bridge_tunnel_type }}"
+LOCAL_IP="{{ _ard_bridge_local_ip | trim }}"
+
+{% if inventory_hostname in groups['switch'] %}
+# --- Switch (spine) node ---
+{% for peer in groups['peers'] %}
+{% set peer_idx = loop.index0 %}
+{% set peer_ep = hostvars[peer].nodepool[ard_bridge_endpoint_key]
+     | default(hostvars[peer].nodepool.private_ipv4) %}
+{% set key = ard_bridge_gre_key_offset | int + peer_idx + 1 %}
+PEER_{{ peer_idx }}_REMOTE="{{ peer_ep | trim }}"
+PEER_{{ peer_idx }}_KEY="{{ key }}"
+{% endfor %}
+
+IPV4_SRC="{{ ard_bridge_ipv4_prefix }}.0/{{ ard_bridge_ipv4_subnet }}"
+IPV6_SRC="{{ ard_bridge_ipv6_prefix }}/{{ ard_bridge_ipv6_subnet }}"
+ENABLE_NAT={{ 'true' if ard_bridge_enable_nat | bool else 'false' }}
+ENABLE_FWD={{ 'true' if ard_bridge_authorize_internal_traffic | bool else 'false' }}
+
+start() {
+    ip link add "$BRIDGE" type bridge 2>/dev/null || true
+    ip link set "$BRIDGE" mtu "$MTU"
+
+{% for peer in groups['peers'] %}
+{% set peer_idx = loop.index0 %}
+    ip link add "gre_peer_{{ peer_idx }}" type "$TUNNEL_TYPE" \
+        local "$LOCAL_IP" remote "$PEER_{{ peer_idx }}_REMOTE" \
+        key "$PEER_{{ peer_idx }}_KEY" 2>/dev/null || true
+    ip link set "gre_peer_{{ peer_idx }}" mtu "$MTU"
+    ip link set "gre_peer_{{ peer_idx }}" master "$BRIDGE"
+    ip link set "gre_peer_{{ peer_idx }}" up
+{% endfor %}
+
+    ip link set "$BRIDGE" up
+    ip addr add "$IPV4" dev "$BRIDGE" 2>/dev/null || true
+    ip addr add "$IPV6" dev "$BRIDGE" 2>/dev/null || true
+
+    if [ "$ENABLE_NAT" = "true" ]; then
+        iptables  -t nat -C POSTROUTING -s "$IPV4_SRC" ! -o "$BRIDGE" -j MASQUERADE 2>/dev/null \
+            || iptables  -t nat -A POSTROUTING -s "$IPV4_SRC" ! -o "$BRIDGE" -j MASQUERADE
+        ip6tables -t nat -C POSTROUTING -s "$IPV6_SRC" ! -o "$BRIDGE" -j MASQUERADE 2>/dev/null \
+            || ip6tables -t nat -A POSTROUTING -s "$IPV6_SRC" ! -o "$BRIDGE" -j MASQUERADE
+    fi
+
+    if [ "$ENABLE_FWD" = "true" ]; then
+        iptables  -C FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null || iptables  -I FORWARD -i "$BRIDGE" -j ACCEPT
+        iptables  -C FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || iptables  -I FORWARD -o "$BRIDGE" -j ACCEPT
+        ip6tables -C FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$BRIDGE" -j ACCEPT
+        ip6tables -C FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -o "$BRIDGE" -j ACCEPT
+    fi
+}
+
+stop() {
+    if [ "$ENABLE_FWD" = "true" ]; then
+        ip6tables -D FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || true
+        ip6tables -D FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null || true
+        iptables  -D FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || true
+        iptables  -D FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null || true
+    fi
+
+    if [ "$ENABLE_NAT" = "true" ]; then
+        ip6tables -t nat -D POSTROUTING -s "$IPV6_SRC" ! -o "$BRIDGE" -j MASQUERADE 2>/dev/null || true
+        iptables  -t nat -D POSTROUTING -s "$IPV4_SRC" ! -o "$BRIDGE" -j MASQUERADE 2>/dev/null || true
+    fi
+
+    ip link set "$BRIDGE" down 2>/dev/null || true
+{% for peer in groups['peers'] %}
+    ip link del "gre_peer_{{ loop.index0 }}" 2>/dev/null || true
+{% endfor %}
+    ip link del "$BRIDGE" 2>/dev/null || true
+}
+
+{% else %}
+# --- Peer (leaf) node ---
+{% set peer_idx = groups['peers'].index(inventory_hostname) %}
+{% set switch_ep = hostvars[groups['switch'][0]].nodepool[ard_bridge_endpoint_key]
+     | default(hostvars[groups['switch'][0]].nodepool.private_ipv4) %}
+{% set key = ard_bridge_gre_key_offset | int + peer_idx + 1 %}
+SWITCH_REMOTE="{{ switch_ep | trim }}"
+SWITCH_KEY="{{ key }}"
+
+start() {
+    ip link add "$BRIDGE" type bridge 2>/dev/null || true
+    ip link set "$BRIDGE" mtu "$MTU"
+
+    ip link add gre_switch type "$TUNNEL_TYPE" \
+        local "$LOCAL_IP" remote "$SWITCH_REMOTE" \
+        key "$SWITCH_KEY" 2>/dev/null || true
+    ip link set gre_switch mtu "$MTU"
+    ip link set gre_switch master "$BRIDGE"
+    ip link set gre_switch up
+
+    ip link set "$BRIDGE" up
+    ip addr add "$IPV4" dev "$BRIDGE" 2>/dev/null || true
+    ip addr add "$IPV6" dev "$BRIDGE" 2>/dev/null || true
+}
+
+stop() {
+    ip link set "$BRIDGE" down 2>/dev/null || true
+    ip link del gre_switch 2>/dev/null || true
+    ip link del "$BRIDGE" 2>/dev/null || true
+}
+
+{% endif %}
+case "${1:-start}" in
+    start) start ;;
+    stop)  stop  ;;
+    restart) stop; start ;;
+    *) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac

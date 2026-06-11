@@ -1,0 +1,2 @@
+---
+- import_playbook: ../../../../playbooks/provider/molecule-create.yaml

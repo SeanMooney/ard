@@ -1,0 +1,36 @@
+---
+# Bridge identity
+ard_bridge_name: br-infra
+
+# Tunnel type — empty means auto-detect (gretap for IPv4)
+ard_bridge_tunnel_type: ""
+
+# IPv4 addressing for br-infra
+ard_bridge_ipv4_prefix: "172.24.4"
+ard_bridge_ipv4_offset: 1
+ard_bridge_ipv4_subnet: 23
+
+# IPv6 addressing for br-infra
+ard_bridge_ipv6_prefix: "fd12:aadd:b1d9::"
+ard_bridge_ipv6_offset: 1
+ard_bridge_ipv6_subnet: 64
+
+# MTU — null means auto-detect: min(1300, smallest_real_iface_mtu - 38)
+ard_bridge_mtu: null
+
+# Routing and NAT (controller/switch only)
+ard_bridge_enable_routing: true
+ard_bridge_enable_nat: true
+
+# Allow all traffic on bridge interface
+ard_bridge_authorize_internal_traffic: true
+
+# GRE key base offset (avoid collisions when multiple overlays coexist)
+ard_bridge_gre_key_offset: 100
+
+# Tunnel endpoint source — which hostvars field provides the GRETAP
+# local/remote IPs.  Falls back to nodepool.private_ipv4 (management
+# network) when datacenter_ipv4 is not defined on a host.
+# KubeVirt sets nodepool.datacenter_ipv4 via the secondary Multus
+# interface; libvirt uses the management network directly.
+ard_bridge_endpoint_key: datacenter_ipv4

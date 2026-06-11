@@ -1,0 +1,78 @@
+---
+- name: Gather facts for MTU and interface detection
+  ansible.builtin.setup:
+    gather_subset:
+      - network
+  when: ansible_interfaces is not defined
+
+- name: Detect real interface MTUs
+  ansible.builtin.set_fact:
+    _ard_real_iface_mtus: >-
+      {{
+        ansible_interfaces
+        | reject('search', '^(lo$|docker|veth|br-|virbr|tun|tap|dummy|bond|team)')
+        | map('regex_replace', '^', 'ansible_')
+        | map('extract', hostvars[inventory_hostname])
+        | select('mapping')
+        | selectattr('mtu', 'defined')
+        | map(attribute='mtu')
+        | map('int')
+        | list
+      }}
+
+- name: Compute bridge MTU
+  ansible.builtin.set_fact:
+    _ard_bridge_mtu: "{{ ard_bridge_mtu if ard_bridge_mtu is not none and ard_bridge_mtu else ([1300, ((_ard_real_iface_mtus | min | default(1338)) | int) - 38] | min) }}"
+
+- name: Set tunnel type
+  ansible.builtin.set_fact:
+    _ard_bridge_tunnel_type: "{{ ard_bridge_tunnel_type if ard_bridge_tunnel_type else 'gretap' }}"
+
+- name: Resolve tunnel endpoint IP for this host
+  ansible.builtin.set_fact:
+    _ard_bridge_local_ip: >-
+      {{ hostvars[inventory_hostname].nodepool[ard_bridge_endpoint_key]
+         | default(hostvars[inventory_hostname].nodepool.private_ipv4) }}
+
+- name: Compute this host's bridge address offset
+  ansible.builtin.set_fact:
+    _ard_bridge_addr_offset: >-
+      {{
+        ard_bridge_ipv4_offset | int
+        if inventory_hostname in groups['switch']
+        else (ard_bridge_ipv4_offset | int) + 1 + (groups['peers'].index(inventory_hostname))
+      }}
+
+- name: Set bridge IPv4 and IPv6 address facts
+  ansible.builtin.set_fact:
+    ard_bridge_ipv4_address: "{{ ard_bridge_ipv4_prefix }}.{{ _ard_bridge_addr_offset | trim }}"
+    ard_bridge_ipv6_address: "{{ ard_bridge_ipv6_prefix }}{{ _ard_bridge_addr_offset | trim }}"
+    ard_bridge_mtu_effective: "{{ _ard_bridge_mtu | trim }}"
+
+- name: Install bridge setup script
+  become: true
+  ansible.builtin.template:
+    src: ard-bridge-setup.sh.j2
+    dest: /usr/local/bin/ard-bridge-setup.sh
+    owner: root
+    group: root
+    mode: "0755"
+  notify: _ard_bridge_restart
+
+- name: Install bridge systemd service
+  become: true
+  ansible.builtin.template:
+    src: ard-bridge.service.j2
+    dest: /etc/systemd/system/ard-bridge.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: _ard_bridge_restart
+
+- name: Enable and start bridge service
+  become: true
+  ansible.builtin.systemd:
+    name: ard-bridge
+    daemon_reload: true
+    enabled: true
+    state: started

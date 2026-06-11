@@ -7,5 +7,12 @@ pull-secret
 deployments/*
 !deployments/.keep
 molecule/*/deployment/
+ansible/roles/*/molecule/*/deployment/
 local-vars.yaml
 molecule/*/local-vars.yaml
+ansible/roles/*/molecule/*/local-vars.yaml
+subagent-reports/
+false
+progress.md
+phase*.md
+openstack-lb.md
