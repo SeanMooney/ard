@@ -1,0 +1,187 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    ard_kubevirt_namespace: test-namespace
+    ard_deployment_name: smooney-devstack-1
+    ard_deployment_dir: /tmp/ard-test-deployment
+    ard_kubevirt_controller_service_ports:
+      - name: ssh
+        port: 22
+        targetPort: 22
+      - name: http
+        port: 80
+        targetPort: 80
+      - name: https
+        port: 443
+        targetPort: 443
+      - name: novnc
+        port: 6080
+        targetPort: 6080
+    ard_nodes:
+      - name: controller
+        hostname: controller
+        flavor: devstack-control
+        image: debian-13
+        groups:
+          - controller
+          - switch
+      - name: compute-1
+        hostname: compute-1
+        flavor: devstack-compute
+        image: debian-13
+        groups:
+          - compute
+          - peers
+  roles:
+    - role: ard_provider_common
+  tasks:
+    # ------------------------------------------------------------------
+    # Filesystem artifacts
+    # ------------------------------------------------------------------
+    - name: Check rendered kubevirt directory exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+      register: _rendered_dir
+      failed_when: not _rendered_dir.stat.exists or not _rendered_dir.stat.isdir
+
+    - name: Check LB Service manifest exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt/controller-lb-service.yaml"
+      register: _lb_manifest
+      failed_when: not _lb_manifest.stat.exists
+
+    # ------------------------------------------------------------------
+    # Manifest content
+    # ------------------------------------------------------------------
+    - name: Slurp rendered LB Service manifest
+      ansible.builtin.slurp:
+        src: "{{ ard_deployment_dir }}/rendered/kubevirt/controller-lb-service.yaml"
+      register: _lb_raw
+
+    - name: Parse LB Service manifest
+      ansible.builtin.set_fact:
+        _lb_svc: "{{ _lb_raw.content | b64decode | from_yaml }}"
+
+    - name: Verify LB Service kind and API version
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.apiVersion == 'v1'
+          - _lb_svc.kind == 'Service'
+        fail_msg: >-
+          Unexpected apiVersion/kind: {{ _lb_svc.apiVersion }}/{{ _lb_svc.kind }}
+
+    - name: Verify LB Service name and namespace
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.metadata.name == 'smooney-devstack-1-controller-lb'
+          - _lb_svc.metadata.namespace == 'test-namespace'
+        fail_msg: "LB Service name or namespace incorrect"
+
+    - name: Verify LB Service standard labels
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
+          - _lb_svc.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
+          - _lb_svc.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
+          - _lb_svc.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _lb_svc.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
+          - _lb_svc.metadata.labels['ard.teim.app/node'] == 'controller'
+        fail_msg: "LB Service standard labels are incorrect"
+
+    - name: Verify only expected labels present on LB Service
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.metadata.labels | length == 6
+          - >-
+            _lb_svc.metadata.labels.keys() | sort == [
+              'app.kubernetes.io/instance',
+              'app.kubernetes.io/managed-by',
+              'app.kubernetes.io/part-of',
+              'ard.teim.app/deployment',
+              'ard.teim.app/node',
+              'ard.teim.app/provider'
+            ] | sort
+        fail_msg: "Unexpected labels found in LB Service manifest"
+
+    - name: Verify LB Service type
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.spec.type == 'LoadBalancer'
+        fail_msg: "LB Service spec.type is not LoadBalancer"
+
+    - name: Verify LB Service selector uses vm.kubevirt.io/name
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.spec.selector['vm.kubevirt.io/name'] == 'smooney-devstack-1-controller'
+          - _lb_svc.spec.selector | length == 1
+        fail_msg: "LB Service selector incorrect"
+
+    - name: Verify LB Service ports count
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.spec.ports | length == 4
+        fail_msg: "Expected 4 ports in LB Service, got {{ _lb_svc.spec.ports | length }}"
+
+    - name: Verify LB Service port names
+      ansible.builtin.assert:
+        that:
+          - _lb_svc.spec.ports | map(attribute='name') | list | sort == ['http', 'https', 'novnc', 'ssh'] | sort
+        fail_msg: "LB Service port names incorrect"
+
+    - name: Verify LB Service SSH port
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_lb_svc.spec.ports | selectattr('name', 'equalto', 'ssh') | list | first).port == 22
+          - >-
+            (_lb_svc.spec.ports | selectattr('name', 'equalto', 'ssh') | list | first).targetPort == 22
+        fail_msg: "LB Service SSH port incorrect"
+
+    - name: Verify LB Service noVNC port
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_lb_svc.spec.ports | selectattr('name', 'equalto', 'novnc') | list | first).port == 6080
+          - >-
+            (_lb_svc.spec.ports | selectattr('name', 'equalto', 'novnc') | list | first).targetPort == 6080
+        fail_msg: "LB Service noVNC port incorrect"
+
+    # ------------------------------------------------------------------
+    # Extra labels rendering
+    # ------------------------------------------------------------------
+    - name: Render LB Service with extra labels
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/lb-service.yaml.j2"
+        dest: /tmp/lb-with-labels.yaml
+        mode: "0644"
+      vars:
+        _controller_node: "{{ ard_nodes | selectattr('groups', 'contains', 'controller') | list | first }}"
+        ard_kubevirt_extra_labels:
+          my-policy.example.com/team: my-team
+          my-policy.example.com/env: staging
+
+    - name: Slurp LB Service with extra labels
+      ansible.builtin.slurp:
+        src: /tmp/lb-with-labels.yaml
+      register: _lb_labels_raw
+
+    - name: Parse LB Service with extra labels
+      ansible.builtin.set_fact:
+        _lb_with_labels: "{{ _lb_labels_raw.content | b64decode | from_yaml }}"
+
+    - name: Verify extra labels rendered in LB Service
+      ansible.builtin.assert:
+        that:
+          - _lb_with_labels.metadata.labels['my-policy.example.com/team'] == 'my-team'
+          - _lb_with_labels.metadata.labels['my-policy.example.com/env'] == 'staging'
+        fail_msg: "Extra labels not rendered correctly in LB Service"
+
+    - name: Verify core labels still present with extra labels
+      ansible.builtin.assert:
+        that:
+          - _lb_with_labels.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _lb_with_labels.spec.type == 'LoadBalancer'
+          - _lb_with_labels.spec.selector['vm.kubevirt.io/name'] == 'smooney-devstack-1-controller'
+        fail_msg: "Core manifest content corrupted when extra labels present"
