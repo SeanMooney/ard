@@ -653,9 +653,9 @@ Required resource identity contract:
 metadata_or_tags:
   app.kubernetes.io/part-of: ard
   app.kubernetes.io/instance: devstack-a
-  ard.openstack.org/deployment: devstack-a
-  ard.openstack.org/provider: kubevirt
-  ard.openstack.org/node: controller
+  ard.teim.app/deployment: devstack-a
+  ard.teim.app/provider: kubevirt
+  ard.teim.app/node: controller
 ```
 
 For KubeVirt, apply these labels to deployment-scoped `VirtualMachine`, per-node `DataVolume`/PVC, cloud-init `Secret` if used, SSH `Service`, and any generated support resources. Shared setup resources such as `VirtualMachineInstancetype/devstack-8c16g`, `VirtualMachineInstancetype/devstack-8c8g`, and `VirtualMachinePreference/devstack` are not deployment-scoped unless explicitly rendered into the deployment namespace as part of setup.
@@ -1163,9 +1163,9 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ard
     app.kubernetes.io/instance: devstack-a
-    ard.openstack.org/deployment: devstack-a
-    ard.openstack.org/provider: kubevirt
-    ard.openstack.org/node: controller
+    ard.teim.app/deployment: devstack-a
+    ard.teim.app/provider: kubevirt
+    ard.teim.app/node: controller
     ard.node/name: controller
 spec:
   running: true
@@ -1180,9 +1180,9 @@ spec:
       labels:
         app.kubernetes.io/part-of: ard
         app.kubernetes.io/instance: devstack-a
-        ard.openstack.org/deployment: devstack-a
-        ard.openstack.org/provider: kubevirt
-        ard.openstack.org/node: controller
+        ard.teim.app/deployment: devstack-a
+        ard.teim.app/provider: kubevirt
+        ard.teim.app/node: controller
         ard.node/name: controller
     spec:
       domain:
