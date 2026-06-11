@@ -1,0 +1,9 @@
+---
+# KubeVirt disk cloning is handled via inline dataVolumeTemplates
+# in ard_kubevirt_node. This role is a no-op stub to satisfy
+# the ard_provider_image dispatch.
+- name: Skip image handling for KubeVirt (inline dataVolumeTemplates)
+  ansible.builtin.debug:
+    msg: >-
+      KubeVirt uses inline dataVolumeTemplates in the VirtualMachine
+      spec. No separate image preparation is needed.
