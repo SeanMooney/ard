@@ -1,0 +1,8 @@
+---
+# Defaults inherited from ard_provider_common.
+# This role consumes:
+#   ard_kubevirt_namespace      — target OpenShift namespace
+#   ard_kubevirt_headless_service — Service name (default: <deployment>-headless)
+#   ard_kubevirt_extra_labels   — additional cluster-policy labels (dict)
+#   ard_deployment_name         — deployment identifier used for labels/selectors
+#   ard_deployment_dir          — local path for rendered manifests
