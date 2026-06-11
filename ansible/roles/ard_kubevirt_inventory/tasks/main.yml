@@ -1,0 +1,174 @@
+---
+- name: Identify controller node
+  ansible.builtin.set_fact:
+    _controller_node: >-
+      {{ ard_nodes | selectattr('groups', 'contains', 'controller') | list | first | default(ard_nodes[0]) }}
+
+- name: Ensure rendered kubevirt directory exists
+  ansible.builtin.file:
+    path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+    state: directory
+    mode: "0755"
+
+- name: Render LoadBalancer Service manifest
+  ansible.builtin.template:
+    src: lb-service.yaml.j2
+    dest: "{{ ard_deployment_dir }}/rendered/kubevirt/{{ _controller_node.name }}-lb-service.yaml"
+    mode: "0644"
+
+- name: Apply LoadBalancer Service
+  ansible.builtin.command:
+    argv:
+      - oc
+      - apply
+      - -f
+      - "{{ ard_deployment_dir }}/rendered/kubevirt/{{ _controller_node.name }}-lb-service.yaml"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  changed_when: true
+  tags: requires_cluster
+
+- name: Wait for LoadBalancer external IP
+  ansible.builtin.command:
+    argv:
+      - oc
+      - get
+      - "svc/{{ ard_deployment_name }}-{{ _controller_node.name }}-lb"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - -o
+      - "jsonpath={.status.loadBalancer.ingress[0].ip}"
+  register: _lb_ip_result
+  until: _lb_ip_result.stdout | length > 0
+  retries: 60
+  delay: 5
+  changed_when: false
+  tags: requires_cluster
+
+- name: Set controller LB IP fact
+  ansible.builtin.set_fact:
+    _controller_lb_ip: "{{ _lb_ip_result.stdout | default('') }}"
+  tags: requires_cluster
+
+- name: Discover VMI pod IPs for all nodes
+  ansible.builtin.command:
+    argv:
+      - oc
+      - get
+      - "vmi/{{ ard_deployment_name }}-{{ item.name }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - -o
+      - "jsonpath={.status.interfaces[0].ipAddress}"
+  loop: "{{ ard_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _vmi_ips
+  changed_when: false
+  tags: requires_cluster
+
+- name: Build node IP map
+  ansible.builtin.set_fact:
+    _node_ips: >-
+      {{ _node_ips | default({}) | combine({item.item.name: item.stdout}) }}
+  loop: "{{ _vmi_ips.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  tags: requires_cluster
+
+- name: Write inventory.yaml
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/inventory.yaml"
+    mode: "0644"
+    content: |
+      ---
+      all:
+        hosts:
+      {% for node in ard_nodes %}
+      {% set is_controller = 'controller' in node.groups %}
+      {% set node_ip = _node_ips[node.name] | default('') %}
+      {% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
+          {{ node.name }}:
+            ansible_host: {{ ansible_host }}
+            ansible_user: stack
+            ansible_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
+      {% if is_controller %}
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      {% else %}
+            ansible_ssh_common_args: >-
+              -o StrictHostKeyChecking=no
+              -o UserKnownHostsFile=/dev/null
+              -o ProxyJump=stack@{{ _controller_lb_ip }}
+      {% endif %}
+            ard_deployment_name: {{ ard_deployment_name }}
+            ard_provider_resource_name: {{ ard_deployment_name }}-{{ node.name }}
+            nodepool:
+              private_ipv4: {{ node_ip }}
+              public_ipv4: {{ ansible_host }}
+            zuul:
+              executor:
+                log_root: /tmp/zuul_logs
+                work_root: /tmp/work_root
+      {% endfor %}
+        children:
+      {% set group_names = [] %}
+      {% for node in ard_nodes %}
+      {% for group in node.groups %}
+      {% if group not in group_names %}
+      {% set _ = group_names.append(group) %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      {% for group in group_names %}
+          {{ group }}:
+            hosts:
+      {% for node in ard_nodes if group in node.groups %}
+              {{ node.name }}:
+      {% endfor %}
+      {% endfor %}
+  tags: requires_cluster
+
+- name: Write provider-state.yaml
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: |
+      ---
+      ard_provider: kubevirt
+      ard_deployment_name: {{ ard_deployment_name }}
+      ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
+      controller_lb_service: {{ ard_deployment_name }}-{{ _controller_node.name }}-lb
+      controller_lb_ip: {{ _controller_lb_ip | default('') }}
+      nodes:
+      {% for node in ard_nodes %}
+        - inventory_name: {{ node.name }}
+          vm_name: {{ ard_deployment_name }}-{{ node.name }}
+          pod_ip: {{ _node_ips[node.name] | default('') }}
+      {% endfor %}
+  tags: requires_cluster
+
+- name: Add nodes to active inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    ansible_host: >-
+      {{ _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')) }}
+    ansible_user: stack
+    ansible_private_key_file: "{{ ard_kubevirt_ssh_private_key_file }}"
+    ansible_ssh_common_args: >-
+      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' if 'controller' in item.groups
+         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=stack@' + _controller_lb_ip }}
+    ard_deployment_name: "{{ ard_deployment_name }}"
+    ard_provider_resource_name: "{{ ard_deployment_name }}-{{ item.name }}"
+    nodepool:
+      private_ipv4: "{{ _node_ips[item.name] | default('') }}"
+      public_ipv4: >-
+        {{ _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')) }}
+    zuul:
+      executor:
+        log_root: /tmp/zuul_logs
+        work_root: /tmp/work_root
+  loop: "{{ ard_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags: requires_cluster
