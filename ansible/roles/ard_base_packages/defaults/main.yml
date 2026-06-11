@@ -1,0 +1,17 @@
+---
+# Minimal packages to make the node a usable Ansible target.
+# Provider or workload roles can install additional packages.
+ard_base_packages:
+  - python3
+  - sudo
+  - openssh-server
+  - ca-certificates
+  - acl
+  - qemu-guest-agent
+  - rsync
+
+# HTTP proxy for package installation. Set via -e or vars file.
+# When empty, no proxy environment is injected.
+ard_http_proxy: ""
+ard_https_proxy: ""
+ard_no_proxy: ""

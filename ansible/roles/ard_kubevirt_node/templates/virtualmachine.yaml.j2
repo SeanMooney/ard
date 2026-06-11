@@ -92,14 +92,5 @@ spec:
                   - name: stack
                     password: {{ stack_user_password | default('tester') }}
                     type: text
-              package_update: true
-              packages:
-                - python3
-                - sudo
-                - openssh-server
-                - qemu-guest-agent
-                - git
-                - rsync
-                - curl
               ssh_pwauth: true
           name: cloudinitdisk

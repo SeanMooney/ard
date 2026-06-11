@@ -15,15 +15,22 @@
         file: "{{ ard_scenario_dir }}/molecule.yml"
         name: ard_molecule_config
 
+    - name: Set provider from scenario config
+      ansible.builtin.set_fact:
+        _ard_provider: "{{ ard_molecule_config.provisioner.ard.provider | default('libvirt') }}"
+
     - name: Validate Molecule ARD scenario configuration
       ansible.builtin.assert:
         that:
           - ard_molecule_config.provisioner.ard is defined
           - ard_molecule_config.provisioner.ard.topology is defined
-          - ard_molecule_config.provisioner.ard.libvirt.network_cidr is defined
+          - >-
+            _ard_provider != 'libvirt' or
+            (ard_molecule_config.provisioner.ard.libvirt is defined and
+             ard_molecule_config.provisioner.ard.libvirt.network_cidr is defined)
         fail_msg: >-
-          Molecule scenario must define provisioner.ard.topology and
-          provisioner.ard.libvirt.network_cidr in molecule.yml.
+          Molecule scenario must define provisioner.ard.topology.
+          Libvirt scenarios also require provisioner.ard.libvirt.network_cidr.
 
     - name: Ensure ARD deployment directory exists for generated render vars
       ansible.builtin.file:
@@ -31,6 +38,9 @@
         state: directory
         mode: "0755"
 
+    # -----------------------------------------------------------------
+    # Libvirt / static provider path — use the render pipeline
+    # -----------------------------------------------------------------
     - name: Write generated ARD render vars from Molecule scenario
       ansible.builtin.copy:
         dest: "{{ ard_molecule_render_vars_file }}"
@@ -60,6 +70,7 @@
           ard_render_node_overrides:
           {{ ard_molecule_config.provisioner.ard.node_overrides | to_nice_yaml(indent=2, sort_keys=False) | indent(2, true) }}
           {% endif %}
+      when: _ard_provider != 'kubevirt'
 
     - name: Render ARD deployment workspace
       ansible.builtin.command:
@@ -78,18 +89,84 @@
       args:
         chdir: "{{ ard_project_dir }}"
       changed_when: true
+      when: _ard_provider != 'kubevirt'
 
-    - name: Apply ARD provider resources
-      tags:
-        - apply
+    # -----------------------------------------------------------------
+    # KubeVirt provider path — write deployment.yaml + nodes.yaml
+    # directly since KubeVirt doesn't need CIDR/MAC allocation
+    # -----------------------------------------------------------------
+    - name: Write KubeVirt deployment.yaml
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/deployment.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: kubevirt
+          ard_provider_profile: {{ ard_molecule_config.provisioner.ard.provider_profile | default('kubevirt') }}
+          ard_deployment_name: {{ ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename) }}
+          ard_resource_name_prefix: {{ ard_molecule_config.provisioner.ard.resource_name_prefix | default(ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename)) }}
+          ard_target_branch: {{ ard_molecule_config.provisioner.ard.target_branch | default('master') }}
+          ard_topology: {{ ard_molecule_config.provisioner.ard.topology }}
+          ard_service_profiles: {{ ard_molecule_config.provisioner.ard.service_profiles | default(['devstack', 'ovn', 'tempest']) | to_json }}
+          ard_default_image: {{ ard_molecule_config.provisioner.ard.default_image | default('debian-13') }}
+          ard_default_controller_flavor: {{ ard_molecule_config.provisioner.ard.default_controller_flavor | default('devstack-control') }}
+          ard_default_compute_flavor: {{ ard_molecule_config.provisioner.ard.default_compute_flavor | default('devstack-compute') }}
+          ard_default_vm_preference: {{ ard_molecule_config.provisioner.ard.default_vm_preference | default('devstack') }}
+          ard_kubevirt_namespace: {{ ard_molecule_config.provisioner.ard.kubevirt.namespace }}
+          {% if ard_molecule_config.provisioner.ard.kubevirt.storage_class is defined %}
+          ard_kubevirt_storage_class: {{ ard_molecule_config.provisioner.ard.kubevirt.storage_class }}
+          {% endif %}
+          {% if ard_molecule_config.provisioner.ard.kubevirt.extra_labels is defined %}
+          ard_kubevirt_extra_labels: {{ ard_molecule_config.provisioner.ard.kubevirt.extra_labels | to_json }}
+          {% endif %}
+          {% if ard_molecule_config.provisioner.ard.kubevirt.controller_service_ports is defined %}
+          ard_kubevirt_controller_service_ports: {{ ard_molecule_config.provisioner.ard.kubevirt.controller_service_ports | to_json }}
+          {% endif %}
+      when: _ard_provider == 'kubevirt'
+
+    - name: Generate KubeVirt nodes.yaml from topology
       ansible.builtin.command:
         argv:
           - ansible-playbook
           - -i
           - localhost,
-          - ansible/playbooks/provider/apply.yaml
+          - ansible/playbooks/provider/kubevirt-render-nodes.yaml
+          - -e
+          - "@{{ ard_deployment_dir }}/deployment.yaml"
           - -e
           - ard_deployment_dir={{ ard_deployment_dir }}
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true
+      when: _ard_provider == 'kubevirt'
+
+    - name: Search for local-vars.yaml
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ ard_scenario_dir }}/local-vars.yaml"
+        - "{{ ard_deployment_dir }}/local-vars.yaml"
+        - "{{ ard_project_dir }}/local-vars.yaml"
+      register: _local_vars_search
+
+    - name: Resolve local-vars.yaml path
+      ansible.builtin.set_fact:
+        _local_vars_file: >-
+          {{ (_local_vars_search.results | selectattr('stat.exists') | map(attribute='item') | list | first | default('')) }}
+
+    - name: Apply ARD provider resources
+      tags:
+        - apply
+      ansible.builtin.command:
+        argv: >-
+          {{ ['ansible-playbook', '-i', 'localhost,',
+              'ansible/playbooks/provider/apply.yaml',
+              '-e', 'ard_deployment_dir=' ~ ard_deployment_dir]
+             + (['-e', '@' ~ _local_vars_file]
+                if _local_vars_file else []) }}
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
