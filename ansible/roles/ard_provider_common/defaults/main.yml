@@ -41,6 +41,28 @@ ard_libvirt_image_dir: "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env
 ard_libvirt_firmware: efi
 ard_libvirt_secure_boot: false
 
+# User identity (for shared-tenancy naming in KubeVirt)
+ard_user: "{{ lookup('env', 'USER') }}"
+
+# KubeVirt provider settings
+ard_kubevirt_namespace: ""
+ard_kubevirt_storage_class: null
+ard_kubevirt_image_datasource: debian-13
+ard_kubevirt_root_disk_size: 80Gi
+ard_kubevirt_network_mode: masquerade
+ard_kubevirt_vm_network_cidr: "192.168.121.0/24"
+ard_kubevirt_ensure_instancetype_resources: false
+ard_kubevirt_extra_labels: {}
+ard_kubevirt_ssh_key_secret: "{{ ard_user }}-pub-key"
+ard_kubevirt_ssh_access: loadbalancer
+ard_kubevirt_headless_service: "{{ ard_deployment_name | default('') }}-headless"
+ard_kubevirt_delete_namespace: false
+ard_kubevirt_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
+ard_kubevirt_controller_service_ports:
+  - name: ssh
+    port: 22
+    targetPort: 22
+
 # Destroy preserves generated runtime state by default for post-failure
 # inspection. Set ard_destroy_cleanup_generated=true to remove generated
 # inventory/provider-state/rendered artifacts after provider resources are gone.
@@ -56,6 +78,9 @@ ard_images:
     version: "13"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: debian-13
       libvirt:
         url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
         alternate_urls:
@@ -69,6 +94,9 @@ ard_images:
     version: "24.04"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: ubuntu-24.04
       libvirt:
         url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
         name: ubuntu-24.04
@@ -80,6 +108,9 @@ ard_images:
     version: "9-stream"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: centos-stream-9
       libvirt:
         url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
         name: centos-stream-9
@@ -92,6 +123,9 @@ ard_images:
     version: "10-stream"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: centos-stream-10
       libvirt:
         url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
         name: centos-stream-10
@@ -104,6 +138,9 @@ ard_images:
     version: eln
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: fedora-eln
       libvirt:
         url: https://kojipkgs.fedoraproject.org/compose/eln/Fedora-eln-20260606.n.0/compose/BaseOS/x86_64/images/Fedora-ELN-Cloud-Base-Generic-11-20260606.n.0.x86_64.qcow2
         name: fedora-eln
@@ -116,6 +153,9 @@ ard_images:
     version: "10"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: almalinux-10
       libvirt:
         url: https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2
         name: almalinux-10
@@ -128,6 +168,9 @@ ard_images:
     version: "10"
     cloud_init: true
     provider:
+      kubevirt:
+        source_kind: DataSource
+        name: rocky-linux-10
       libvirt:
         url: https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
         name: rocky-linux-10
@@ -143,6 +186,8 @@ ard_flavors:
     root_disk_gb: 80
     nested_virt: true
     provider:
+      kubevirt:
+        instancetype: devstack-8c16g
       libvirt:
         vcpus: 8
         memory_mb: 16384
@@ -153,6 +198,8 @@ ard_flavors:
     root_disk_gb: 80
     nested_virt: true
     provider:
+      kubevirt:
+        instancetype: devstack-8c8g
       libvirt:
         vcpus: 8
         memory_mb: 8192
@@ -163,6 +210,8 @@ ard_flavors:
     root_disk_gb: 80
     nested_virt: true
     provider:
+      kubevirt:
+        instancetype: devstack-8c8g
       libvirt:
         vcpus: 8
         memory_mb: 8192
@@ -173,6 +222,8 @@ ard_flavors:
     root_disk_gb: 100
     nested_virt: true
     provider:
+      kubevirt:
+        instancetype: devstack-8c16g
       libvirt:
         vcpus: 12
         memory_mb: 16384
@@ -189,6 +240,8 @@ ard_flavors:
     root_disk_gb: 50
     nested_virt: true
     provider:
+      kubevirt:
+        instancetype: devstack-8c8g
       libvirt:
         vcpus: 4
         memory_mb: 4096

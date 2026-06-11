@@ -1,0 +1,181 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  roles:
+    - role: ard_provider_common
+  tasks:
+    # ------------------------------------------------------------------
+    # Core provider defaults
+    # ------------------------------------------------------------------
+    - name: Verify core provider defaults
+      ansible.builtin.assert:
+        that:
+          - ard_provider == 'libvirt'
+          - ard_provider_profile == 'local-libvirt'
+          - ard_topology == 'one-controller-one-compute'
+        fail_msg: "Core provider defaults have unexpected values"
+
+    # ------------------------------------------------------------------
+    # ard_user
+    # ------------------------------------------------------------------
+    - name: Verify ard_user is defined and non-empty
+      ansible.builtin.assert:
+        that:
+          - ard_user is defined
+          - ard_user | length > 0
+        fail_msg: >-
+          ard_user is undefined or empty — lookup('env', 'USER')
+          must resolve on the control node
+
+    # ------------------------------------------------------------------
+    # KubeVirt scalar defaults
+    # ------------------------------------------------------------------
+    - name: Verify KubeVirt scalar defaults
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_namespace is defined
+          - ard_kubevirt_namespace == ''
+          - ard_kubevirt_storage_class is none
+          - ard_kubevirt_image_datasource == 'debian-13'
+          - ard_kubevirt_root_disk_size == '80Gi'
+          - ard_kubevirt_network_mode == 'masquerade'
+          - ard_kubevirt_vm_network_cidr == '192.168.121.0/24'
+          - ard_kubevirt_ensure_instancetype_resources == false
+          - ard_kubevirt_ssh_access == 'loadbalancer'
+          - ard_kubevirt_delete_namespace == false
+        fail_msg: "One or more KubeVirt scalar defaults have unexpected values"
+
+    # ------------------------------------------------------------------
+    # KubeVirt extra_labels — must be an empty mapping
+    # ------------------------------------------------------------------
+    - name: Verify ard_kubevirt_extra_labels is an empty dict
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_extra_labels is defined
+          - ard_kubevirt_extra_labels is mapping
+          - ard_kubevirt_extra_labels | length == 0
+        fail_msg: "ard_kubevirt_extra_labels must be an empty dict by default"
+
+    # ------------------------------------------------------------------
+    # KubeVirt SSH key Secret name contains user and suffix
+    # ------------------------------------------------------------------
+    - name: Verify ard_kubevirt_ssh_key_secret follows naming convention
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_ssh_key_secret is defined
+          - ard_kubevirt_ssh_key_secret | length > 0
+          - ard_kubevirt_ssh_key_secret.endswith('-pub-key')
+          - ard_kubevirt_ssh_key_secret.startswith(ard_user)
+        fail_msg: >-
+          ard_kubevirt_ssh_key_secret must be '<ard_user>-pub-key',
+          got: {{ ard_kubevirt_ssh_key_secret }}
+
+    # ------------------------------------------------------------------
+    # KubeVirt headless Service name ends with -headless
+    # ------------------------------------------------------------------
+    - name: Verify ard_kubevirt_headless_service ends with -headless
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_headless_service is defined
+          - ard_kubevirt_headless_service.endswith('-headless')
+        fail_msg: >-
+          ard_kubevirt_headless_service must end with '-headless',
+          got: {{ ard_kubevirt_headless_service }}
+
+    # ------------------------------------------------------------------
+    # KubeVirt controller service ports — list with ssh/22 entry
+    # ------------------------------------------------------------------
+    - name: Verify ard_kubevirt_controller_service_ports
+      ansible.builtin.assert:
+        that:
+          - ard_kubevirt_controller_service_ports is defined
+          - ard_kubevirt_controller_service_ports is iterable
+          - ard_kubevirt_controller_service_ports | length == 1
+          - ard_kubevirt_controller_service_ports[0].name == 'ssh'
+          - ard_kubevirt_controller_service_ports[0].port == 22
+          - ard_kubevirt_controller_service_ports[0].targetPort == 22
+        fail_msg: >-
+          ard_kubevirt_controller_service_ports must have one entry
+          for ssh/22 by default
+
+    # ------------------------------------------------------------------
+    # ard_images — kubevirt provider entries for all images
+    # ------------------------------------------------------------------
+    - name: Verify ard_images kubevirt entries exist for each image
+      ansible.builtin.assert:
+        that:
+          - ard_images[item] is defined
+          - ard_images[item].provider is defined
+          - ard_images[item].provider.kubevirt is defined
+          - ard_images[item].provider.kubevirt.source_kind == 'DataSource'
+          - ard_images[item].provider.kubevirt.name == item
+        fail_msg: >-
+          ard_images['{{ item }}'].provider.kubevirt is missing or
+          has wrong source_kind/name
+      loop:
+        - debian-13
+        - ubuntu-24.04
+        - centos-stream-9
+        - centos-stream-10
+        - fedora-eln
+        - almalinux-10
+        - rocky-linux-10
+
+    # ------------------------------------------------------------------
+    # ard_flavors — kubevirt instancetype mappings
+    # ------------------------------------------------------------------
+    - name: Verify ard_flavors kubevirt instancetype for control flavors
+      ansible.builtin.assert:
+        that:
+          - ard_flavors[item] is defined
+          - ard_flavors[item].provider.kubevirt is defined
+          - ard_flavors[item].provider.kubevirt.instancetype == 'devstack-8c16g'
+        fail_msg: >-
+          ard_flavors['{{ item }}'].provider.kubevirt.instancetype
+          must be devstack-8c16g
+      loop:
+        - devstack-control
+        - oko-microshift-node
+
+    - name: Verify ard_flavors kubevirt instancetype for compute flavors
+      ansible.builtin.assert:
+        that:
+          - ard_flavors[item] is defined
+          - ard_flavors[item].provider.kubevirt is defined
+          - ard_flavors[item].provider.kubevirt.instancetype == 'devstack-8c8g'
+        fail_msg: >-
+          ard_flavors['{{ item }}'].provider.kubevirt.instancetype
+          must be devstack-8c8g
+      loop:
+        - devstack-compute
+        - microshift-node
+        - oko-edpm-compute
+
+    # ------------------------------------------------------------------
+    # provider-profiles preset — kubevirt profile structure
+    # ------------------------------------------------------------------
+    - name: Load provider-profiles preset
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../files/presets/provider-profiles.yaml"
+        name: _provider_profiles_preset
+
+    - name: Verify kubevirt provider profile exists in preset
+      ansible.builtin.assert:
+        that:
+          - _provider_profiles_preset.ard_render_provider_profiles is defined
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt is defined
+        fail_msg: "kubevirt key missing from ard_render_provider_profiles preset"
+
+    - name: Verify kubevirt provider profile structure
+      ansible.builtin.assert:
+        that:
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider == 'kubevirt'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_defaults is defined
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_defaults.image == 'debian-13'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_defaults.controller_flavor == 'devstack-control'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_defaults.compute_flavor == 'devstack-compute'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_defaults.vm_preference == 'devstack'
+        fail_msg: >-
+          kubevirt provider profile has wrong provider or
+          provider_defaults values

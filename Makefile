@@ -7,7 +7,16 @@
 ARD_PROVIDER ?= libvirt
 ARD_DEPLOYMENT ?= devstack-1
 ARD_DEPLOYMENTS_DIR ?= $(CURDIR)/deployments
-ARD_DEPLOYMENT_DIR ?= $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT)
+ARD_USER ?= $(shell whoami)
+ARD_KUBEVIRT_NAMESPACE ?=
+
+# Deployment name incorporates user prefix for shared-tenancy providers
+ARD_DEPLOYMENT_NAME_kubevirt = $(ARD_USER)-$(ARD_DEPLOYMENT)
+ARD_DEPLOYMENT_NAME_libvirt = $(ARD_DEPLOYMENT)
+ARD_DEPLOYMENT_NAME_static = $(ARD_DEPLOYMENT)
+ARD_DEPLOYMENT_NAME = $(or $(ARD_DEPLOYMENT_NAME_$(ARD_PROVIDER)),$(ARD_DEPLOYMENT))
+
+ARD_DEPLOYMENT_DIR ?= $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT_NAME)
 ARD_WORKLOAD ?= devstack
 ARD_DEVSTACK_SERVICES = devstack,ovn,tempest
 ARD_TOPOLOGY ?= $(if $(filter microshift,$(ARD_WORKLOAD)),microshift-single-node,one-controller-one-compute)
@@ -31,8 +40,12 @@ ARD_RENDER_SERVICES_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_service_
 ARD_RENDER_IMAGE_VAR = $(if $(ARD_IMAGE),ard_render_image=$(ARD_IMAGE),)
 ARD_RENDER_NETWORK_VAR = $(if $(filter command line environment override,$(origin ARD_NETWORK_CIDR)),ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR),)
 
+ARD_KUBEVIRT_EXTRA_VARS = \
+	$(if $(ARD_KUBEVIRT_NAMESPACE),ard_kubevirt_namespace=$(ARD_KUBEVIRT_NAMESPACE),)
+
 ARD_RENDER_EXTRA_VARS = \
 	ard_deployment_dir=$(ARD_DEPLOYMENT_DIR) \
+	ard_user=$(ARD_USER) \
 	$(ARD_RENDER_PROVIDER_VAR) \
 	$(ARD_RENDER_PROVIDER_PROFILE_VAR) \
 	$(ARD_RENDER_TARGET_BRANCH_VAR) \
@@ -40,6 +53,7 @@ ARD_RENDER_EXTRA_VARS = \
 	$(ARD_RENDER_SERVICES_VAR) \
 	$(ARD_RENDER_IMAGE_VAR) \
 	$(ARD_RENDER_NETWORK_VAR) \
+	$(if $(filter kubevirt,$(ARD_PROVIDER)),$(ARD_KUBEVIRT_EXTRA_VARS),) \
 	$(ARD_EXTRA_VARS)
 
 ARD_DEPLOYMENT_EXTRA_VARS = \

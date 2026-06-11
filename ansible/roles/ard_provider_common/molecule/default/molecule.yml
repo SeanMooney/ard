@@ -1,0 +1,39 @@
+---
+role_name_check: 2
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: podman
+platforms:
+  - name: ard-provider-common-default
+    image: quay.io/centos/centos:stream10
+    dockerfile: Dockerfile.j2
+    pre_build_image: false
+    pull: false
+    command: sleep infinity
+    tty: true
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_REMOTE_TMP: /tmp/.ansible/tmp
+    ANSIBLE_ASYNC_DIR: /tmp/.ansible_async
+    ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - idempotence
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy
