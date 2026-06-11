@@ -1,0 +1,40 @@
+---
+- name: Set node facts for {{ ard_node.name }}
+  ansible.builtin.set_fact:
+    _node_resource_name: "{{ ard_deployment_name }}-{{ ard_node.name }}"
+    _node_volume_name: "{{ ard_deployment_name }}-{{ ard_node.name }}-rootdisk"
+    _node_instancetype: "{{ ard_flavors[ard_node.flavor].provider.kubevirt.instancetype }}"
+    _node_image_source_kind: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.source_kind }}"
+    _node_image_name: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.name }}"
+    _node_hostname: "{{ ard_node.hostname | default(ard_node.name) }}"
+
+- name: Render VirtualMachine manifest for {{ ard_node.name }}
+  ansible.builtin.template:
+    src: virtualmachine.yaml.j2
+    dest: "{{ ard_deployment_dir }}/rendered/kubevirt/{{ ard_node.name }}-vm.yaml"
+    mode: "0644"
+
+- name: Apply VirtualMachine manifest for {{ ard_node.name }}
+  ansible.builtin.command:
+    argv:
+      - oc
+      - apply
+      - -f
+      - "{{ ard_deployment_dir }}/rendered/kubevirt/{{ ard_node.name }}-vm.yaml"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  changed_when: true
+  tags: requires_cluster
+
+- name: Wait for VM {{ ard_node.name }} to be ready
+  ansible.builtin.command:
+    argv:
+      - oc
+      - wait
+      - "vm/{{ _node_resource_name }}"
+      - --for=condition=Ready
+      - --timeout=600s
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  changed_when: false
+  tags: requires_cluster

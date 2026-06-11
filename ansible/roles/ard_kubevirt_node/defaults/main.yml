@@ -1,0 +1,4 @@
+---
+# Defaults for ard_kubevirt_node.
+# This role consumes ard_nodes, ard_flavors, ard_images,
+# and ard_kubevirt_* variables set by ard_provider_common.

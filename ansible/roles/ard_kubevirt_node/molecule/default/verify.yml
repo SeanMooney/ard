@@ -1,0 +1,297 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  vars:
+    ard_kubevirt_namespace: test-namespace
+    ard_stack_public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest molecule-test
+    ard_deployment_name: smooney-devstack-1
+    ard_deployment_dir: /tmp/ard-test-deployment
+    ard_nodes:
+      - name: controller
+        hostname: controller
+        flavor: devstack-control
+        image: debian-13
+        groups:
+          - controller
+          - switch
+      - name: compute-1
+        hostname: compute-1
+        flavor: devstack-compute
+        image: debian-13
+        groups:
+          - compute
+          - peers
+  roles:
+    - role: ard_provider_common
+  tasks:
+    # ------------------------------------------------------------------
+    # Filesystem: both manifests exist
+    # ------------------------------------------------------------------
+    - name: Check rendered kubevirt directory exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt"
+      register: _rendered_dir
+      failed_when: not _rendered_dir.stat.exists or not _rendered_dir.stat.isdir
+
+    - name: Check controller VM manifest exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt/controller-vm.yaml"
+      register: _controller_manifest
+      failed_when: not _controller_manifest.stat.exists
+
+    - name: Check compute-1 VM manifest exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/kubevirt/compute-1-vm.yaml"
+      register: _compute_manifest
+      failed_when: not _compute_manifest.stat.exists
+
+    # ------------------------------------------------------------------
+    # Slurp and parse both manifests
+    # ------------------------------------------------------------------
+    - name: Slurp controller VM manifest
+      ansible.builtin.slurp:
+        src: "{{ ard_deployment_dir }}/rendered/kubevirt/controller-vm.yaml"
+      register: _controller_raw
+
+    - name: Parse controller VM manifest
+      ansible.builtin.set_fact:
+        _controller_vm: "{{ _controller_raw.content | b64decode | from_yaml }}"
+
+    - name: Slurp compute-1 VM manifest
+      ansible.builtin.slurp:
+        src: "{{ ard_deployment_dir }}/rendered/kubevirt/compute-1-vm.yaml"
+      register: _compute_raw
+
+    - name: Parse compute-1 VM manifest
+      ansible.builtin.set_fact:
+        _compute_vm: "{{ _compute_raw.content | b64decode | from_yaml }}"
+
+    # ------------------------------------------------------------------
+    # Controller: apiVersion, kind, metadata
+    # ------------------------------------------------------------------
+    - name: Verify controller VM apiVersion and kind
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.apiVersion == 'kubevirt.io/v1'
+          - _controller_vm.kind == 'VirtualMachine'
+        fail_msg: "Controller VM has wrong apiVersion/kind"
+
+    - name: Verify controller VM name and namespace
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.metadata.name == 'smooney-devstack-1-controller'
+          - _controller_vm.metadata.namespace == 'test-namespace'
+        fail_msg: "Controller VM name/namespace incorrect"
+
+    - name: Verify controller VM metadata labels
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
+          - _controller_vm.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
+          - _controller_vm.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
+          - _controller_vm.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
+          - _controller_vm.metadata.labels['ard.teim.app/node'] == 'controller'
+        fail_msg: "Controller VM metadata labels incorrect"
+
+    # ------------------------------------------------------------------
+    # Controller: spec — runStrategy, instancetype, preference
+    # ------------------------------------------------------------------
+    - name: Verify controller VM runStrategy
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.runStrategy == 'Always'
+        fail_msg: "Controller VM runStrategy must be Always"
+
+    - name: Verify controller VM instancetype
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.instancetype.kind == 'VirtualMachineInstancetype'
+          - _controller_vm.spec.instancetype.name == 'devstack-8c16g'
+        fail_msg: "Controller VM instancetype incorrect (expected devstack-8c16g)"
+
+    - name: Verify controller VM preference
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.preference.kind == 'VirtualMachinePreference'
+          - _controller_vm.spec.preference.name == 'devstack'
+        fail_msg: "Controller VM preference incorrect"
+
+    # ------------------------------------------------------------------
+    # Controller: dataVolumeTemplates — sourceRef, storage, no storageClassName
+    # ------------------------------------------------------------------
+    - name: Verify controller VM dataVolumeTemplates
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.dataVolumeTemplates | length == 1
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.name == 'smooney-devstack-1-controller-rootdisk'
+          - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.kind == 'DataSource'
+          - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.name == 'debian-13'
+          - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.namespace == 'test-namespace'
+          - _controller_vm.spec.dataVolumeTemplates[0].spec.storage.resources.requests.storage == '80Gi'
+        fail_msg: "Controller VM dataVolumeTemplates incorrect"
+
+    - name: Verify no storageClassName in controller VM (default null)
+      ansible.builtin.assert:
+        that:
+          - "'storageClassName' not in _controller_vm.spec.dataVolumeTemplates[0].spec.storage"
+        fail_msg: "storageClassName must not appear when ard_kubevirt_storage_class is null"
+
+    # ------------------------------------------------------------------
+    # Controller: template labels, accessCredentials, subdomain, network
+    # ------------------------------------------------------------------
+    - name: Verify controller VM template labels
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.template.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.spec.template.metadata.labels['ard.teim.app/node'] == 'controller'
+          - _controller_vm.spec.template.metadata.labels['network.kubevirt.io/headlessService'] == 'smooney-devstack-1-headless'
+        fail_msg: "Controller VM template labels incorrect"
+
+    - name: Verify controller VM accessCredentials
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.template.spec.accessCredentials | length == 1
+          - _controller_vm.spec.template.spec.accessCredentials[0].sshPublicKey.source.secret.secretName == 'smooney-pub-key'
+          - _controller_vm.spec.template.spec.accessCredentials[0].sshPublicKey.propagationMethod.noCloud is defined
+        fail_msg: "Controller VM accessCredentials incorrect"
+
+    - name: Verify controller VM subdomain and network
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.template.spec.subdomain == 'smooney-devstack-1-headless'
+          - _controller_vm.spec.template.spec.networks | length == 1
+          - _controller_vm.spec.template.spec.networks[0].name == 'default'
+          - _controller_vm.spec.template.spec.networks[0].pod.vmNetworkCIDR == '192.168.121.0/24'
+        fail_msg: "Controller VM subdomain or network incorrect"
+
+    - name: Verify controller VM masquerade interface
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.template.spec.domain.devices.interfaces | length == 1
+          - _controller_vm.spec.template.spec.domain.devices.interfaces[0].name == 'default'
+          - _controller_vm.spec.template.spec.domain.devices.interfaces[0].masquerade is defined
+        fail_msg: "Controller VM masquerade interface not present"
+
+    # ------------------------------------------------------------------
+    # Controller: cloud-init userData
+    # ------------------------------------------------------------------
+    - name: Extract controller cloud-init userData
+      ansible.builtin.set_fact:
+        _controller_cloudinit: >-
+          {{ _controller_vm.spec.template.spec.volumes
+             | selectattr('name', 'equalto', 'cloudinitdisk')
+             | map(attribute='cloudInitNoCloud.userData')
+             | first }}
+
+    - name: Verify controller cloud-init contains hostname
+      ansible.builtin.assert:
+        that:
+          - "'hostname: controller' in _controller_cloudinit"
+        fail_msg: "Controller cloud-init userData missing hostname"
+
+    - name: Verify controller cloud-init contains stack user
+      ansible.builtin.assert:
+        that:
+          - "'name: stack' in _controller_cloudinit"
+          - "'sudo: ALL=(ALL) NOPASSWD:ALL' in _controller_cloudinit"
+          - "'ssh_authorized_keys' in _controller_cloudinit"
+        fail_msg: "Controller cloud-init userData missing stack user config"
+
+    - name: Verify controller cloud-init contains python3 package
+      ansible.builtin.assert:
+        that:
+          - "'python3' in _controller_cloudinit"
+        fail_msg: "Controller cloud-init userData missing python3 package"
+
+    # ------------------------------------------------------------------
+    # compute-1: spot-check key differences (instancetype, node label)
+    # ------------------------------------------------------------------
+    - name: Verify compute-1 VM name
+      ansible.builtin.assert:
+        that:
+          - _compute_vm.metadata.name == 'smooney-devstack-1-compute-1'
+        fail_msg: "Compute-1 VM name incorrect"
+
+    - name: Verify compute-1 VM instancetype (devstack-8c8g)
+      ansible.builtin.assert:
+        that:
+          - _compute_vm.spec.instancetype.name == 'devstack-8c8g'
+        fail_msg: "Compute-1 VM instancetype should be devstack-8c8g"
+
+    - name: Verify compute-1 VM ard.teim.app/node label
+      ansible.builtin.assert:
+        that:
+          - _compute_vm.metadata.labels['ard.teim.app/node'] == 'compute-1'
+        fail_msg: "Compute-1 VM ard.teim.app/node label incorrect"
+
+    - name: Verify compute-1 rootdisk volume name
+      ansible.builtin.assert:
+        that:
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.name == 'smooney-devstack-1-compute-1-rootdisk'
+        fail_msg: "Compute-1 rootdisk volume name incorrect"
+
+    - name: Extract compute-1 cloud-init userData
+      ansible.builtin.set_fact:
+        _compute_cloudinit: >-
+          {{ _compute_vm.spec.template.spec.volumes
+             | selectattr('name', 'equalto', 'cloudinitdisk')
+             | map(attribute='cloudInitNoCloud.userData')
+             | first }}
+
+    - name: Verify compute-1 cloud-init hostname
+      ansible.builtin.assert:
+        that:
+          - "'hostname: compute-1' in _compute_cloudinit"
+        fail_msg: "Compute-1 cloud-init hostname incorrect"
+
+    # ------------------------------------------------------------------
+    # Verify only expected labels present
+    # ------------------------------------------------------------------
+    - name: Verify only expected labels on controller VM metadata
+      ansible.builtin.assert:
+        that:
+          - >-
+            _controller_vm.metadata.labels.keys() | sort ==
+            ['app.kubernetes.io/instance', 'app.kubernetes.io/managed-by',
+             'app.kubernetes.io/part-of', 'ard.teim.app/deployment',
+             'ard.teim.app/node', 'ard.teim.app/provider'] | sort
+        fail_msg: "Unexpected labels found in controller VM metadata"
+
+    # ------------------------------------------------------------------
+    # storageClassName rendered when ard_kubevirt_storage_class is set
+    # ------------------------------------------------------------------
+    - name: Render controller VM manifest with explicit storage class
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/virtualmachine.yaml.j2"
+        dest: /tmp/controller-vm-with-sc.yaml
+        mode: "0644"
+      vars:
+        ard_node:
+          name: controller
+          hostname: controller
+          flavor: devstack-control
+          image: debian-13
+        _node_resource_name: smooney-devstack-1-controller
+        _node_volume_name: smooney-devstack-1-controller-rootdisk
+        _node_instancetype: devstack-8c16g
+        _node_image_source_kind: DataSource
+        _node_image_name: debian-13
+        _node_hostname: controller
+        ard_kubevirt_storage_class: my-storage-class
+
+    - name: Slurp manifest with storage class
+      ansible.builtin.slurp:
+        src: /tmp/controller-vm-with-sc.yaml
+      register: _sc_raw
+
+    - name: Parse manifest with storage class
+      ansible.builtin.set_fact:
+        _vm_with_sc: "{{ _sc_raw.content | b64decode | from_yaml }}"
+
+    - name: Verify storageClassName is present when set
+      ansible.builtin.assert:
+        that:
+          - _vm_with_sc.spec.dataVolumeTemplates[0].spec.storage.storageClassName == 'my-storage-class'
+        fail_msg: "storageClassName must appear when ard_kubevirt_storage_class is set"
