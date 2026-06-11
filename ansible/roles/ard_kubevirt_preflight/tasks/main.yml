@@ -1,0 +1,185 @@
+---
+# ---------------------------------------------------------------------------
+# Local environment checks (run in any environment, not tagged requires_cluster)
+# ---------------------------------------------------------------------------
+
+- name: Validate ard_kubevirt_namespace is set
+  ansible.builtin.assert:
+    that:
+      - ard_kubevirt_namespace is defined
+      - ard_kubevirt_namespace | length > 0
+    fail_msg: >-
+      ard_kubevirt_namespace must be set to the target OpenShift namespace.
+      Pass it via -e ard_kubevirt_namespace=<namespace> or
+      ARD_KUBEVIRT_NAMESPACE=<namespace> in the Makefile.
+
+- name: Check oc command is available
+  ansible.builtin.shell: command -v oc
+  changed_when: false
+  failed_when: _ard_kv_oc_check.rc != 0
+  register: _ard_kv_oc_check
+  tags: requires_cluster
+
+- name: Ensure stack SSH key exists
+  ansible.builtin.command: >-
+    ssh-keygen -t ed25519 -N '' -f {{ ard_kubevirt_ssh_private_key_file }}
+  args:
+    creates: "{{ ard_kubevirt_ssh_private_key_file }}"
+  tags: requires_host
+
+- name: Read stack public SSH key
+  ansible.builtin.slurp:
+    src: "{{ ard_kubevirt_ssh_private_key_file }}.pub"
+  register: _ard_kv_pub_key_slurp
+  tags: requires_host
+
+- name: Set ard_stack_public_key fact
+  ansible.builtin.set_fact:
+    ard_stack_public_key: "{{ _ard_kv_pub_key_slurp.content | b64decode | trim }}"
+  tags: requires_host
+
+# ---------------------------------------------------------------------------
+# Cluster checks (tagged requires_cluster — skipped in molecule)
+# ---------------------------------------------------------------------------
+
+- name: Verify cluster authentication
+  ansible.builtin.command: oc whoami
+  changed_when: false
+  register: _ard_kv_whoami
+  failed_when: false
+  tags: requires_cluster
+
+- name: Fail if not authenticated to cluster
+  ansible.builtin.fail:
+    msg: >-
+      Not authenticated to an OpenShift cluster. Run 'oc login' first.
+      Error: {{ _ard_kv_whoami.stderr | default('unknown') }}
+  when: _ard_kv_whoami.rc | default(0) != 0
+  tags: requires_cluster
+
+- name: Verify target namespace exists
+  ansible.builtin.command: oc get namespace {{ ard_kubevirt_namespace }}
+  changed_when: false
+  register: _ard_kv_ns_check
+  failed_when: false
+  tags: requires_cluster
+
+- name: Fail if namespace does not exist
+  ansible.builtin.fail:
+    msg: >-
+      Namespace '{{ ard_kubevirt_namespace }}' does not exist.
+      Create it with 'oc new-project {{ ard_kubevirt_namespace }}'
+      or ask your cluster administrator.
+  when: _ard_kv_ns_check.rc | default(0) != 0
+  tags: requires_cluster
+
+- name: Verify KubeVirt API is available
+  ansible.builtin.command: oc api-resources --api-group=kubevirt.io
+  changed_when: false
+  register: _ard_kv_kubevirt_api
+  failed_when: >-
+    _ard_kv_kubevirt_api.rc != 0 or
+    'virtualmachines' not in _ard_kv_kubevirt_api.stdout
+  tags: requires_cluster
+
+- name: Verify CDI API is available
+  ansible.builtin.command: oc api-resources --api-group=cdi.kubevirt.io
+  changed_when: false
+  register: _ard_kv_cdi_api
+  failed_when: >-
+    _ard_kv_cdi_api.rc != 0 or
+    'datavolumes' not in _ard_kv_cdi_api.stdout
+  tags: requires_cluster
+
+- name: Verify image DataSource exists
+  ansible.builtin.command: >-
+    oc get datasource {{ ard_kubevirt_image_datasource }}
+    -n {{ ard_kubevirt_namespace }}
+  changed_when: false
+  register: _ard_kv_datasource_check
+  failed_when: _ard_kv_datasource_check.rc != 0
+  tags: requires_cluster
+
+- name: Check VirtualMachineInstancetype resources exist
+  ansible.builtin.command: >-
+    oc get virtualmachineinstancetype {{ item.value.provider.kubevirt.instancetype }}
+  changed_when: false
+  failed_when: false
+  register: _ard_kv_instancetype_checks
+  loop: "{{ ard_flavors | dict2items }}"
+  when: >-
+    item.value.provider is defined and
+    item.value.provider.kubevirt is defined
+  tags: requires_cluster
+
+- name: Warn about missing VirtualMachineInstancetype resources
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: VirtualMachineInstancetype
+      '{{ item.item.value.provider.kubevirt.instancetype }}' not found.
+      Run 'make kubevirt-resources' to create it.
+  loop: "{{ _ard_kv_instancetype_checks.results | default([]) }}"
+  when:
+    - item.rc is defined
+    - item.rc != 0
+  tags: requires_cluster
+
+- name: Check VirtualMachinePreference exists
+  ansible.builtin.command: >-
+    oc get virtualmachinepreference {{ ard_default_vm_preference }}
+  changed_when: false
+  failed_when: false
+  register: _ard_kv_preference_check
+  tags: requires_cluster
+
+- name: Warn about missing VirtualMachinePreference
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: VirtualMachinePreference '{{ ard_default_vm_preference }}'
+      not found. Run 'make kubevirt-resources' to create it.
+  when:
+    - _ard_kv_preference_check.rc is defined
+    - _ard_kv_preference_check.rc != 0
+  tags: requires_cluster
+
+- name: Check if SSH key Secret already exists
+  ansible.builtin.command: >-
+    oc get secret {{ ard_kubevirt_ssh_key_secret }}
+    -n {{ ard_kubevirt_namespace }}
+  changed_when: false
+  failed_when: false
+  register: _ard_kv_secret_check
+  tags: requires_cluster
+
+- name: Create SSH key Secret
+  ansible.builtin.command:
+    argv:
+      - oc
+      - create
+      - secret
+      - generic
+      - "{{ ard_kubevirt_ssh_key_secret }}"
+      - "--from-literal=key={{ ard_stack_public_key }}"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+  when:
+    - _ard_kv_secret_check.rc != 0
+    - ard_stack_public_key is defined
+  register: _ard_kv_secret_created
+  tags: requires_cluster
+
+- name: Apply extra labels to SSH key Secret
+  ansible.builtin.command:
+    argv: >-
+      {{ ['oc', 'label', 'secret', ard_kubevirt_ssh_key_secret,
+          '-n', ard_kubevirt_namespace, '--overwrite']
+         + (ard_kubevirt_extra_labels | dict2items
+            | map(attribute='key')
+            | zip(ard_kubevirt_extra_labels | dict2items
+            | map(attribute='value'))
+            | map('join', '=')
+            | list) }}
+  when:
+    - ard_kubevirt_extra_labels | length > 0
+  changed_when: false
+  tags: requires_cluster
