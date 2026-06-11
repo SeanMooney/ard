@@ -85,8 +85,8 @@
                 "namespace": namespace,
                 "labels": {
                     "app.kubernetes.io/managed-by": "ard",
-                    "ard.openstack.org/workaround": "rabbitmq-loadbalancer-class",
-                    "ard.openstack.org/source-service": item["source"],
+                    "ard.teim.app/workaround": "rabbitmq-loadbalancer-class",
+                    "ard.teim.app/source-service": item["source"],
                 },
                 "annotations": {
                     "dnsmasq.network.openstack.org/hostname": item["hostname"],
