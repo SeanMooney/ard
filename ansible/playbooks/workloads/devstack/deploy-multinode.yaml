@@ -136,8 +136,10 @@
 
 - name: sync controller data to subnodes
   hosts: all
-  roles:
-    - role: sync-devstack-data
+  tasks:
+    - name: Sync DevStack data to subnodes
+      ansible.builtin.include_role:
+        name: "{{ ard_devstack_sync_data_role | default('sync-devstack-data') }}"
       when: run_devstack | default(true) | bool
 
 - name: sync ceph configs to subnodes

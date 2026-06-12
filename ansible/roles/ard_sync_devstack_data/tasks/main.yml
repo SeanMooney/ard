@@ -1,0 +1,70 @@
+---
+- name: Ensure subnode data directory exists
+  become: true
+  ansible.builtin.file:
+    path: "{{ devstack_data_base_dir }}/data"
+    state: directory
+    owner: stack
+    group: stack
+    mode: "0755"
+  when: inventory_hostname in groups['subnode'] | default([])
+
+- name: Ensure subnode CA directory exists
+  become: true
+  ansible.builtin.file:
+    path: "{{ devstack_data_base_dir }}/data/CA"
+    state: directory
+    owner: stack
+    group: stack
+    mode: "0755"
+  when: inventory_hostname in groups['subnode'] | default([])
+
+- name: Create DevStack data archive on controller
+  become: true
+  ansible.builtin.archive:
+    path:
+      - "{{ devstack_data_base_dir }}/data/ca-bundle.pem"
+      - "{{ devstack_data_base_dir }}/data/CA"
+    dest: "{{ ard_sync_devstack_data_archive }}"
+    format: gz
+    mode: "0644"
+  when: inventory_hostname == groups['controller'][0]
+
+- name: Fetch DevStack data archive from controller
+  become: true
+  ansible.builtin.fetch:
+    src: "{{ ard_sync_devstack_data_archive }}"
+    dest: "{{ zuul.executor.work_root }}/ard-devstack-data.tar.gz"
+    flat: true
+  when: inventory_hostname == groups['controller'][0]
+
+- name: Copy DevStack data archive to subnodes
+  become: true
+  ansible.builtin.copy:
+    src: "{{ zuul.executor.work_root }}/ard-devstack-data.tar.gz"
+    dest: "{{ ard_sync_devstack_data_archive }}"
+    owner: stack
+    group: stack
+    mode: "0644"
+  when: inventory_hostname in groups['subnode'] | default([])
+
+- name: Extract DevStack data archive on subnodes
+  become: true
+  ansible.builtin.unarchive:
+    src: "{{ ard_sync_devstack_data_archive }}"
+    dest: "{{ devstack_data_base_dir }}/data"
+    remote_src: true
+    owner: stack
+    group: stack
+  when: inventory_hostname in groups['subnode'] | default([])
+
+- name: Ensure data permissions on subnodes
+  become: true
+  ansible.builtin.file:
+    path: "{{ devstack_data_base_dir }}/data"
+    state: directory
+    owner: stack
+    group: stack
+    mode: "0755"
+    recurse: true
+  when: inventory_hostname in groups['subnode'] | default([])

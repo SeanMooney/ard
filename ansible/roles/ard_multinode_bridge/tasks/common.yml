@@ -10,7 +10,7 @@
     _ard_real_iface_mtus: >-
       {{
         ansible_interfaces
-        | reject('search', '^(lo$|docker|veth|br-|virbr|tun|tap|dummy|bond|team)')
+        | reject('search', '^(lo$|docker|veth|br-|virbr|tun|tap|dummy|bond|team|gre|gretap|erspan|ovs-system)')
         | map('regex_replace', '^', 'ansible_')
         | map('extract', hostvars[inventory_hostname])
         | select('mapping')

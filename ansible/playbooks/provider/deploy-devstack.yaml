@@ -29,11 +29,19 @@
       register: ard_cloud_init_status
       changed_when: false
       failed_when: >-
-        ard_cloud_init_status.rc not in [0, 2]
+        ard_cloud_init_status.rc not in [0, 1, 2]
         or (
           'status: done' not in ard_cloud_init_status.stdout
+          and 'status: error' not in ard_cloud_init_status.stdout
           and 'cloud-init not installed' not in ard_cloud_init_status.stdout
         )
+
+    - name: Warn if cloud-init finished with errors
+      ansible.builtin.debug:
+        msg: >-
+          cloud-init completed with errors.
+          Check cloud-init logs on {{ inventory_hostname }}.
+      when: "'status: error' in (ard_cloud_init_status.stdout | default(''))"
 
 - name: Deploy ARD multinode DevStack
   import_playbook: ../workloads/devstack/deploy-multinode.yaml

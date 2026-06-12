@@ -2,13 +2,18 @@
 # tasks file for devstack_common
 - name: set nodepool facts
   set_fact:
-    nodepool:
-      private_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
-      public_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
-    zuul:
-      executor:
-        log_root: /tmp/zuul_logs
-        work_root: /tmp/work_root
+    nodepool: >-
+      {{ (nodepool | default({})) | combine({
+        'private_ipv4': (nodepool.private_ipv4 | default(ansible_facts.default_ipv4.address)),
+        'public_ipv4': (nodepool.public_ipv4 | default(ansible_facts.default_ipv4.address))
+      }) }}
+    zuul: >-
+      {{ (zuul | default({})) | combine({
+        'executor': {
+          'log_root': (zuul.executor.log_root | default('/tmp/zuul_logs')),
+          'work_root': (zuul.executor.work_root | default('/tmp/work_root'))
+        }
+      }) }}
 
 - name: clean work_root
   delegate_to: localhost
