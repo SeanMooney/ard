@@ -8,6 +8,12 @@
     group: "{{ ansible_user | default('stack', true) }}"
     mode: "0755"
 
+- name: Create operator helper bin directory
+  ansible.builtin.file:
+    path: "{{ oko_dev_tools_bin_dir | default(ansible_user_dir ~ '/bin') }}"
+    state: directory
+    mode: "0755"
+
 - name: Install ard-operator helper script
   ansible.builtin.copy:
     src: ard-operator
