@@ -9,6 +9,38 @@ IPV6="{{ ard_bridge_ipv6_address }}/{{ ard_bridge_ipv6_subnet }}"
 TUNNEL_TYPE="{{ _ard_bridge_tunnel_type }}"
 LOCAL_IP="{{ _ard_bridge_local_ip | trim }}"
 
+bridge_exists() {
+    ip link show "$BRIDGE" >/dev/null 2>&1
+}
+
+bridge_is_ovs() {
+    ip -d link show "$BRIDGE" 2>/dev/null | grep -q 'openvswitch'
+}
+
+ensure_bridge() {
+    if ! bridge_exists; then
+        ip link add "$BRIDGE" type bridge
+    fi
+    ip link set "$BRIDGE" mtu "$MTU" || true
+    ip link set "$BRIDGE" up
+}
+
+attach_port() {
+    local port="$1"
+    if bridge_is_ovs; then
+        ovs-vsctl --may-exist add-port "$BRIDGE" "$port"
+    else
+        ip link set "$port" master "$BRIDGE"
+    fi
+}
+
+detach_port() {
+    local port="$1"
+    if bridge_is_ovs && command -v ovs-vsctl >/dev/null 2>&1; then
+        ovs-vsctl --if-exists del-port "$BRIDGE" "$port"
+    fi
+}
+
 {% if inventory_hostname in groups['switch'] %}
 # --- Switch (spine) node ---
 {% for peer in groups['peers'] %}
@@ -26,20 +58,19 @@ ENABLE_NAT={{ 'true' if ard_bridge_enable_nat | bool else 'false' }}
 ENABLE_FWD={{ 'true' if ard_bridge_authorize_internal_traffic | bool else 'false' }}
 
 start() {
-    ip link add "$BRIDGE" type bridge 2>/dev/null || true
-    ip link set "$BRIDGE" mtu "$MTU"
+    ensure_bridge
 
 {% for peer in groups['peers'] %}
 {% set peer_idx = loop.index0 %}
+    detach_port "gre_peer_{{ peer_idx }}"
+    ip link del "gre_peer_{{ peer_idx }}" 2>/dev/null || true
     ip link add "gre_peer_{{ peer_idx }}" type "$TUNNEL_TYPE" \
         local "$LOCAL_IP" remote "$PEER_{{ peer_idx }}_REMOTE" \
-        key "$PEER_{{ peer_idx }}_KEY" 2>/dev/null || true
+        key "$PEER_{{ peer_idx }}_KEY"
     ip link set "gre_peer_{{ peer_idx }}" mtu "$MTU"
-    ip link set "gre_peer_{{ peer_idx }}" master "$BRIDGE"
+    attach_port "gre_peer_{{ peer_idx }}"
     ip link set "gre_peer_{{ peer_idx }}" up
 {% endfor %}
-
-    ip link set "$BRIDGE" up
     ip addr add "$IPV4" dev "$BRIDGE" 2>/dev/null || true
     ip addr add "$IPV6" dev "$BRIDGE" 2>/dev/null || true
 
@@ -73,9 +104,12 @@ stop() {
 
     ip link set "$BRIDGE" down 2>/dev/null || true
 {% for peer in groups['peers'] %}
+    detach_port "gre_peer_{{ loop.index0 }}"
     ip link del "gre_peer_{{ loop.index0 }}" 2>/dev/null || true
 {% endfor %}
-    ip link del "$BRIDGE" 2>/dev/null || true
+    if ! bridge_is_ovs; then
+        ip link del "$BRIDGE" 2>/dev/null || true
+    fi
 }
 
 {% else %}
@@ -88,25 +122,27 @@ SWITCH_REMOTE="{{ switch_ep | trim }}"
 SWITCH_KEY="{{ key }}"
 
 start() {
-    ip link add "$BRIDGE" type bridge 2>/dev/null || true
-    ip link set "$BRIDGE" mtu "$MTU"
+    ensure_bridge
 
+    detach_port gre_switch
+    ip link del gre_switch 2>/dev/null || true
     ip link add gre_switch type "$TUNNEL_TYPE" \
         local "$LOCAL_IP" remote "$SWITCH_REMOTE" \
-        key "$SWITCH_KEY" 2>/dev/null || true
+        key "$SWITCH_KEY"
     ip link set gre_switch mtu "$MTU"
-    ip link set gre_switch master "$BRIDGE"
+    attach_port gre_switch
     ip link set gre_switch up
-
-    ip link set "$BRIDGE" up
     ip addr add "$IPV4" dev "$BRIDGE" 2>/dev/null || true
     ip addr add "$IPV6" dev "$BRIDGE" 2>/dev/null || true
 }
 
 stop() {
     ip link set "$BRIDGE" down 2>/dev/null || true
+    detach_port gre_switch
     ip link del gre_switch 2>/dev/null || true
-    ip link del "$BRIDGE" 2>/dev/null || true
+    if ! bridge_is_ovs; then
+        ip link del "$BRIDGE" 2>/dev/null || true
+    fi
 }
 
 {% endif %}

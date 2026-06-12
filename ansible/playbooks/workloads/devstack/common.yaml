@@ -2,6 +2,14 @@
 - name: Apply role devstack_common
   hosts: all
   tags: openstack
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{ {} | combine(
+        {'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if ard_http_proxy is defined else {},
+        {'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if ard_https_proxy is defined else {},
+        {'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if ard_no_proxy is defined else {}
+      ) }}
   roles:
     - ensure_stack_user
     - prepare_dev_tools

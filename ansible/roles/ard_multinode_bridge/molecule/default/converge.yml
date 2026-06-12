@@ -14,7 +14,7 @@
           - ansible-playbook
           - -i
           - "{{ ard_deployment_dir }}/inventory.yaml"
-          - "{{ playbook_dir }}/bridge-playbook.yml"
+          - "{{ ard_project_dir }}/ansible/playbooks/provider/configure-bridge.yaml"
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"

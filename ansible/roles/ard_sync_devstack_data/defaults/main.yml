@@ -1,0 +1,3 @@
+---
+devstack_data_base_dir: /opt/stack
+ard_sync_devstack_data_archive: /tmp/ard-devstack-data.tar.gz
