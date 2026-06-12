@@ -7,6 +7,13 @@
     - ard_provider_common
     - ard_provider_inventory
 
+- name: Generate ARD deployment DevStack variables
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - devstack_config
+
 - name: Load ARD deployment DevStack variables
   hosts: all
   gather_facts: false
@@ -42,6 +49,9 @@
           cloud-init completed with errors.
           Check cloud-init logs on {{ inventory_hostname }}.
       when: "'status: error' in (ard_cloud_init_status.stdout | default(''))"
+
+- name: Configure ARD multinode network infrastructure
+  import_playbook: ../network/pre-multinode.yaml
 
 - name: Deploy ARD multinode DevStack
   import_playbook: ../workloads/devstack/deploy-multinode.yaml

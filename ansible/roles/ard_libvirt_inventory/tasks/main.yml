@@ -7,8 +7,10 @@
       ---
       all:
         hosts:
+      {% set peer_names = ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list %}
       {% for node in ard_nodes %}
       {% set management_network = (node.networks | selectattr('name', 'equalto', ard_management_network) | list | first) %}
+      {% set bridge_offset = bridge_address_offset | int if 'switch' in node.groups else (bridge_address_offset | int + 1 + peer_names.index(node.name)) if 'peers' in node.groups else none %}
           {{ node.name }}:
             ansible_host: {{ management_network.ip }}
             ansible_user: stack
@@ -19,6 +21,10 @@
             nodepool:
               private_ipv4: {{ management_network.ip }}
               public_ipv4: {{ management_network.ip }}
+              public_ipv6: ""
+      {% if bridge_offset is not none %}
+              bridge_ipv4: {{ bridge_address_prefix }}.{{ bridge_offset }}
+      {% endif %}
             zuul:
               executor:
                 log_root: /tmp/zuul_logs
@@ -51,15 +57,21 @@
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ item.provider_resource_name | default('ard-' + ard_deployment_name + '-' + item.name) }}"
-    nodepool:
-      private_ipv4: "{{ ard_inventory_management_network.ip }}"
-      public_ipv4: "{{ ard_inventory_management_network.ip }}"
+    nodepool: >-
+      {{ {'private_ipv4': ard_inventory_management_network.ip,
+          'public_ipv4': ard_inventory_management_network.ip,
+          'public_ipv6': ''} |
+         combine({'bridge_ipv4': ard_inventory_bridge_ipv4} if ard_inventory_bridge_ipv4 | length > 0 else {}) }}
     zuul:
       executor:
         log_root: /tmp/zuul_logs
         work_root: /tmp/work_root
   vars:
     ard_inventory_management_network: "{{ item.networks | selectattr('name', 'equalto', ard_management_network) | list | first }}"
+    ard_inventory_peer_names: "{{ ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list }}"
+    ard_inventory_bridge_ipv4: >-
+      {{ bridge_address_prefix ~ '.' ~ (bridge_address_offset | int) if 'switch' in item.groups else
+         bridge_address_prefix ~ '.' ~ (bridge_address_offset | int + 1 + ard_inventory_peer_names.index(item.name)) if 'peers' in item.groups else '' }}
   loop: "{{ ard_nodes }}"
 
 - name: Write ARD provider state

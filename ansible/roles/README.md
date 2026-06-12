@@ -33,6 +33,7 @@ Roles are intentionally kept in-place in this phase. This index is for navigatio
 ## Deployment and workload integration
 
 - `ard_devstack_config`
+- `devstack_config`
 - `devstack_common`
 - `devstack_controller`
 - `devstack_compute`

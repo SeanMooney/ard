@@ -1,0 +1,41 @@
+---
+- name: Verify Ansible connectivity to DevStack nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping host
+      ansible.builtin.ping:
+
+- name: Verify DevStack controller installation
+  hosts: controller
+  gather_facts: false
+  tasks:
+    - name: Check DevStack directory on controller
+      ansible.builtin.command: test -d /opt/repos/devstack
+      changed_when: false
+
+    - name: Check OpenStack client auth when stack has run
+      become: true
+      become_user: stack
+      ansible.builtin.shell: |
+        set -e
+        if [ -f /opt/stack/devstack/openrc ]; then
+          . /opt/stack/devstack/openrc admin admin
+          openstack compute service list -f value -c Binary >/dev/null
+        elif [ -f /opt/repos/devstack/openrc ]; then
+          . /opt/repos/devstack/openrc admin admin
+          openstack compute service list -f value -c Binary >/dev/null
+        else
+          echo "openrc not found; skipping OpenStack client auth check"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+- name: Verify DevStack compute installation
+  hosts: compute
+  gather_facts: false
+  tasks:
+    - name: Check DevStack directory on compute
+      ansible.builtin.command: test -d /opt/repos/devstack
+      changed_when: false

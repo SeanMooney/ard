@@ -98,11 +98,13 @@
       ---
       all:
         hosts:
+      {% set peer_names = ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list %}
       {% for node in ard_nodes %}
       {% set is_controller = 'controller' in node.groups %}
       {% set node_ip = _node_ips[node.name] | default('') %}
       {% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
-      {% set dc_offset = 1 if is_controller else 2 + (ard_nodes | selectattr('groups', 'contains', 'peers') | list | map(attribute='name') | list).index(node.name) if 'peers' in node.groups else 0 %}
+      {% set dc_offset = 1 if is_controller else 2 + peer_names.index(node.name) if 'peers' in node.groups else 0 %}
+      {% set bridge_offset = bridge_address_offset | int if 'switch' in node.groups else (bridge_address_offset | int + 1 + peer_names.index(node.name)) if 'peers' in node.groups else none %}
           {{ node.name }}:
             ansible_host: {{ ansible_host }}
             ansible_user: stack
@@ -120,8 +122,12 @@
             nodepool:
               private_ipv4: {{ node_ip }}
               public_ipv4: {{ ansible_host }}
+              public_ipv6: ""
       {% if _datacenter_ips is defined and node.name in _datacenter_ips %}
               datacenter_ipv4: {{ _datacenter_ips[node.name] }}
+      {% endif %}
+      {% if bridge_offset is not none %}
+              bridge_ipv4: {{ bridge_address_prefix }}.{{ bridge_offset }}
       {% endif %}
             zuul:
               executor:
@@ -183,8 +189,10 @@
     ard_provider_resource_name: "{{ ard_deployment_name }}-{{ item.name }}"
     nodepool: >-
       {{ {'private_ipv4': _node_ips[item.name] | default(''),
-          'public_ipv4': _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default(''))
+          'public_ipv4': _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')),
+          'public_ipv6': ''
          } | combine({'datacenter_ipv4': _datacenter_ips[item.name]} if _datacenter_ips is defined and item.name in _datacenter_ips else {})
+           | combine({'bridge_ipv4': ard_inventory_bridge_ipv4} if ard_inventory_bridge_ipv4 | length > 0 else {})
       }}
     zuul:
       executor:
@@ -193,4 +201,9 @@
   loop: "{{ ard_nodes }}"
   loop_control:
     label: "{{ item.name }}"
+  vars:
+    ard_inventory_peer_names: "{{ ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list }}"
+    ard_inventory_bridge_ipv4: >-
+      {{ bridge_address_prefix ~ '.' ~ (bridge_address_offset | int) if 'switch' in item.groups else
+         bridge_address_prefix ~ '.' ~ (bridge_address_offset | int + 1 + ard_inventory_peer_names.index(item.name)) if 'peers' in item.groups else '' }}
   tags: requires_cluster
