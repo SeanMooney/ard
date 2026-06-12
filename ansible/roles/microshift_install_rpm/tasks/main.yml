@@ -146,10 +146,20 @@
     state: link
     force: true
 
+- name: "Get home directory for user {{ microshift_user }}"
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ microshift_user }}"
+  register: _user_info
+
+- name: "Get {{ microshift_user }} HOME dir"
+  ansible.builtin.set_fact:
+    microshift_user_homedir: "{{ getent_passwd[microshift_user][4] }}"
+
 - name: Ensure workload user kubeconfig directory exists
   become: true
   ansible.builtin.file:
-    path: "/home/{{ microshift_user }}/.kube"
+    path: "{{ microshift_user_homedir }}/.kube"
     state: directory
     owner: "{{ microshift_user }}"
     group: "{{ microshift_user }}"
@@ -159,7 +169,7 @@
   become: true
   ansible.builtin.copy:
     src: "{{ microshift_kubeconfig }}"
-    dest: "/home/{{ microshift_user }}/.kube/config"
+    dest: "{{ microshift_user_homedir }}/.kube/config"
     owner: "{{ microshift_user }}"
     group: "{{ microshift_user }}"
     mode: "0600"
