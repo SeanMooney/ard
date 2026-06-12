@@ -34,19 +34,8 @@
           {{ ['-e', 'ard_deployment_dir=' ~ ard_deployment_dir]
              + (['-e', '@' ~ _local_vars_file] if _local_vars_file else []) }}
 
-    # Step 1: Configure bridge (datacenter interface + GRETAP tunnels)
-    - name: Configure multinode bridge
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', _inv,
-              ard_project_dir ~ '/ansible/playbooks/provider/configure-bridge.yaml']
-             + _common_args }}
-      environment: "{{ _env }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
-
-    # Step 2: Generate DevStack config vars with bridge IP overrides
+    # Step 1: Generate DevStack config vars with bridge IP overrides.
+    # Network setup is part of the reusable DevStack deployment flow.
     - name: Prepare DevStack configuration
       ansible.builtin.command:
         argv: >-
@@ -58,7 +47,7 @@
         chdir: "{{ ard_project_dir }}"
       changed_when: true
 
-    # Step 3: Deploy DevStack
+    # Step 2: Deploy DevStack
     - name: Deploy DevStack
       ansible.builtin.command:
         argv: >-

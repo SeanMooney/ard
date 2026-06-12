@@ -24,7 +24,7 @@
           file:
             path: '~/.cache/ard/repos'
             state: directory
-      when: "use_local_cache | default(true) | bool"
+      when: "use_local_cache | default(false) | bool"
   tags:
     - common
     - cache
@@ -98,6 +98,20 @@
           register: repo_names
           delegate_to: localhost
           run_once: yes
+        - name: clean local git cache repos before push
+          ansible.builtin.shell: |
+            set -e
+            git -C "{{ lookup('env', 'HOME') }}/.cache/ard/repos/{{ item }}" reset --hard
+            git -C "{{ lookup('env', 'HOME') }}/.cache/ard/repos/{{ item }}" clean -xdf
+          args:
+            executable: /bin/bash
+          delegate_to: localhost
+          run_once: yes
+          loop: "{{ repo_names.stdout_lines }}"
+          loop_control:
+            label: "{{ item }}"
+          changed_when: true
+
         - name: push repos
           become_user: stack
           become: yes
@@ -115,7 +129,7 @@
               - "--exclude=__pycache__/"
               - "--exclude=*.pyc"
           with_items: "{{repo_names.stdout_lines}}"
-      when: "use_local_cache | default(true) | bool"
+      when: "use_local_cache | default(false) | bool"
 
 - name: "deploy devstack controller"
   tags: controller
@@ -126,9 +140,14 @@
   tasks:
     - name: set nodepool facts
       set_fact:
-        nodepool:
-          private_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
-          public_ipv4: "{{ hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'] }}"
+        nodepool: >-
+          {{ (hostvars[inventory_hostname].nodepool | default({})) |
+             combine({
+               'private_ipv4': (hostvars[inventory_hostname].nodepool.private_ipv4
+                                | default(hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address'])),
+               'public_ipv4': (hostvars[inventory_hostname].nodepool.public_ipv4
+                               | default(hostvars[inventory_hostname]['ansible_facts']['default_ipv4']['address']))
+             }) }}
         zuul:
           executor:
             log_root: /tmp/zuul_logs
@@ -212,4 +231,17 @@
               - "--exclude=*.pyc"
           with_items: "{{repo_names.stdout_lines}}"
 
-      when: "use_local_cache | default(true) | bool"
+        - name: clean local git cache repos after pull
+          ansible.builtin.shell: |
+            set -e
+            git -C "{{ lookup('env', 'HOME') }}/.cache/ard/repos/{{ item }}" reset --hard
+            git -C "{{ lookup('env', 'HOME') }}/.cache/ard/repos/{{ item }}" clean -xdf
+          args:
+            executable: /bin/bash
+          delegate_to: localhost
+          loop: "{{ repo_names.stdout_lines }}"
+          loop_control:
+            label: "{{ item }}"
+          changed_when: true
+
+      when: "use_local_cache | default(false) | bool"

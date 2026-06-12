@@ -14,7 +14,7 @@ provisioner:
     deployment_name: molecule-default
     resource_name_prefix: ard-molecule-default
     target_branch: master
-    topology: one-controller-one-compute
+    topology: all-in-one
     service_profiles:
       - devstack
       - ovn

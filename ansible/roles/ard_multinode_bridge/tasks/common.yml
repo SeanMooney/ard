@@ -22,7 +22,9 @@
 
 - name: Compute bridge MTU
   ansible.builtin.set_fact:
-    _ard_bridge_mtu: "{{ ard_bridge_mtu if ard_bridge_mtu is not none and ard_bridge_mtu else ([1300, ((_ard_real_iface_mtus | min | default(1338)) | int) - 38] | min) }}"
+    _ard_bridge_mtu: >-
+      {{ ard_bridge_mtu if ard_bridge_mtu is not none and ard_bridge_mtu else
+         (((_ard_real_iface_mtus | min | default(1400)) | int) - (ard_bridge_mtu_headroom | int)) }}
 
 - name: Set tunnel type
   ansible.builtin.set_fact:
@@ -48,6 +50,16 @@
     ard_bridge_ipv4_address: "{{ ard_bridge_ipv4_prefix }}.{{ _ard_bridge_addr_offset | trim }}"
     ard_bridge_ipv6_address: "{{ ard_bridge_ipv6_prefix }}{{ _ard_bridge_addr_offset | trim }}"
     ard_bridge_mtu_effective: "{{ _ard_bridge_mtu | trim }}"
+
+- name: Verify precomputed bridge IPv4 fact
+  ansible.builtin.assert:
+    that:
+      - nodepool.bridge_ipv4 is defined
+      - nodepool.bridge_ipv4 == ard_bridge_ipv4_address
+    fail_msg: >-
+      nodepool.bridge_ipv4 must be precomputed by the provider inventory and
+      match the bridge role address. expected={{ ard_bridge_ipv4_address }},
+      actual={{ nodepool.bridge_ipv4 | default('undefined') }}
 
 - name: Install bridge setup script
   become: true

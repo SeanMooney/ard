@@ -1,36 +1,39 @@
 ---
-# Bridge identity
-ard_bridge_name: br-infra
+# Upstream zuul-jobs multi-node-bridge compatible public API.
+bridge_name: br-infra
+bridge_address_prefix: "172.24.4"
+bridge_address_offset: 1
+bridge_address_subnet: 23
+bridge_configure_address: true
+bridge_authorize_internal_traffic: true
+bridge_mtu: null
+bridge_mtu_headroom: 100
+install_ovs: true
 
-# Tunnel type — empty means auto-detect (gretap for IPv4)
+# ARD-specific bridge extensions.
+# Empty means auto-detect (gretap for IPv4).
 ard_bridge_tunnel_type: ""
+ard_bridge_transport_nodepool_key: datacenter_ipv4
 
-# IPv4 addressing for br-infra
-ard_bridge_ipv4_prefix: "172.24.4"
-ard_bridge_ipv4_offset: 1
-ard_bridge_ipv4_subnet: 23
+# ARD internal aliases. These preserve existing role implementation names while
+# exposing upstream bridge_* variables as the public interface.
+ard_bridge_name: "{{ bridge_name }}"
+ard_bridge_ipv4_prefix: "{{ bridge_address_prefix }}"
+ard_bridge_ipv4_offset: "{{ bridge_address_offset }}"
+ard_bridge_ipv4_subnet: "{{ bridge_address_subnet }}"
+ard_bridge_mtu: "{{ bridge_mtu }}"
+ard_bridge_mtu_headroom: "{{ bridge_mtu_headroom }}"
+ard_bridge_authorize_internal_traffic: "{{ bridge_authorize_internal_traffic }}"
+ard_bridge_endpoint_key: "{{ ard_bridge_transport_nodepool_key }}"
 
-# IPv6 addressing for br-infra
+# IPv6 addressing for br-infra.
 ard_bridge_ipv6_prefix: "fd12:aadd:b1d9::"
 ard_bridge_ipv6_offset: 1
 ard_bridge_ipv6_subnet: 64
 
-# MTU — null means auto-detect: min(1300, smallest_real_iface_mtu - 38)
-ard_bridge_mtu: null
-
-# Routing and NAT (controller/switch only)
+# Routing and NAT (controller/switch only).
 ard_bridge_enable_routing: true
 ard_bridge_enable_nat: true
 
-# Allow all traffic on bridge interface
-ard_bridge_authorize_internal_traffic: true
-
-# GRE key base offset (avoid collisions when multiple overlays coexist)
+# GRE key base offset (avoid collisions when multiple overlays coexist).
 ard_bridge_gre_key_offset: 100
-
-# Tunnel endpoint source — which hostvars field provides the GRETAP
-# local/remote IPs.  Falls back to nodepool.private_ipv4 (management
-# network) when datacenter_ipv4 is not defined on a host.
-# KubeVirt sets nodepool.datacenter_ipv4 via the secondary Multus
-# interface; libvirt uses the management network directly.
-ard_bridge_endpoint_key: datacenter_ipv4

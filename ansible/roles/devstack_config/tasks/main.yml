@@ -1,0 +1,162 @@
+---
+- name: Check deployment variables file
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/deployment.yaml"
+  register: devstack_config_deployment_file
+
+- name: Load deployment variables when present
+  ansible.builtin.include_vars:
+    file: "{{ devstack_config_deployment_file.stat.path }}"
+  when: devstack_config_deployment_file.stat.exists
+
+- name: Check existing common DevStack vars
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/common.yaml"
+  register: devstack_config_common_file
+
+- name: Load existing common DevStack vars
+  ansible.builtin.include_vars:
+    file: "{{ devstack_config_common_file.stat.path }}"
+  when: devstack_config_common_file.stat.exists
+
+- name: Check existing controller DevStack vars
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
+  register: devstack_config_controller_file
+
+- name: Load existing controller DevStack vars
+  ansible.builtin.include_vars:
+    file: "{{ devstack_config_controller_file.stat.path }}"
+  when: devstack_config_controller_file.stat.exists
+
+- name: Check existing compute DevStack vars
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
+  register: devstack_config_compute_file
+
+- name: Load existing compute DevStack vars
+  ansible.builtin.include_vars:
+    file: "{{ devstack_config_compute_file.stat.path }}"
+  when: devstack_config_compute_file.stat.exists
+
+- name: Resolve DevStack topology hosts
+  ansible.builtin.set_fact:
+    _devstack_controller_host: "{{ groups['controller'][0] }}"
+    _devstack_compute_hosts: "{{ groups['compute'] | default(groups['subnode'] | default([])) }}"
+    _devstack_has_subnodes: "{{ (groups['compute'] | default(groups['subnode'] | default([]))) | length > 0 }}"
+
+- name: Resolve DevStack provider policy defaults
+  ansible.builtin.set_fact:
+    _devstack_provider: "{{ ard_provider | default('') }}"
+    _devstack_endpoint_key: >-
+      {{ ('bridge_ipv4' if _devstack_has_subnodes | bool else 'private_ipv4')
+         if devstack_endpoint_nodepool_key == 'auto' else devstack_endpoint_nodepool_key }}
+    _devstack_use_local_cache: >-
+      {{ devstack_use_local_cache
+         if devstack_use_local_cache is not none
+         else false }}
+    _devstack_sync_data_role: >-
+      {{ devstack_sync_data_role
+         if devstack_sync_data_role is not none
+         else ('ard_sync_devstack_data' if (ard_provider | default('')) == 'kubevirt' else 'sync-devstack-data') }}
+
+- name: Validate DevStack endpoint facts
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].nodepool[_devstack_endpoint_key] is defined
+    fail_msg: >-
+      DevStack endpoint key '{{ _devstack_endpoint_key }}' must be present in
+      nodepool facts for {{ item }}.
+  loop: "{{ [_devstack_controller_host] + _devstack_compute_hosts }}"
+
+- name: Resolve effective DevStack values
+  ansible.builtin.set_fact:
+    _devstack_external_bridge_mtu: >-
+      {{ external_bridge_mtu if external_bridge_mtu is defined and external_bridge_mtu is not none else
+         bridge_mtu if bridge_mtu is defined and bridge_mtu is not none else
+         1300 if (ard_provider | default('')) == 'kubevirt' else 1400 }}
+    _devstack_run: "{{ devstack_run if devstack_run is not none else run_devstack | default(true) }}"
+    _devstack_enable_ceph: "{{ devstack_enable_ceph if devstack_enable_ceph is not none else enable_ceph | default(false) }}"
+    _devstack_configure_vdpa: "{{ devstack_configure_vdpa if devstack_configure_vdpa is not none else configure_vdpa | default(false) }}"
+    _devstack_libvirt_type: "{{ devstack_libvirt_type if devstack_libvirt_type is not none else 'kvm' }}"
+    _devstack_stack_user_password: "{{ devstack_stack_user_password if devstack_stack_user_password is not none else stack_user_password | default('tester') }}"
+
+- name: Build DevStack endpoint localrc dictionaries
+  ansible.builtin.set_fact:
+    _devstack_controller_ip: "{{ hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key] }}"
+    _devstack_controller_localrc_extra: >-
+      {{ controller_localrc_extra | default({}) |
+         combine({
+           'SERVICE_HOST': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key],
+           'HOST_IP': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key],
+           'PUBLIC_BRIDGE_MTU': _devstack_external_bridge_mtu,
+           'Q_ML2_TENANT_NETWORK_TYPE': 'geneve'
+         }, recursive=True) }}
+    _devstack_compute_base_localrc_extra: >-
+      {{ compute_localrc_extra | default({}) |
+         combine({
+           'SERVICE_HOST': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key],
+           'PUBLIC_BRIDGE_MTU': _devstack_external_bridge_mtu,
+           'Q_ML2_TENANT_NETWORK_TYPE': 'geneve',
+           'GLANCE_HOSTPORT': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key] ~ ':9292',
+           'Q_HOST': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key],
+           'RABBIT_HOST': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key],
+           'DATABASE_HOST': hostvars[_devstack_controller_host].nodepool[_devstack_endpoint_key]
+         }, recursive=True) }}
+
+- name: Ensure DevStack config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ard_deployment_dir }}/devstack/group_vars"
+    - "{{ ard_deployment_dir }}/devstack/host_vars"
+
+- name: Write common DevStack vars
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/devstack/common.yaml"
+    mode: "0644"
+    content: |
+      ---
+      run_devstack: {{ _devstack_run }}
+      enable_ceph: {{ _devstack_enable_ceph }}
+      configure_vdpa: {{ _devstack_configure_vdpa }}
+      external_bridge_mtu: {{ _devstack_external_bridge_mtu }}
+      devstack_libvirt_type: {{ _devstack_libvirt_type }}
+      stack_user_password: {{ _devstack_stack_user_password }}
+      use_local_cache: {{ _devstack_use_local_cache }}
+      ard_devstack_sync_data_role: {{ _devstack_sync_data_role }}
+      devstack_endpoint_nodepool_key: {{ _devstack_endpoint_key }}
+      {% if devstack_branch is defined %}
+      devstack_branch: {{ devstack_branch }}
+      {% endif %}
+
+- name: Write controller DevStack vars
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
+    mode: "0644"
+    content: |
+      ---
+      controller_localrc_extra: {{ _devstack_controller_localrc_extra | to_json }}
+      controller_local_conf_extra: {{ controller_local_conf_extra | default({}) | to_json }}
+      controller_services_extra: {{ controller_services_extra | default({}) | to_json }}
+
+- name: Write compute group DevStack vars
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
+    mode: "0644"
+    content: |
+      ---
+      compute_local_conf_extra: {{ compute_local_conf_extra | default({}) | to_json }}
+      compute_services_extra: {{ compute_services_extra | default({}) | to_json }}
+
+- name: Write per-compute DevStack endpoint vars
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/devstack/host_vars/{{ item }}.yaml"
+    mode: "0644"
+    content: |
+      ---
+      compute_localrc_extra: {{ (_devstack_compute_base_localrc_extra | combine({'HOST_IP': hostvars[item].nodepool[_devstack_endpoint_key]}, recursive=True)) | to_json }}
+  loop: "{{ _devstack_compute_hosts }}"
+  when: _devstack_has_subnodes | bool

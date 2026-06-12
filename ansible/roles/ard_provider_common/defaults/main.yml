@@ -28,6 +28,16 @@ ard_default_compute_flavor: devstack-compute
 ard_default_vm_preference: devstack
 ard_management_network: ard-mgmt
 
+# Upstream zuul-jobs multi-node-bridge compatible defaults. Provider inventory
+# renderers use these to precompute nodepool.bridge_ipv4 before the bridge role
+# runs.
+bridge_name: br-infra
+bridge_address_prefix: "172.24.4"
+bridge_address_offset: 1
+bridge_address_subnet: 23
+bridge_mtu: null
+bridge_mtu_headroom: 100
+
 ard_image_cache_dir: "{{ lookup('env', 'XDG_CACHE_HOME') | default(lookup('env', 'HOME') + '/.cache', true) }}/ard/images"
 ard_image_download: true
 ard_image_checksum_required: false

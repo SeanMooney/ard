@@ -1,0 +1,60 @@
+---
+# Configure ARD multinode network infrastructure.
+#
+# This mirrors the useful subset of upstream zuul-jobs multinode pre-play
+# behavior while using ARD's VLAN-transparent bridge implementation.
+# It is provider/network infrastructure, not DevStack-specific logic.
+
+- name: Prepare multinode host connectivity helpers
+  hosts: all
+  gather_facts: true
+  roles:
+    - multi-node-known-hosts
+    - multi-node-hosts-file
+    - multi-node-firewall
+    - ard_configure_datacenter_iface
+
+- name: Configure ARD multinode bridge
+  hosts:
+    - switch
+    - peers
+  gather_facts: true
+  become: true
+  roles:
+    - ard_multinode_bridge
+
+- name: Copy build ssh key for multinode access
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    ard_build_ssh_key: "{{ ansible_private_key_file | default(lookup('env', 'HOME') ~ '/.ssh/id_ed25519_stack') }}"
+    ard_build_ssh_key_dest: "{{ ard_build_ssh_key | basename }}"
+    ard_build_ssh_target_user: "{{ ansible_user | default('stack') }}"
+  tasks:
+    - name: Authorize build public key
+      ansible.builtin.authorized_key:
+        user: "{{ ard_build_ssh_target_user }}"
+        manage_dir: true
+        key: "{{ lookup('file', ard_build_ssh_key ~ '.pub') }}"
+
+    - name: Get target user home directory
+      ansible.builtin.user:
+        name: "{{ ard_build_ssh_target_user }}"
+      register: ard_build_ssh_target_user_info
+
+    - name: Install build private key
+      ansible.builtin.copy:
+        src: "{{ ard_build_ssh_key }}"
+        dest: "{{ ard_build_ssh_target_user_info.home }}/.ssh/{{ ard_build_ssh_key_dest }}"
+        mode: "0600"
+        owner: "{{ ard_build_ssh_target_user }}"
+        force: false
+
+    - name: Install build public key
+      ansible.builtin.copy:
+        src: "{{ ard_build_ssh_key }}.pub"
+        dest: "{{ ard_build_ssh_target_user_info.home }}/.ssh/{{ ard_build_ssh_key_dest }}.pub"
+        mode: "0644"
+        owner: "{{ ard_build_ssh_target_user }}"
+        force: false

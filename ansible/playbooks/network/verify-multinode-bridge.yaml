@@ -1,0 +1,109 @@
+---
+- name: Verify ARD multinode bridge on all bridge nodes
+  hosts:
+    - switch
+    - peers
+  gather_facts: false
+  become: true
+  vars:
+    ard_verify_bridge_name: "{{ bridge_name | default('br-infra') }}"
+    ard_verify_has_peers: "{{ groups['peers'] is defined and groups['peers'] | length > 0 }}"
+  tasks:
+    - name: Check bridge link exists
+      ansible.builtin.command: "ip link show {{ ard_verify_bridge_name }}"
+      register: ard_verify_bridge_link
+      changed_when: false
+      when: ard_verify_has_peers | bool
+
+    - name: Check bridge IPv4 address
+      ansible.builtin.command: "ip -4 addr show {{ ard_verify_bridge_name }}"
+      register: ard_verify_bridge_addr
+      changed_when: false
+      when: ard_verify_has_peers | bool
+
+    - name: Assert bridge IPv4 matches nodepool.bridge_ipv4
+      ansible.builtin.assert:
+        that:
+          - nodepool.bridge_ipv4 is defined
+          - nodepool.bridge_ipv4 in ard_verify_bridge_addr.stdout
+        fail_msg: "{{ ard_verify_bridge_name }} on {{ inventory_hostname }} does not have {{ nodepool.bridge_ipv4 | default('undefined') }}"
+      when: ard_verify_has_peers | bool
+
+    - name: Check GRETAP tunnel exists
+      ansible.builtin.command: ip link show type gretap
+      register: ard_verify_gretap
+      changed_when: false
+      when: ard_verify_has_peers | bool
+
+    - name: Assert GRETAP tunnel exists
+      ansible.builtin.assert:
+        that:
+          - ard_verify_gretap.stdout | length > 0
+        fail_msg: "No GRETAP tunnel found on {{ inventory_hostname }}"
+      when: ard_verify_has_peers | bool
+
+    - name: Check ard-bridge service is active
+      ansible.builtin.command: systemctl is-active ard-bridge
+      register: ard_verify_bridge_service
+      changed_when: false
+      when: ard_verify_has_peers | bool
+
+- name: Verify bridge reachability from switch
+  hosts: switch
+  gather_facts: false
+  become: true
+  vars:
+    ard_verify_has_peers: "{{ groups['peers'] is defined and groups['peers'] | length > 0 }}"
+  tasks:
+    - name: Ping peer bridge IPv4 addresses
+      ansible.builtin.command: "ping -c 3 -W 5 {{ hostvars[item].nodepool.bridge_ipv4 }}"
+      loop: "{{ groups['peers'] | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      when: ard_verify_has_peers | bool
+
+- name: Verify VLAN transparency over ARD bridge
+  hosts:
+    - switch
+    - peers
+  gather_facts: false
+  become: true
+  vars:
+    ard_verify_bridge_name: "{{ bridge_name | default('br-infra') }}"
+    ard_verify_vlan_id: 100
+    ard_verify_vlan_prefix: 10.99.100
+    ard_verify_has_peers: "{{ groups['peers'] is defined and groups['peers'] | length > 0 }}"
+  tasks:
+    - name: Compute VLAN verification address
+      ansible.builtin.set_fact:
+        ard_verify_vlan_host_offset: >-
+          {{ 1 if inventory_hostname in groups['switch'] else 2 + groups['peers'].index(inventory_hostname) }}
+        ard_verify_vlan_ip: >-
+          {{ ard_verify_vlan_prefix }}.{{ 1 if inventory_hostname in groups['switch'] else 2 + groups['peers'].index(inventory_hostname) }}
+      when: ard_verify_has_peers | bool
+
+    - name: Configure VLAN verification interface
+      ansible.builtin.shell: |
+        set -e
+        ip link add link {{ ard_verify_bridge_name }} name {{ ard_verify_bridge_name }}.{{ ard_verify_vlan_id }} type vlan id {{ ard_verify_vlan_id }} 2>/dev/null || true
+        ip addr add {{ ard_verify_vlan_ip }}/24 dev {{ ard_verify_bridge_name }}.{{ ard_verify_vlan_id }} 2>/dev/null || true
+        ip link set {{ ard_verify_bridge_name }}.{{ ard_verify_vlan_id }} up
+      changed_when: true
+      when: ard_verify_has_peers | bool
+
+    - name: Ping peer VLAN verification addresses from switch
+      ansible.builtin.command: >-
+        ping -c 3 -W 5 {{ ard_verify_vlan_prefix }}.{{ 2 + groups['peers'].index(item) }}
+      loop: "{{ groups['peers'] | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when: inventory_hostname in groups['switch'] and ard_verify_has_peers | bool
+      changed_when: false
+
+    - name: Clean up VLAN verification interface
+      ansible.builtin.command: "ip link del {{ ard_verify_bridge_name }}.{{ ard_verify_vlan_id }}"
+      register: ard_verify_vlan_cleanup
+      failed_when: false
+      changed_when: ard_verify_vlan_cleanup.rc == 0
+      when: ard_verify_has_peers | bool

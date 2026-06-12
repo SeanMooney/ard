@@ -46,6 +46,16 @@
         regexp: "^127.0.*\\b.*\\s{{ ansible_hostname }}\\b"
         state: absent
 
+    - name: Remove stale host entries for inventory nodes
+      lineinfile:
+        dest: /etc/hosts
+        regexp: "^.*\\s{{ item }}(\\s|$).*$"
+        state: absent
+      loop: >-
+        {{ (groups['all']
+            + (groups['all'] | map('extract', hostvars, 'ansible_hostname') | list))
+           | unique | list }}
+
     - name: get short hostname
       command: "hostname -s"
       register: short_hostname
@@ -63,7 +73,7 @@
         marker: "# {mark} ANSIBLE GENERATED HOSTS"
         block: |
           {% for host in groups['all'] %}
-          {{ hostvars[host]['ansible_facts']['default_ipv4']['address'] }} {{ hostvars[host]['ansible_hostname'] }} {{ host }} {{ hostvars[host]['ansible_fqdn'] | default(omit) }}
+          {{ hostvars[host]['nodepool']['bridge_ipv4'] | default(hostvars[host]['nodepool']['private_ipv4'] | default(hostvars[host]['ansible_facts']['default_ipv4']['address'])) }} {{ hostvars[host]['ansible_hostname'] }} {{ host }} {{ hostvars[host]['ansible_fqdn'] | default(omit) }}
           {% endfor %}
 
     # this can sometime result in dns lookup so we do this after we have populated /etc/hosts

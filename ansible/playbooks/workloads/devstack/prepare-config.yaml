@@ -1,86 +1,18 @@
 ---
 # Generate DevStack configuration vars for an ARD deployment.
-# Writes deployment/devstack/{common,group_vars/{controller,compute}}.yaml
-# with bridge IP overrides when ard_bridge_ipv4_prefix is defined.
+# Writes deployment/devstack/{common,group_vars,host_vars} using generic
+# nodepool endpoint facts such as nodepool.bridge_ipv4.
 #
 # Usage:
 #   ansible-playbook -i deployment/inventory.yaml \
 #     ansible/playbooks/workloads/devstack/prepare-config.yaml \
 #     -e ard_deployment_dir=deployment
-#
+
 - name: Prepare DevStack configuration
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     ard_deployment_dir: "{{ ard_deployment_dir | default('deployment') }}"
-    # Bridge IP layout — defaults match ard_multinode_bridge role defaults
-    ard_bridge_ipv4_prefix: "172.24.4"
-    ard_bridge_controller_offset: 1
-    ard_bridge_mtu: 1300
-    # DevStack defaults
-    devstack_libvirt_type: qemu
-    devstack_run: true
-    devstack_enable_ceph: false
-    devstack_configure_vdpa: false
-    devstack_stack_user_password: tester
-    devstack_use_local_cache: false
-    devstack_sync_data_role: ard_sync_devstack_data
-  tasks:
-    - name: Compute bridge IPs from topology
-      ansible.builtin.set_fact:
-        _bridge_controller_ip: "{{ ard_bridge_ipv4_prefix }}.{{ ard_bridge_controller_offset }}"
-        _bridge_compute_ip: "{{ ard_bridge_ipv4_prefix }}.{{ ard_bridge_controller_offset | int + 1 }}"
-
-    - name: Ensure devstack config directories exist
-      ansible.builtin.file:
-        path: "{{ ard_deployment_dir }}/devstack/group_vars"
-        state: directory
-        mode: "0755"
-
-    - name: Write common DevStack vars
-      ansible.builtin.copy:
-        dest: "{{ ard_deployment_dir }}/devstack/common.yaml"
-        mode: "0644"
-        content: |
-          ---
-          run_devstack: {{ devstack_run }}
-          enable_ceph: {{ devstack_enable_ceph }}
-          configure_vdpa: {{ devstack_configure_vdpa }}
-          external_bridge_mtu: {{ ard_bridge_mtu }}
-          devstack_libvirt_type: {{ devstack_libvirt_type }}
-          stack_user_password: {{ devstack_stack_user_password }}
-          use_local_cache: {{ devstack_use_local_cache }}
-          ard_devstack_sync_data_role: {{ devstack_sync_data_role }}
-
-    - name: Write controller DevStack vars
-      ansible.builtin.copy:
-        dest: "{{ ard_deployment_dir }}/devstack/group_vars/controller.yaml"
-        mode: "0644"
-        content: |
-          ---
-          controller_localrc_extra:
-            SERVICE_HOST: "{{ _bridge_controller_ip }}"
-            HOST_IP: "{{ _bridge_controller_ip }}"
-            PUBLIC_BRIDGE_MTU: "{{ ard_bridge_mtu }}"
-            Q_ML2_TENANT_NETWORK_TYPE: geneve
-          controller_local_conf_extra: {}
-          controller_services_extra: {}
-
-    - name: Write compute DevStack vars
-      ansible.builtin.copy:
-        dest: "{{ ard_deployment_dir }}/devstack/group_vars/compute.yaml"
-        mode: "0644"
-        content: |
-          ---
-          compute_localrc_extra:
-            SERVICE_HOST: "{{ _bridge_controller_ip }}"
-            HOST_IP: "{{ _bridge_compute_ip }}"
-            PUBLIC_BRIDGE_MTU: "{{ ard_bridge_mtu }}"
-            Q_ML2_TENANT_NETWORK_TYPE: geneve
-            GLANCE_HOSTPORT: "{{ _bridge_controller_ip }}:9292"
-            Q_HOST: "{{ _bridge_controller_ip }}"
-            RABBIT_HOST: "{{ _bridge_controller_ip }}"
-            DATABASE_HOST: "{{ _bridge_controller_ip }}"
-          compute_local_conf_extra: {}
-          compute_services_extra: {}
+  roles:
+    - devstack_config

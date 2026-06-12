@@ -1,0 +1,12 @@
+---
+# Generic DevStack config generation defaults. Provider-specific policy should
+# be expressed as vars before this role runs; these defaults keep local ARD
+# execution aligned with the bridge endpoint model.
+devstack_endpoint_nodepool_key: auto
+devstack_run: null
+devstack_enable_ceph: null
+devstack_configure_vdpa: null
+devstack_libvirt_type: null
+devstack_stack_user_password: null
+devstack_use_local_cache: null
+devstack_sync_data_role: null

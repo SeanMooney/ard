@@ -6,7 +6,6 @@ ard_render_services:
         run_devstack: true
         enable_ceph: false
         configure_vdpa: false
-        external_bridge_mtu: 1450
         devstack_libvirt_type: kvm
         stack_user_password: tester
       controller:
