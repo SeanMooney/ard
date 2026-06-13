@@ -36,7 +36,7 @@
     ard_provider: "{{ ard_provider | default('libvirt') }}"
     ard_provider_profile: "{{ (ard_provider == 'static' and ard_provider_profile == 'local-libvirt') | ternary('local-static', ard_provider_profile) }}"
     ard_topology: "{{ ard_topology | default('one-controller-one-compute') }}"
-    ard_target_branch: "{{ ard_target_branch | default('master') }}"
+    ard_devstack_branch_effective: "{{ ard_devstack_branch | default(ard_target_branch | default('master'), true) }}"
 
 - name: Load ARD render topology presets
   ansible.builtin.include_vars:
@@ -107,8 +107,8 @@
 - name: Compose ARD branch and provider profile presets
   ansible.builtin.set_fact:
     ard_render_branch_config: >-
-      {{ {'devstack': {'common': {'devstack_branch': ard_target_branch}}} |
-         combine(ard_render_branches[ard_target_branch] | default({}), recursive=True) }}
+      {{ {'devstack': {'common': {'devstack_branch': ard_devstack_branch_effective}}} |
+         combine(ard_render_branches[ard_devstack_branch_effective] | default({}), recursive=True) }}
     ard_render_provider_profile_config: "{{ ard_render_provider_profiles[ard_provider_profile] }}"
 
 - name: Validate provider profile/provider match
@@ -162,10 +162,14 @@
          default((ard_provider in ['libvirt', 'static']) |
            ternary('ard-' ~ ard_deployment_name, ard_provider_resource_prefix_default), true) }}
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
-    ard_render_default_image: "{{ ard_render_image | default(ard_render_provider_defaults.image) }}"
+    ard_devstack_image_effective: "{{ ard_devstack_image | default(ard_render_image | default(ard_render_provider_defaults.image, true), true) }}"
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
+
+- name: Derive local render defaults
+  ansible.builtin.set_fact:
+    ard_render_default_image: "{{ ard_devstack_image_effective }}"
 
 - name: Normalize ARD provider resource prefix compatibility
   ansible.builtin.set_fact:
@@ -339,9 +343,12 @@
       ard_provider_resource_prefix: {{ ard_provider_resource_prefix }}
       ard_resource_name_prefix: {{ ard_resource_name_prefix }}
 
-      ard_target_branch: {{ ard_target_branch }}
+      ard_devstack_branch: {{ ard_devstack_branch_effective }}
+      ard_target_branch: {{ ard_devstack_branch_effective }}
       ard_topology: {{ ard_topology }}
       ard_service_profiles: {{ ard_render_service_profile_list | to_json }}
+      ard_devstack_image: {{ ard_render_default_image }}
+      ard_render_image: {{ ard_render_default_image }}
       ard_default_image: {{ ard_render_default_image }}
       ard_default_controller_flavor: {{ ard_render_controller_flavor }}
       ard_default_compute_flavor: {{ ard_render_compute_flavor }}

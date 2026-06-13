@@ -14,6 +14,9 @@ ard_static_default_port: 22
 ard_static_default_private_key_file: "{{ lookup('env', 'HOME') + '/.ssh/id_ed25519_stack' }}"
 
 ard_target_branch: master
+ard_devstack_branch: "{{ ard_target_branch | default('master') }}"
+ard_devstack_image: ""
+ard_render_image: ""
 ard_service_profiles:
   - devstack
   - ovn
