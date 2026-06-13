@@ -8,17 +8,10 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
+  ard_render_file: ../../examples/devstack/all-in-one/render.yaml
   ard:
-    provider: libvirt
-    provider_profile: local-libvirt
-    deployment_name: molecule-default
-    resource_name_prefix: ard-molecule-default
-    target_branch: master
-    topology: all-in-one
-    service_profiles:
-      - devstack
-      - ovn
-      - tempest
+    ard_deployment_name: molecule-default
+    ard_provider_resource_prefix: ard-molecule-default
     libvirt:
       network_name: ard-molecule-default
       network_cidr: 192.168.97.0/24

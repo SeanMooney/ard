@@ -8,14 +8,10 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: default
+  ard_render_file: ../../examples/oko/microshift-two-edpm-compute/render.yaml
   ard:
-    provider: libvirt
-    provider_profile: local-libvirt
-    deployment_name: molecule-oko-microshift
-    resource_name_prefix: ard-molecule-oko-microshift
-    topology: oko-microshift-two-compute
-    render_image: centos-stream-10
-    service_profiles: []
+    ard_deployment_name: molecule-oko-microshift
+    ard_provider_resource_prefix: ard-molecule-oko-microshift
     libvirt:
       network_name: ard-molecule-oko-microshift
       network_cidr: 192.168.102.0/24
