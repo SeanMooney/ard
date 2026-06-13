@@ -88,6 +88,7 @@
         _ard_render_schema_version_inline: "{{ _ard_molecule_ard_config.get('ard_render_schema_version', '') | default('', true) }}"
         _ard_render_schema_version_file: "{{ ard_molecule_render_file_data.get('ard_render_schema_version', '') | default('', true) }}"
         _ard_topology_inline: "{{ _ard_molecule_ard_config.get('ard_topology', _ard_molecule_ard_config.get('topology', none)) }}"
+        _ard_devstack_branch_inline: "{{ _ard_molecule_ard_config.get('ard_devstack_branch', _ard_molecule_ard_config.get('ard_target_branch', _ard_molecule_ard_config.get('target_branch', none))) }}"
         _ard_target_branch_inline: "{{ _ard_molecule_ard_config.get('ard_target_branch', _ard_molecule_ard_config.get('target_branch', none)) }}"
         _ard_service_profiles_inline: "{{ _ard_molecule_ard_config.get('ard_service_profiles', _ard_molecule_ard_config.get('service_profiles', none)) }}"
         _ard_management_network_inline: "{{ _ard_molecule_ard_config.get('ard_management_network', _ard_molecule_ard_config.get('management_network', none)) }}"
@@ -96,7 +97,6 @@
         _ard_libvirt_network_gateway_inline: "{{ _ard_molecule_ard_config.get('ard_libvirt_network_gateway', _ard_libvirt_cfg.get('network_gateway', none)) }}"
         _ard_render_overrides: "{{ _ard_molecule_ard_config.get('ard_render_overrides', _ard_molecule_ard_config.get('render_overrides', none)) }}"
         _ard_render_node_overrides: "{{ _ard_molecule_ard_config.get('ard_render_node_overrides', _ard_molecule_ard_config.get('node_overrides', none)) }}"
-        _ard_render_image: "{{ _ard_molecule_ard_config.get('ard_render_image', _ard_molecule_ard_config.get('render_image', none)) }}"
         _ard_default_image: "{{ _ard_molecule_ard_config.get('ard_default_image', _ard_molecule_ard_config.get('default_image', none)) }}"
         _ard_default_controller_flavor: "{{ _ard_molecule_ard_config.get('ard_default_controller_flavor', _ard_molecule_ard_config.get('default_controller_flavor', none)) }}"
         _ard_default_compute_flavor: "{{ _ard_molecule_ard_config.get('ard_default_compute_flavor', _ard_molecule_ard_config.get('default_compute_flavor', none)) }}"
@@ -115,7 +115,8 @@
             'ard_deployment_name': _ard_deployment_name,
             'ard_provider_resource_prefix': _ard_provider_resource_prefix_default,
             'ard_resource_name_prefix': _ard_provider_resource_prefix_default,
-            'ard_target_branch': _ard_target_branch_inline | default('master'),
+            'ard_devstack_branch': _ard_devstack_branch_inline | default(_ard_target_branch_inline | default('master')),
+            'ard_target_branch': _ard_devstack_branch_inline | default(_ard_target_branch_inline | default('master')),
             'ard_service_profiles': _ard_service_profiles_inline | default(['devstack', 'ovn', 'tempest']),
             'ard_libvirt_network_name': _ard_libvirt_network_name_inline | default('ard-' ~ _ard_deployment_name),
             'ard_libvirt_network_cidr': _ard_libvirt_network_cidr_inline,
@@ -148,10 +149,18 @@
           legacy_key: topology
           canonical: "{{ _ard_molecule_ard_config.get('ard_topology', _ard_molecule_ard_config.get('topology', '')) }}"
           legacy: "{{ _ard_molecule_ard_config.get('topology', '') }}"
+        - canonical_key: ard_devstack_branch
+          legacy_key: ard_target_branch
+          canonical: "{{ _ard_molecule_ard_config.get('ard_devstack_branch', _ard_molecule_ard_config.get('ard_target_branch', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('ard_target_branch', '') }}"
         - canonical_key: ard_target_branch
           legacy_key: target_branch
           canonical: "{{ _ard_molecule_ard_config.get('ard_target_branch', _ard_molecule_ard_config.get('target_branch', '')) }}"
           legacy: "{{ _ard_molecule_ard_config.get('target_branch', '') }}"
+        - canonical_key: ard_devstack_image
+          legacy_key: ard_render_image
+          canonical: "{{ _ard_molecule_ard_config.get('ard_devstack_image', _ard_molecule_ard_config.get('ard_render_image', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('ard_render_image', '') }}"
 
     - name: Validate schema-version compatibility
       ansible.builtin.assert:
@@ -188,6 +197,9 @@
         - output_key: ard_deployment_name
           canonical_key: ard_deployment_name
           legacy_key: deployment_name
+        - output_key: ard_devstack_branch
+          canonical_key: ard_devstack_branch
+          legacy_key: ard_target_branch
         - output_key: ard_target_branch
           canonical_key: ard_target_branch
           legacy_key: target_branch
@@ -206,6 +218,9 @@
         - output_key: ard_render_node_overrides
           canonical_key: ard_render_node_overrides
           legacy_key: node_overrides
+        - output_key: ard_devstack_image
+          canonical_key: ard_devstack_image
+          legacy_key: ard_render_image
         - output_key: ard_render_image
           canonical_key: ard_render_image
           legacy_key: render_image
