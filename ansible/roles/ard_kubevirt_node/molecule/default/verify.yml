@@ -132,6 +132,22 @@
           - _controller_vm.spec.dataVolumeTemplates[0].spec.storage.resources.requests.storage == '80Gi'
         fail_msg: "Controller VM dataVolumeTemplates incorrect"
 
+    - name: Verify controller VM dataVolumeTemplate labels
+      when:
+        - _controller_vm.spec.dataVolumeTemplates is defined
+        - _controller_vm.spec.dataVolumeTemplates | length > 0
+        - _controller_vm.spec.dataVolumeTemplates[0].metadata is defined
+        - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels is defined
+      ansible.builtin.assert:
+        that:
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/part-of'] == 'ard'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/provider'] == 'kubevirt'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/node'] == 'controller'
+        fail_msg: "Controller VM dataVolumeTemplate labels incorrect"
+
     - name: Verify no storageClassName in controller VM (default null)
       ansible.builtin.assert:
         that:
@@ -231,6 +247,22 @@
         that:
           - _compute_vm.spec.dataVolumeTemplates[0].metadata.name == 'smooney-devstack-1-compute-1-rootdisk'
         fail_msg: "Compute-1 rootdisk volume name incorrect"
+
+    - name: Verify compute-1 VM dataVolumeTemplate labels
+      when:
+        - _compute_vm.spec.dataVolumeTemplates is defined
+        - _compute_vm.spec.dataVolumeTemplates | length > 0
+        - _compute_vm.spec.dataVolumeTemplates[0].metadata is defined
+        - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels is defined
+      ansible.builtin.assert:
+        that:
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/part-of'] == 'ard'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/provider'] == 'kubevirt'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/node'] == 'compute-1'
+        fail_msg: "Compute-1 VM dataVolumeTemplate labels incorrect"
 
     - name: Extract compute-1 cloud-init userData
       ansible.builtin.set_fact:

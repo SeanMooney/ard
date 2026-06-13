@@ -18,6 +18,16 @@ spec:
   dataVolumeTemplates:
     - metadata:
         name: "{{ _node_volume_name }}"
+        labels:
+          app.kubernetes.io/part-of: ard
+          app.kubernetes.io/managed-by: ard
+          app.kubernetes.io/instance: "{{ ard_deployment_name }}"
+          ard.teim.app/deployment: "{{ ard_deployment_name }}"
+          ard.teim.app/provider: kubevirt
+          ard.teim.app/node: "{{ ard_node.name }}"
+{% for key, value in ard_kubevirt_extra_labels.items() %}
+          {{ key }}: "{{ value }}"
+{% endfor %}
       spec:
         sourceRef:
           kind: "{{ _node_image_source_kind }}"
