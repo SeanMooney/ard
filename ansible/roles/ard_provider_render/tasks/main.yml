@@ -194,6 +194,40 @@
   ansible.builtin.set_fact:
     ard_render_nodes: "{{ ard_render_nodes_doc.ard_nodes }}"
 
+- name: Resolve requested ARD network names from rendered nodes
+  ansible.builtin.set_fact:
+    ard_render_requested_network_names: >-
+      {{ ard_render_nodes | map(attribute='networks') | flatten | map(attribute='name') | list | unique }}
+
+- name: Validate requested ARD networks are defined
+  ansible.builtin.assert:
+    that:
+      - ard_render_requested_network_names | difference(ard_render_networks_config.keys() | list) | length == 0
+    fail_msg: >-
+      Rendered nodes reference network(s) that are not defined in the rendered network map: {{
+      (ard_render_requested_network_names | difference(ard_render_networks_config.keys() | list)) | join(', ')
+      }}.
+
+- name: Validate requested ARD network modes against provider capabilities
+  ansible.builtin.assert:
+    that:
+      - ard_render_networks_config[item].mode | default('nat') in ard_render_provider_profile_config.capabilities.network_modes
+    fail_msg: >-
+      Network '{{ item }}' is not supported by provider profile '{{ ard_provider_profile }}'
+      (unsupported mode '{{ ard_render_networks_config[item].mode | default('nat') }}').
+  loop: "{{ ard_render_requested_network_names }}"
+  when: ard_render_provider_profile_config.capabilities.network_modes is defined
+
+- name: Validate requested ARD network names against provider capabilities
+  ansible.builtin.assert:
+    that:
+      - ard_render_requested_network_names | difference(ard_render_provider_profile_config.capabilities.networks) | length == 0
+    fail_msg: >-
+      Rendered nodes reference network(s) that are not supported by provider profile '{{ ard_provider_profile }}': {{
+      (ard_render_requested_network_names | difference(ard_render_provider_profile_config.capabilities.networks)) | join(', ')
+      }}.
+  when: ard_render_provider_profile_config.capabilities.networks is defined
+
 - name: Validate normalized ARD nodes
   ansible.builtin.assert:
     that:
