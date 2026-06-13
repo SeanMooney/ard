@@ -166,6 +166,7 @@
       ---
       ard_provider: kubevirt
       ard_deployment_name: {{ ard_deployment_name }}
+      ard_provider_resource_prefix: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}
       ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
       controller_lb_service: {{ _controller_node_resource_name }}-lb
       controller_lb_ip: {{ _controller_lb_ip | default('') }}
