@@ -1,0 +1,2 @@
+---
+- import_playbook: ../../ansible/playbooks/provider/molecule-create.yaml

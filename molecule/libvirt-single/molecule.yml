@@ -10,9 +10,11 @@ provisioner:
     ANSIBLE_STDOUT_CALLBACK: yaml
   ard_render_file: ../../examples/provider-test/single-node/render.yaml
   ard:
-    ard_deployment_name: smooney-ardtest
-    ard_provider: kubevirt
-    ard_provider_profile: kubevirt
+    ard_deployment_name: molecule-libvirt-single
+    ard_provider_resource_prefix: ard-molecule-libvirt-single
+    libvirt:
+      network_name: ard-molecule-libvirt-single
+      network_cidr: 192.168.100.0/24
 verifier:
   name: ansible
 scenario:
