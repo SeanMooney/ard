@@ -15,22 +15,292 @@
         file: "{{ ard_scenario_dir }}/molecule.yml"
         name: ard_molecule_config
 
-    - name: Set provider from scenario config
-      ansible.builtin.set_fact:
-        _ard_provider: "{{ ard_molecule_config.provisioner.ard.provider | default('libvirt') }}"
-
-    - name: Validate Molecule ARD scenario configuration
+    - name: Validate scenario configuration exists
       ansible.builtin.assert:
         that:
+          - ard_molecule_config.provisioner is defined
           - ard_molecule_config.provisioner.ard is defined
-          - ard_molecule_config.provisioner.ard.topology is defined
+        fail_msg: "Molecule scenario must define provisioner.ard."
+
+    - name: Set Molecule render-file inputs
+      ansible.builtin.set_fact:
+        _ard_provider: "{{ ard_molecule_config.provisioner.ard.provider | default(none, true) }}"
+        _ard_provider_profile: "{{ ard_molecule_config.provisioner.ard.provider_profile | default(none, true) }}"
+        _ard_raw_render_file: "{{ (ard_molecule_config.provisioner.ard_render_file | default(ard_molecule_config.provisioner.ard.ard_render_file | default('', true)) | trim) }}"
+
+    - name: Initialize render-file data
+      ansible.builtin.set_fact:
+        ard_molecule_render_file_data: {}
+        _ard_has_render_file: false
+        _ard_render_file_path: ''
+
+    - name: Resolve absolute/relative Molecule render file path
+      ansible.builtin.set_fact:
+        _ard_has_render_file: "{{ _ard_raw_render_file | length > 0 }}"
+        _ard_render_file_path: >-
+          {{ _ard_raw_render_file if (_ard_raw_render_file is match('^/'))
+             else (ard_scenario_dir ~ '/' ~ _ard_raw_render_file) }}
+      when: _ard_raw_render_file | length > 0
+
+    - name: Check Molecule render file exists
+      ansible.builtin.stat:
+        path: "{{ _ard_render_file_path }}"
+      register: _ard_render_file_stat
+      when: _ard_has_render_file
+
+    - name: Ensure render file exists
+      ansible.builtin.assert:
+        that:
+          - _ard_render_file_stat.stat.exists
+        fail_msg: "molecule scenario requested render file {{ _ard_render_file_path }} but file was not found."
+      when: _ard_has_render_file
+
+    - name: Load Molecule render file data
+      ansible.builtin.set_fact:
+        ard_molecule_render_file_data: >-
+          {{ lookup('ansible.builtin.file', _ard_render_file_path) | from_yaml }}
+      when: _ard_has_render_file
+
+    - name: Capture inline Molecule override map
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_config: "{{ ard_molecule_config.provisioner.ard | default({}, true) }}"
+        _ard_libvirt_cfg: "{{ ard_molecule_config.provisioner.ard.libvirt | default({}, true) }}"
+        _ard_kubevirt_cfg: "{{ ard_molecule_config.provisioner.ard.kubevirt | default({}, true) }}"
+
+    - name: Derive canonical deployment name
+      ansible.builtin.set_fact:
+        _ard_deployment_name: "{{ _ard_molecule_ard_config.get('ard_deployment_name', _ard_molecule_ard_config.get('deployment_name', ard_scenario_dir | basename)) }}"
+
+    - name: Derive canonical deployment and alias-normalized inline values
+      ansible.builtin.set_fact:
+        _ard_provider_resource_prefix: "{{ _ard_molecule_ard_config.get('ard_provider_resource_prefix', _ard_molecule_ard_config.get('resource_name_prefix', 'ard-' ~ (_ard_deployment_name | default(ard_scenario_dir | basename)))) }}"
+        _ard_render_schema_version_inline: "{{ _ard_molecule_ard_config.get('ard_render_schema_version', '') | default('', true) }}"
+        _ard_render_schema_version_file: "{{ ard_molecule_render_file_data.get('ard_render_schema_version', '') | default('', true) }}"
+        _ard_topology_inline: "{{ _ard_molecule_ard_config.get('ard_topology', _ard_molecule_ard_config.get('topology', none)) }}"
+        _ard_target_branch_inline: "{{ _ard_molecule_ard_config.get('ard_target_branch', _ard_molecule_ard_config.get('target_branch', none)) }}"
+        _ard_service_profiles_inline: "{{ _ard_molecule_ard_config.get('ard_service_profiles', _ard_molecule_ard_config.get('service_profiles', none)) }}"
+        _ard_management_network_inline: "{{ _ard_molecule_ard_config.get('ard_management_network', _ard_molecule_ard_config.get('management_network', none)) }}"
+        _ard_libvirt_network_name_inline: "{{ _ard_molecule_ard_config.get('ard_libvirt_network_name', _ard_libvirt_cfg.get('network_name', none)) }}"
+        _ard_libvirt_network_cidr_inline: "{{ _ard_molecule_ard_config.get('ard_libvirt_network_cidr', _ard_libvirt_cfg.get('network_cidr', none)) }}"
+        _ard_libvirt_network_gateway_inline: "{{ _ard_molecule_ard_config.get('ard_libvirt_network_gateway', _ard_libvirt_cfg.get('network_gateway', none)) }}"
+        _ard_render_overrides: "{{ _ard_molecule_ard_config.get('ard_render_overrides', _ard_molecule_ard_config.get('render_overrides', none)) }}"
+        _ard_render_node_overrides: "{{ _ard_molecule_ard_config.get('ard_render_node_overrides', _ard_molecule_ard_config.get('node_overrides', none)) }}"
+        _ard_render_image: "{{ _ard_molecule_ard_config.get('ard_render_image', _ard_molecule_ard_config.get('render_image', none)) }}"
+        _ard_default_image: "{{ _ard_molecule_ard_config.get('ard_default_image', _ard_molecule_ard_config.get('default_image', none)) }}"
+        _ard_default_controller_flavor: "{{ _ard_molecule_ard_config.get('ard_default_controller_flavor', _ard_molecule_ard_config.get('default_controller_flavor', none)) }}"
+        _ard_default_compute_flavor: "{{ _ard_molecule_ard_config.get('ard_default_compute_flavor', _ard_molecule_ard_config.get('default_compute_flavor', none)) }}"
+        _ard_default_vm_preference: "{{ _ard_molecule_ard_config.get('ard_default_vm_preference', _ard_molecule_ard_config.get('default_vm_preference', none)) }}"
+        _ard_kubevirt_namespace: "{{ _ard_molecule_ard_config.get('ard_kubevirt_namespace', _ard_kubevirt_cfg.get('namespace', none)) }}"
+        _ard_kubevirt_storage_class: "{{ _ard_molecule_ard_config.get('ard_kubevirt_storage_class', _ard_kubevirt_cfg.get('storage_class', none)) }}"
+        _ard_kubevirt_extra_labels: "{{ _ard_molecule_ard_config.get('ard_kubevirt_extra_labels', _ard_kubevirt_cfg.get('extra_labels', none)) }}"
+        _ard_kubevirt_controller_service_ports: "{{ _ard_molecule_ard_config.get('ard_kubevirt_controller_service_ports', _ard_kubevirt_cfg.get('controller_service_ports', none)) }}"
+
+    - name: Build defaults for inline-only scenarios (no external render file)
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_defaults: >-
+          {{ ({
+            'ard_provider': _ard_provider | default('libvirt'),
+            'ard_provider_profile': _ard_provider_profile | default('local-libvirt'),
+            'ard_deployment_name': _ard_deployment_name,
+            'ard_provider_resource_prefix': _ard_provider_resource_prefix,
+            'ard_resource_name_prefix': _ard_provider_resource_prefix,
+            'ard_target_branch': _ard_target_branch_inline | default('master'),
+            'ard_service_profiles': _ard_service_profiles_inline | default(['devstack', 'ovn', 'tempest']),
+            'ard_libvirt_network_name': _ard_libvirt_network_name_inline | default('ard-' ~ _ard_deployment_name),
+            'ard_libvirt_network_cidr': _ard_libvirt_network_cidr_inline,
+            'ard_management_network': _ard_management_network_inline
+          } | dict2items
+            | rejectattr('value', 'equalto', None)
+            | rejectattr('value', 'equalto', '')
+            | list
+            | items2dict) if (not _ard_has_render_file) else {} }}
+
+    - name: Warn on canonical alias conflicts
+      ansible.builtin.debug:
+        msg: >-
+          Canonical value '{{ item.canonical_key }}' is set to '{{ item.canonical }}' and legacy value
+          '{{ item.legacy_key }}' is '{{ item.legacy }}'; canonical wins in merge order.
+      when:
+        - item.canonical | default('') | string | length > 0
+        - item.legacy | default('') | string | length > 0
+        - item.canonical != item.legacy
+      loop:
+        - canonical_key: ard_deployment_name
+          legacy_key: deployment_name
+          canonical: "{{ _ard_molecule_ard_config.get('ard_deployment_name', _ard_molecule_ard_config.get('deployment_name', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('deployment_name', '') }}"
+        - canonical_key: ard_provider_resource_prefix
+          legacy_key: resource_name_prefix
+          canonical: "{{ _ard_molecule_ard_config.get('ard_provider_resource_prefix', _ard_molecule_ard_config.get('resource_name_prefix', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('resource_name_prefix', '') }}"
+        - canonical_key: ard_topology
+          legacy_key: topology
+          canonical: "{{ _ard_molecule_ard_config.get('ard_topology', _ard_molecule_ard_config.get('topology', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('topology', '') }}"
+        - canonical_key: ard_target_branch
+          legacy_key: target_branch
+          canonical: "{{ _ard_molecule_ard_config.get('ard_target_branch', _ard_molecule_ard_config.get('target_branch', '')) }}"
+          legacy: "{{ _ard_molecule_ard_config.get('target_branch', '') }}"
+
+    - name: Validate schema-version compatibility
+      ansible.builtin.assert:
+        that:
+          - not (_ard_render_schema_version_inline != '' and _ard_render_schema_version_file != '' and _ard_render_schema_version_inline != _ard_render_schema_version_file)
+          - (_ard_render_schema_version_inline | default(_ard_render_schema_version_file, true)) == '' or ((_ard_render_schema_version_inline | default(_ard_render_schema_version_file, true) | int) == 1)
+        fail_msg: "Unsupported render schema version; supported version is 1."
+
+    - name: Resolve effective schema version
+      ansible.builtin.set_fact:
+        _ard_render_schema_version_effective: >-
+          {{ _ard_render_schema_version_inline if (_ard_render_schema_version_inline | default('', true) | length > 0) else (_ard_render_schema_version_file if (_ard_render_schema_version_file | default('', true) | length > 0) else None) }}
+
+    - name: Initialize canonical Molecule inline override map
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: {}
+
+    - name: Add explicit top-level Molecule ARD overrides
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: >-
+          {{ _ard_molecule_ard_overrides |
+             combine({item.output_key: (_ard_molecule_ard_config[item.canonical_key]
+                                        if item.canonical_key in _ard_molecule_ard_config
+                                        else _ard_molecule_ard_config[item.legacy_key])},
+                     recursive=True, list_merge='replace') }}
+      when: item.canonical_key in _ard_molecule_ard_config or item.legacy_key in _ard_molecule_ard_config
+      loop:
+        - output_key: ard_provider
+          canonical_key: ard_provider
+          legacy_key: provider
+        - output_key: ard_provider_profile
+          canonical_key: ard_provider_profile
+          legacy_key: provider_profile
+        - output_key: ard_deployment_name
+          canonical_key: ard_deployment_name
+          legacy_key: deployment_name
+        - output_key: ard_target_branch
+          canonical_key: ard_target_branch
+          legacy_key: target_branch
+        - output_key: ard_topology
+          canonical_key: ard_topology
+          legacy_key: topology
+        - output_key: ard_service_profiles
+          canonical_key: ard_service_profiles
+          legacy_key: service_profiles
+        - output_key: ard_management_network
+          canonical_key: ard_management_network
+          legacy_key: management_network
+        - output_key: ard_render_overrides
+          canonical_key: ard_render_overrides
+          legacy_key: render_overrides
+        - output_key: ard_render_node_overrides
+          canonical_key: ard_render_node_overrides
+          legacy_key: node_overrides
+        - output_key: ard_render_image
+          canonical_key: ard_render_image
+          legacy_key: render_image
+        - output_key: ard_default_image
+          canonical_key: ard_default_image
+          legacy_key: default_image
+        - output_key: ard_default_controller_flavor
+          canonical_key: ard_default_controller_flavor
+          legacy_key: default_controller_flavor
+        - output_key: ard_default_compute_flavor
+          canonical_key: ard_default_compute_flavor
+          legacy_key: default_compute_flavor
+        - output_key: ard_default_vm_preference
+          canonical_key: ard_default_vm_preference
+          legacy_key: default_vm_preference
+
+    - name: Add explicit Molecule provider resource prefix override
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: >-
+          {{ _ard_molecule_ard_overrides |
+             combine({'ard_provider_resource_prefix': _ard_explicit_provider_resource_prefix,
+                      'ard_resource_name_prefix': _ard_explicit_provider_resource_prefix},
+                     recursive=True, list_merge='replace') }}
+      vars:
+        _ard_explicit_provider_resource_prefix: >-
+          {% if 'ard_provider_resource_prefix' in _ard_molecule_ard_config %}{{ _ard_molecule_ard_config.ard_provider_resource_prefix }}{% elif 'ard_resource_name_prefix' in _ard_molecule_ard_config %}{{ _ard_molecule_ard_config.ard_resource_name_prefix }}{% else %}{{ _ard_molecule_ard_config.resource_name_prefix }}{% endif %}
+      when: >-
+        'ard_provider_resource_prefix' in _ard_molecule_ard_config or
+        'ard_resource_name_prefix' in _ard_molecule_ard_config or
+        'resource_name_prefix' in _ard_molecule_ard_config
+
+    - name: Add explicit nested libvirt Molecule ARD overrides
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: >-
+          {{ _ard_molecule_ard_overrides |
+             combine({item.output_key: (_ard_molecule_ard_config[item.canonical_key]
+                                        if item.canonical_key in _ard_molecule_ard_config
+                                        else _ard_libvirt_cfg[item.legacy_key])},
+                     recursive=True, list_merge='replace') }}
+      when: item.canonical_key in _ard_molecule_ard_config or item.legacy_key in _ard_libvirt_cfg
+      loop:
+        - output_key: ard_libvirt_network_name
+          canonical_key: ard_libvirt_network_name
+          legacy_key: network_name
+        - output_key: ard_libvirt_network_cidr
+          canonical_key: ard_libvirt_network_cidr
+          legacy_key: network_cidr
+        - output_key: ard_libvirt_network_gateway
+          canonical_key: ard_libvirt_network_gateway
+          legacy_key: network_gateway
+
+    - name: Add explicit nested KubeVirt Molecule ARD overrides
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: >-
+          {{ _ard_molecule_ard_overrides |
+             combine({item.output_key: (_ard_molecule_ard_config[item.canonical_key]
+                                        if item.canonical_key in _ard_molecule_ard_config
+                                        else _ard_kubevirt_cfg[item.legacy_key])},
+                     recursive=True, list_merge='replace') }}
+      when: item.canonical_key in _ard_molecule_ard_config or item.legacy_key in _ard_kubevirt_cfg
+      loop:
+        - output_key: ard_kubevirt_namespace
+          canonical_key: ard_kubevirt_namespace
+          legacy_key: namespace
+        - output_key: ard_kubevirt_storage_class
+          canonical_key: ard_kubevirt_storage_class
+          legacy_key: storage_class
+        - output_key: ard_kubevirt_extra_labels
+          canonical_key: ard_kubevirt_extra_labels
+          legacy_key: extra_labels
+        - output_key: ard_kubevirt_controller_service_ports
+          canonical_key: ard_kubevirt_controller_service_ports
+          legacy_key: controller_service_ports
+
+    - name: Merge render file and scenario values with v1 semantics
+      ansible.builtin.set_fact:
+        _ard_render_inputs_merged: >-
+          {{ ard_molecule_render_file_data | default({})
+            | combine(_ard_molecule_ard_defaults, recursive=True, list_merge='replace')
+            | combine(_ard_molecule_ard_overrides, recursive=True, list_merge='replace')
+            | combine({'ard_deployment_dir': ard_deployment_dir}, recursive=True)
+          }}
+
+    - name: Set merged provider value for provider-path selection
+      ansible.builtin.set_fact:
+        _ard_provider: "{{ _ard_render_inputs_merged.ard_provider }}"
+
+    - name: Inject effective schema version when present
+      ansible.builtin.set_fact:
+        _ard_render_inputs_merged: >-
+          {{ _ard_render_inputs_merged
+            | combine({'ard_render_schema_version': _ard_render_schema_version_effective}, recursive=True)
+          }}
+      when: _ard_render_schema_version_effective | default('', true) | length > 0
+    - name: Validate merged render inputs
+      ansible.builtin.assert:
+        that:
+          - _ard_render_inputs_merged.ard_topology is defined
+          - _ard_render_inputs_merged.ard_provider in ['libvirt', 'static', 'kubevirt']
+          - _ard_render_inputs_merged.ard_provider != 'libvirt' or (_ard_render_inputs_merged.ard_libvirt_network_cidr is defined)
           - >-
-            _ard_provider != 'libvirt' or
-            (ard_molecule_config.provisioner.ard.libvirt is defined and
-             ard_molecule_config.provisioner.ard.libvirt.network_cidr is defined)
+            _ard_render_inputs_merged.ard_render_schema_version is not defined or
+            ((_ard_render_inputs_merged.ard_render_schema_version | default('') | string) == '1')
         fail_msg: >-
-          Molecule scenario must define provisioner.ard.topology.
-          Libvirt scenarios also require provisioner.ard.libvirt.network_cidr.
+          Merged Molecule render inputs are invalid. Ensure required fields are present and
+          render schema version is supported.
 
     - name: Ensure ARD deployment directory exists for generated render vars
       ansible.builtin.file:
@@ -41,35 +311,11 @@
     # -----------------------------------------------------------------
     # Libvirt / static provider path — use the render pipeline
     # -----------------------------------------------------------------
-    - name: Write generated ARD render vars from Molecule scenario
+    - name: Write merged ARD render vars from Molecule scenario
       ansible.builtin.copy:
         dest: "{{ ard_molecule_render_vars_file }}"
         mode: "0644"
-        content: |
-          ---
-          ard_provider: {{ ard_molecule_config.provisioner.ard.provider | default('libvirt') }}
-          ard_provider_profile: {{ ard_molecule_config.provisioner.ard.provider_profile | default('local-libvirt') }}
-          ard_deployment_name: {{ ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename) }}
-          ard_resource_name_prefix: {{ ard_molecule_config.provisioner.ard.resource_name_prefix | default('ard-' ~ (ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename))) }}
-          ard_target_branch: {{ ard_molecule_config.provisioner.ard.target_branch | default('master') }}
-          ard_topology: {{ ard_molecule_config.provisioner.ard.topology }}
-          ard_service_profiles: {{ ard_molecule_config.provisioner.ard.service_profiles | default(['devstack', 'ovn', 'tempest']) | to_json }}
-          ard_libvirt_network_name: {{ ard_molecule_config.provisioner.ard.libvirt.network_name | default('ard-' ~ (ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename))) }}
-          ard_libvirt_network_cidr: {{ ard_molecule_config.provisioner.ard.libvirt.network_cidr }}
-          {% if ard_molecule_config.provisioner.ard.management_network is defined %}
-          ard_management_network: {{ ard_molecule_config.provisioner.ard.management_network }}
-          {% endif %}
-          {% if ard_molecule_config.provisioner.ard.render_image is defined %}
-          ard_render_image: {{ ard_molecule_config.provisioner.ard.render_image }}
-          {% endif %}
-          {% if ard_molecule_config.provisioner.ard.render_overrides is defined %}
-          ard_render_overrides:
-          {{ ard_molecule_config.provisioner.ard.render_overrides | to_nice_yaml(indent=2, sort_keys=False) | indent(2, true) }}
-          {% endif %}
-          {% if ard_molecule_config.provisioner.ard.node_overrides is defined %}
-          ard_render_node_overrides:
-          {{ ard_molecule_config.provisioner.ard.node_overrides | to_nice_yaml(indent=2, sort_keys=False) | indent(2, true) }}
-          {% endif %}
+        content: "{{ _ard_render_inputs_merged | to_nice_yaml(indent=2, sort_keys=False) }}"
       when: _ard_provider != 'kubevirt'
 
     - name: Render ARD deployment workspace
@@ -81,8 +327,6 @@
           - ansible/playbooks/provider/render.yaml
           - -e
           - "@{{ ard_molecule_render_vars_file }}"
-          - -e
-          - ard_deployment_dir={{ ard_deployment_dir }}
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
@@ -99,29 +343,7 @@
       ansible.builtin.copy:
         dest: "{{ ard_deployment_dir }}/deployment.yaml"
         mode: "0644"
-        content: |
-          ---
-          ard_provider: kubevirt
-          ard_provider_profile: {{ ard_molecule_config.provisioner.ard.provider_profile | default('kubevirt') }}
-          ard_deployment_name: {{ ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename) }}
-          ard_resource_name_prefix: {{ ard_molecule_config.provisioner.ard.resource_name_prefix | default(ard_molecule_config.provisioner.ard.deployment_name | default(ard_scenario_dir | basename)) }}
-          ard_target_branch: {{ ard_molecule_config.provisioner.ard.target_branch | default('master') }}
-          ard_topology: {{ ard_molecule_config.provisioner.ard.topology }}
-          ard_service_profiles: {{ ard_molecule_config.provisioner.ard.service_profiles | default(['devstack', 'ovn', 'tempest']) | to_json }}
-          ard_default_image: {{ ard_molecule_config.provisioner.ard.default_image | default('debian-13') }}
-          ard_default_controller_flavor: {{ ard_molecule_config.provisioner.ard.default_controller_flavor | default('devstack-control') }}
-          ard_default_compute_flavor: {{ ard_molecule_config.provisioner.ard.default_compute_flavor | default('devstack-compute') }}
-          ard_default_vm_preference: {{ ard_molecule_config.provisioner.ard.default_vm_preference | default('devstack') }}
-          ard_kubevirt_namespace: {{ ard_molecule_config.provisioner.ard.kubevirt.namespace }}
-          {% if ard_molecule_config.provisioner.ard.kubevirt.storage_class is defined %}
-          ard_kubevirt_storage_class: {{ ard_molecule_config.provisioner.ard.kubevirt.storage_class }}
-          {% endif %}
-          {% if ard_molecule_config.provisioner.ard.kubevirt.extra_labels is defined %}
-          ard_kubevirt_extra_labels: {{ ard_molecule_config.provisioner.ard.kubevirt.extra_labels | to_json }}
-          {% endif %}
-          {% if ard_molecule_config.provisioner.ard.kubevirt.controller_service_ports is defined %}
-          ard_kubevirt_controller_service_ports: {{ ard_molecule_config.provisioner.ard.kubevirt.controller_service_ports | to_json }}
-          {% endif %}
+        content: "{{ _ard_render_inputs_merged | to_nice_yaml(indent=2, sort_keys=False) }}"
       when: _ard_provider == 'kubevirt'
 
     - name: Generate KubeVirt nodes.yaml from topology
@@ -133,8 +355,6 @@
           - ansible/playbooks/provider/kubevirt-render-nodes.yaml
           - -e
           - "@{{ ard_deployment_dir }}/deployment.yaml"
-          - -e
-          - ard_deployment_dir={{ ard_deployment_dir }}
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
