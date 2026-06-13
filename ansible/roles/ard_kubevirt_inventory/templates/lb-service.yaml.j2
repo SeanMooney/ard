@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: "{{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ _controller_node.name }}-lb"
+  name: "{{ _controller_node_resource_name }}-lb"
   namespace: "{{ ard_kubevirt_namespace }}"
   labels:
     app.kubernetes.io/part-of: ard
@@ -17,7 +17,7 @@ metadata:
 spec:
   type: LoadBalancer
   selector:
-    vm.kubevirt.io/name: "{{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ _controller_node.name }}"
+    vm.kubevirt.io/name: "{{ _controller_node_resource_name }}"
   ports:
 {% for port in ard_kubevirt_controller_service_ports %}
     - name: "{{ port.name }}"

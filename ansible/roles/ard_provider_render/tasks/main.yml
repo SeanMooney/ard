@@ -208,6 +208,61 @@
       Rendered topology is invalid. Check for duplicate node names, IPs, MACs,
       or an undefined management network.
 
+- name: Resolve KubeVirt controller node
+  ansible.builtin.set_fact:
+    _kubevirt_controller_node: "{{ ard_render_nodes | selectattr('groups', 'contains', 'controller') | list | first | default(ard_render_nodes[0]) }}"
+  when: ard_provider == 'kubevirt'
+
+- name: Resolve KubeVirt controller provider resource name
+  ansible.builtin.set_fact:
+    _kubevirt_controller_node_resource_name: >-
+      {{ _kubevirt_controller_node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ _kubevirt_controller_node.name) }}
+  when: ard_provider == 'kubevirt'
+
+- name: Validate KubeVirt base resource names
+  ansible.builtin.assert:
+    that:
+      - ard_provider_resource_prefix is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ard_provider_resource_prefix | length <= 63
+      - ard_kubevirt_headless_service is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ard_kubevirt_headless_service | length <= 63
+      - ard_kubevirt_ssh_key_secret is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ard_kubevirt_ssh_key_secret | length <= 63
+      - not (ard_kubevirt_datacenter_network | default(false) | bool) or
+        (ard_kubevirt_datacenter_network_name is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') and
+         ard_kubevirt_datacenter_network_name | length <= 63)
+      - _kubevirt_controller_node_resource_name is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - _kubevirt_controller_node_resource_name | length <= 63
+      - (_kubevirt_controller_node_resource_name ~ '-lb') is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - (_kubevirt_controller_node_resource_name ~ '-lb') | length <= 63
+    fail_msg: >-
+      KubeVirt provider resource names must be DNS-1123 labels (^[a-z0-9]([-a-z0-9]*[a-z0-9])?$),
+      and <= 63 chars: provider prefix, headless service, SSH key secret, datacenter
+      network name when enabled, node resource names, rootdisk names, and controller LB
+      service name.
+  when: ard_provider == 'kubevirt'
+
+- name: Resolve KubeVirt node provider resource names
+  ansible.builtin.set_fact:
+    _kubevirt_node_resource_names: "{{ ard_render_nodes | map(attribute='provider_resource_name', default='') | list }}"
+  when: ard_provider == 'kubevirt'
+
+- name: Resolve KubeVirt node rootdisk names
+  ansible.builtin.set_fact:
+    _kubevirt_node_rootdisk_names: "{{ _kubevirt_node_resource_names | map('regex_replace', '$', '-rootdisk') | list }}"
+  when: ard_provider == 'kubevirt'
+
+- name: Validate KubeVirt node-derived resource names
+  ansible.builtin.assert:
+    that:
+      - _kubevirt_node_resource_names | list | length == ard_render_nodes | length
+      - _kubevirt_node_resource_names | select('match', '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') | list | length == _kubevirt_node_resource_names | length
+      - _kubevirt_node_resource_names | map('length') | max <= 63
+      - _kubevirt_node_rootdisk_names | select('match', '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') | list | length == _kubevirt_node_rootdisk_names | length
+      - _kubevirt_node_rootdisk_names | map('length') | max <= 63
+    fail_msg: "KubeVirt node provider resource names and rootdisk names must be valid Kubernetes resource names (<= 63 chars)."
+  when: ard_provider == 'kubevirt'
+
 - name: Compose rendered DevStack variables
   ansible.builtin.set_fact:
     ard_render_devstack_common: >-
