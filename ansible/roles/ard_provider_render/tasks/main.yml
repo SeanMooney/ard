@@ -74,11 +74,11 @@
 - name: Validate supported ARD render presets
   ansible.builtin.assert:
     that:
-      - ard_provider in ['libvirt', 'static']
+      - ard_provider in ['libvirt', 'static', 'kubevirt']
       - ard_topology in ard_render_topologies
       - ard_provider_profile in ard_render_provider_profiles
       - ard_render_service_profile_list | difference(ard_render_services.keys() | list) | length == 0
-      - ard_libvirt_network_cidr is match('^([0-9]{1,3}\.){3}0/24$')
+      - ard_provider == 'kubevirt' or ard_libvirt_network_cidr is match('^([0-9]{1,3}\.){3}0/24$')
     fail_msg: >-
       Unsupported render input. provider={{ ard_provider }},
       provider_profile={{ ard_provider_profile }}, topology={{ ard_topology }},
@@ -128,12 +128,18 @@
   ansible.builtin.set_fact:
     ard_render_network_prefix: "{{ ard_libvirt_network_cidr | regex_replace('\\.0/24$', '') }}"
     ard_libvirt_network_gateway: "{{ ard_libvirt_network_gateway | default(ard_libvirt_network_cidr | regex_replace('\\.0/24$', '.1')) }}"
-    ard_resource_name_prefix: "{{ ard_resource_name_prefix | default('ard-' + ard_deployment_name) }}"
+    ard_provider_resource_prefix: >-
+      {{ ard_provider_resource_prefix | default(ard_resource_name_prefix, true) |
+         default(('ard-' + ard_deployment_name) if ard_provider in ['libvirt', 'static'] else ard_deployment_name) }}
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
     ard_render_default_image: "{{ ard_render_image | default(ard_render_provider_defaults.image) }}"
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
+
+- name: Normalize ARD provider resource prefix compatibility
+  ansible.builtin.set_fact:
+    ard_resource_name_prefix: "{{ ard_provider_resource_prefix }}"
 
 - name: Compose ARD render networks
   ansible.builtin.set_fact:
@@ -164,7 +170,8 @@
       - ard_render_nodes | length > 0
       - ard_render_nodes | map(attribute='name') | list | unique | length == ard_render_nodes | length
       - ard_render_nodes | map(attribute='networks') | flatten | selectattr('ip', 'defined') | map(attribute='ip') | list | unique | length == ard_render_nodes | map(attribute='networks') | flatten | selectattr('ip', 'defined') | list | length
-      - ard_render_nodes | map(attribute='networks') | flatten | map(attribute='mac') | list | unique | length == ard_render_nodes | map(attribute='networks') | flatten | list | length
+      - ard_provider == 'kubevirt' or
+        (ard_render_nodes | map(attribute='networks') | flatten | selectattr('mac', 'defined') | map(attribute='mac') | list | unique | length == ard_render_nodes | map(attribute='networks') | flatten | selectattr('mac', 'defined') | list | length)
       - ard_management_network in ard_render_networks_config
       - (ard_render_networks_config[ard_management_network].mode | default('nat')) == 'nat'
     fail_msg: >-
@@ -210,6 +217,7 @@
       ard_provider: {{ ard_provider }}
       ard_provider_profile: {{ ard_provider_profile }}
       ard_deployment_name: {{ ard_deployment_name }}
+      ard_provider_resource_prefix: {{ ard_provider_resource_prefix }}
       ard_resource_name_prefix: {{ ard_resource_name_prefix }}
 
       ard_target_branch: {{ ard_target_branch }}
@@ -228,6 +236,21 @@
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
       ard_libvirt_network_cidr: {{ ard_libvirt_network_cidr }}
       ard_libvirt_network_gateway: {{ ard_libvirt_network_gateway }}
+      ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
+      ard_kubevirt_storage_class: {{ ard_kubevirt_storage_class | to_json }}
+      ard_kubevirt_image_datasource: {{ ard_kubevirt_image_datasource }}
+      ard_kubevirt_root_disk_size: {{ ard_kubevirt_root_disk_size }}
+      ard_kubevirt_network_mode: {{ ard_kubevirt_network_mode }}
+      ard_kubevirt_vm_network_cidr: {{ ard_kubevirt_vm_network_cidr }}
+      ard_kubevirt_datacenter_network: {{ ard_kubevirt_datacenter_network | bool | lower }}
+      ard_kubevirt_datacenter_network_name: {{ ard_kubevirt_datacenter_network_name }}
+      ard_kubevirt_datacenter_cidr: {{ ard_kubevirt_datacenter_cidr }}
+      ard_kubevirt_extra_labels: {{ ard_kubevirt_extra_labels | to_json }}
+      ard_kubevirt_ssh_access: {{ ard_kubevirt_ssh_access }}
+      ard_kubevirt_ssh_key_secret: {{ ard_kubevirt_ssh_key_secret }}
+      ard_kubevirt_ssh_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
+      ard_kubevirt_headless_service: {{ ard_kubevirt_headless_service }}
+      ard_kubevirt_controller_service_ports: {{ ard_kubevirt_controller_service_ports | to_json }}
       ard_networks:
       {% for network_name, network in ard_render_networks_config.items() %}
         {{ network_name }}:
