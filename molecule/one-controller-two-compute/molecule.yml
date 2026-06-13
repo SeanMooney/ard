@@ -8,17 +8,10 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
+  ard_render_file: ../../examples/devstack/one-controller-two-compute/render.yaml
   ard:
-    provider: libvirt
-    provider_profile: local-libvirt
-    deployment_name: molecule-one-controller-two-compute
-    resource_name_prefix: ard-molecule-one-controller-two-compute
-    target_branch: master
-    topology: one-controller-two-compute
-    service_profiles:
-      - devstack
-      - ovn
-      - tempest
+    ard_deployment_name: molecule-one-controller-two-compute
+    ard_provider_resource_prefix: ard-molecule-one-controller-two-compute
     libvirt:
       network_name: ard-molecule-one-controller-two-compute
       network_cidr: 192.168.99.0/24

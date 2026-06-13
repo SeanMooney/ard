@@ -8,14 +8,10 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_STDOUT_CALLBACK: yaml
+  ard_render_file: ../../examples/microshift/single-node/render.yaml
   ard:
-    provider: libvirt
-    provider_profile: local-libvirt
-    deployment_name: molecule-microshift
-    resource_name_prefix: ard-molecule-microshift
-    topology: microshift-single-node
-    render_image: centos-stream-10
-    service_profiles: []
+    ard_deployment_name: molecule-microshift
+    ard_provider_resource_prefix: ard-molecule-microshift
     libvirt:
       network_name: ard-molecule-microshift
       network_cidr: 192.168.101.0/24
