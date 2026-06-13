@@ -24,8 +24,8 @@
 
     - name: Set Molecule render-file inputs
       ansible.builtin.set_fact:
-        _ard_provider: "{{ ard_molecule_config.provisioner.ard.provider | default(none, true) }}"
-        _ard_provider_profile: "{{ ard_molecule_config.provisioner.ard.provider_profile | default(none, true) }}"
+        _ard_provider: "{{ ard_molecule_config.provisioner.ard.ard_provider | default(ard_molecule_config.provisioner.ard.provider | default(none, true), true) | default(none, true) }}"
+        _ard_provider_profile: "{{ ard_molecule_config.provisioner.ard.ard_provider_profile | default(ard_molecule_config.provisioner.ard.provider_profile | default(none, true), true) | default(none, true) }}"
         _ard_raw_render_file: "{{ (ard_molecule_config.provisioner.ard_render_file | default(ard_molecule_config.provisioner.ard.ard_render_file | default('', true)) | trim) }}"
 
     - name: Initialize render-file data
@@ -71,9 +71,20 @@
       ansible.builtin.set_fact:
         _ard_deployment_name: "{{ _ard_molecule_ard_config.get('ard_deployment_name', _ard_molecule_ard_config.get('deployment_name', ard_scenario_dir | basename)) }}"
 
+    - name: Resolve provider precedence for inline resource-prefix defaults
+      ansible.builtin.set_fact:
+        _ard_provider_for_prefix: >-
+          {{ _ard_molecule_ard_config.get('ard_provider', none)
+             | default(_ard_molecule_ard_config.get('provider', none), true)
+             | default(ard_molecule_render_file_data.get('ard_provider', none), true)
+             | default('libvirt', true) }}
+
     - name: Derive canonical deployment and alias-normalized inline values
       ansible.builtin.set_fact:
-        _ard_provider_resource_prefix: "{{ _ard_molecule_ard_config.get('ard_provider_resource_prefix', _ard_molecule_ard_config.get('resource_name_prefix', 'ard-' ~ (_ard_deployment_name | default(ard_scenario_dir | basename)))) }}"
+        _ard_provider_resource_prefix: "{{ _ard_molecule_ard_config.get('ard_provider_resource_prefix', _ard_molecule_ard_config.get('resource_name_prefix', none)) }}"
+        _ard_provider_resource_prefix_default: >-
+          {{ 'ard-' ~ (_ard_deployment_name | default(ard_scenario_dir | basename))
+             if (_ard_provider_for_prefix | default('libvirt')) != 'kubevirt' else None }}
         _ard_render_schema_version_inline: "{{ _ard_molecule_ard_config.get('ard_render_schema_version', '') | default('', true) }}"
         _ard_render_schema_version_file: "{{ ard_molecule_render_file_data.get('ard_render_schema_version', '') | default('', true) }}"
         _ard_topology_inline: "{{ _ard_molecule_ard_config.get('ard_topology', _ard_molecule_ard_config.get('topology', none)) }}"
@@ -102,8 +113,8 @@
             'ard_provider': _ard_provider | default('libvirt'),
             'ard_provider_profile': _ard_provider_profile | default('local-libvirt'),
             'ard_deployment_name': _ard_deployment_name,
-            'ard_provider_resource_prefix': _ard_provider_resource_prefix,
-            'ard_resource_name_prefix': _ard_provider_resource_prefix,
+            'ard_provider_resource_prefix': _ard_provider_resource_prefix_default,
+            'ard_resource_name_prefix': _ard_provider_resource_prefix_default,
             'ard_target_branch': _ard_target_branch_inline | default('master'),
             'ard_service_profiles': _ard_service_profiles_inline | default(['devstack', 'ovn', 'tempest']),
             'ard_libvirt_network_name': _ard_libvirt_network_name_inline | default('ard-' ~ _ard_deployment_name),
@@ -268,6 +279,9 @@
         - output_key: ard_kubevirt_controller_service_ports
           canonical_key: ard_kubevirt_controller_service_ports
           legacy_key: controller_service_ports
+        - output_key: ard_kubevirt_user_prefix_enabled
+          canonical_key: ard_kubevirt_user_prefix_enabled
+          legacy_key: user_prefix_enabled
 
     - name: Merge render file and scenario values with v1 semantics
       ansible.builtin.set_fact:
@@ -309,14 +323,13 @@
         mode: "0755"
 
     # -----------------------------------------------------------------
-    # Libvirt / static provider path — use the render pipeline
+    # Use the shared provider renderer for all providers.
     # -----------------------------------------------------------------
     - name: Write merged ARD render vars from Molecule scenario
       ansible.builtin.copy:
         dest: "{{ ard_molecule_render_vars_file }}"
         mode: "0644"
         content: "{{ _ard_render_inputs_merged | to_nice_yaml(indent=2, sort_keys=False) }}"
-      when: _ard_provider != 'kubevirt'
 
     - name: Render ARD deployment workspace
       ansible.builtin.command:
@@ -333,36 +346,6 @@
       args:
         chdir: "{{ ard_project_dir }}"
       changed_when: true
-      when: _ard_provider != 'kubevirt'
-
-    # -----------------------------------------------------------------
-    # KubeVirt provider path — write deployment.yaml + nodes.yaml
-    # directly since KubeVirt doesn't need CIDR/MAC allocation
-    # -----------------------------------------------------------------
-    - name: Write KubeVirt deployment.yaml
-      ansible.builtin.copy:
-        dest: "{{ ard_deployment_dir }}/deployment.yaml"
-        mode: "0644"
-        content: "{{ _ard_render_inputs_merged | to_nice_yaml(indent=2, sort_keys=False) }}"
-      when: _ard_provider == 'kubevirt'
-
-    - name: Generate KubeVirt nodes.yaml from topology
-      ansible.builtin.command:
-        argv:
-          - ansible-playbook
-          - -i
-          - localhost,
-          - ansible/playbooks/provider/kubevirt-render-nodes.yaml
-          - -e
-          - "@{{ ard_deployment_dir }}/deployment.yaml"
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
-      when: _ard_provider == 'kubevirt'
-
     - name: Search for local-vars.yaml
       ansible.builtin.stat:
         path: "{{ item }}"
