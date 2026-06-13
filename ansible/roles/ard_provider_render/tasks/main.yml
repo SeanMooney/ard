@@ -124,13 +124,43 @@
          combine(ard_render_branch_config.provider_defaults | default({}), recursive=True) |
          combine((ard_render_overrides | default({})).get('provider_defaults', {}), recursive=True) }}
 
+- name: Resolve explicit provider prefix input
+  ansible.builtin.set_fact:
+    ard_provider_resource_prefix_explicit: "{{ ard_provider_resource_prefix | default(ard_resource_name_prefix, true) | default(none, true) }}"
+    ard_kubevirt_user_prefix_sanitized: >-
+      {{ ard_user | default('') | lower | regex_replace('[^a-z0-9-]', '-') | regex_replace('^-+|-+$', '') }}
+
+- name: Validate KubeVirt user-prefixing inputs
+  ansible.builtin.assert:
+    that:
+      - not (
+          ard_provider == 'kubevirt' and
+          ard_provider_resource_prefix_explicit is none and
+          (ard_kubevirt_user_prefix_enabled | default(true) | bool) and
+          (ard_kubevirt_user_prefix_sanitized | length == 0)
+        )
+    fail_msg: >-
+      Cannot auto-prefix KubeVirt resources because ard_user '{{ ard_user | default('') }}' sanitizes to an empty
+      value. Set a valid ard_user or provide ard_provider_resource_prefix/ard_resource_name_prefix explicitly.
+
+- name: Resolve ARD provider resource prefix default for kubevirt
+  ansible.builtin.set_fact:
+    ard_provider_resource_prefix_default: >-
+      {{ (ard_kubevirt_user_prefix_enabled | default(true) | bool) |
+         ternary(
+           (ard_kubevirt_user_prefix_sanitized != '' and (ard_deployment_name | lower).startswith(ard_kubevirt_user_prefix_sanitized ~ '-'))
+             | ternary(ard_deployment_name, ard_kubevirt_user_prefix_sanitized ~ '-' ~ ard_deployment_name),
+           ard_deployment_name
+         ) }}
+
 - name: Derive local network and provider defaults
   ansible.builtin.set_fact:
     ard_render_network_prefix: "{{ ard_libvirt_network_cidr | regex_replace('\\.0/24$', '') }}"
     ard_libvirt_network_gateway: "{{ ard_libvirt_network_gateway | default(ard_libvirt_network_cidr | regex_replace('\\.0/24$', '.1')) }}"
     ard_provider_resource_prefix: >-
-      {{ ard_provider_resource_prefix | default(ard_resource_name_prefix, true) |
-         default(('ard-' + ard_deployment_name) if ard_provider in ['libvirt', 'static'] else ard_deployment_name) }}
+      {{ ard_provider_resource_prefix_explicit |
+         default((ard_provider in ['libvirt', 'static']) |
+           ternary('ard-' ~ ard_deployment_name, ard_provider_resource_prefix_default), true) }}
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
     ard_render_default_image: "{{ ard_render_image | default(ard_render_provider_defaults.image) }}"
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
@@ -241,6 +271,7 @@
       ard_kubevirt_image_datasource: {{ ard_kubevirt_image_datasource }}
       ard_kubevirt_root_disk_size: {{ ard_kubevirt_root_disk_size }}
       ard_kubevirt_network_mode: {{ ard_kubevirt_network_mode }}
+      ard_kubevirt_user_prefix_enabled: {{ ard_kubevirt_user_prefix_enabled | bool | lower }}
       ard_kubevirt_vm_network_cidr: {{ ard_kubevirt_vm_network_cidr }}
       ard_kubevirt_datacenter_network: {{ ard_kubevirt_datacenter_network | bool | lower }}
       ard_kubevirt_datacenter_network_name: {{ ard_kubevirt_datacenter_network_name }}

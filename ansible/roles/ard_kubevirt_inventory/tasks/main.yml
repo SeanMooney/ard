@@ -33,7 +33,7 @@
     argv:
       - oc
       - get
-      - "svc/{{ ard_deployment_name }}-{{ _controller_node.name }}-lb"
+      - "svc/{{ (ard_provider_resource_prefix | default(ard_deployment_name, true)) }}-{{ _controller_node.name }}-lb"
       - -n
       - "{{ ard_kubevirt_namespace }}"
       - -o
@@ -55,7 +55,7 @@
     argv:
       - oc
       - get
-      - "vmi/{{ ard_deployment_name }}-{{ item.name }}"
+      - "vmi/{{ (ard_provider_resource_prefix | default(ard_deployment_name, true)) }}-{{ item.name }}"
       - -n
       - "{{ ard_kubevirt_namespace }}"
       - -o
@@ -118,7 +118,7 @@
               -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
       {% endif %}
             ard_deployment_name: {{ ard_deployment_name }}
-            ard_provider_resource_name: {{ ard_deployment_name }}-{{ node.name }}
+            ard_provider_resource_name: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ node.name }}
             nodepool:
               private_ipv4: {{ node_ip }}
               public_ipv4: {{ ansible_host }}
@@ -161,12 +161,12 @@
       ard_provider: kubevirt
       ard_deployment_name: {{ ard_deployment_name }}
       ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
-      controller_lb_service: {{ ard_deployment_name }}-{{ _controller_node.name }}-lb
+      controller_lb_service: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ _controller_node.name }}-lb
       controller_lb_ip: {{ _controller_lb_ip | default('') }}
       nodes:
       {% for node in ard_nodes %}
         - inventory_name: {{ node.name }}
-          vm_name: {{ ard_deployment_name }}-{{ node.name }}
+          vm_name: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ node.name }}
           pod_ip: {{ _node_ips[node.name] | default('') }}
       {% endfor %}
   tags: requires_cluster
@@ -186,7 +186,7 @@
               ~ ' -i ' ~ ard_kubevirt_ssh_private_key_file
               ~ ' -W %h:%p stack@' ~ _controller_lb_ip ~ '"' }}
     ard_deployment_name: "{{ ard_deployment_name }}"
-    ard_provider_resource_name: "{{ ard_deployment_name }}-{{ item.name }}"
+    ard_provider_resource_name: "{{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}-{{ item.name }}"
     nodepool: >-
       {{ {'private_ipv4': _node_ips[item.name] | default(''),
           'public_ipv4': _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')),

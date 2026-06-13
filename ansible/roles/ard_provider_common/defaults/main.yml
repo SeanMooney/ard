@@ -53,6 +53,7 @@ ard_libvirt_secure_boot: false
 
 # User identity (for shared-tenancy naming in KubeVirt)
 ard_user: "{{ lookup('env', 'USER') }}"
+ard_kubevirt_user_prefix_enabled: true
 
 # KubeVirt provider settings
 ard_kubevirt_namespace: ""
@@ -65,9 +66,9 @@ ard_kubevirt_ensure_instancetype_resources: false
 ard_kubevirt_extra_labels: {}
 ard_kubevirt_ssh_key_secret: "{{ ard_user }}-pub-key"
 ard_kubevirt_ssh_access: loadbalancer
-ard_kubevirt_headless_service: "{{ ard_deployment_name | default('') }}-headless"
+ard_kubevirt_headless_service: "{{ ard_provider_resource_prefix | default(ard_deployment_name | default(''), true) }}-headless"
 ard_kubevirt_datacenter_network: true
-ard_kubevirt_datacenter_network_name: "{{ ard_deployment_name | default('') }}-net-datacenter"
+ard_kubevirt_datacenter_network_name: "{{ ard_provider_resource_prefix | default(ard_deployment_name | default(''), true) }}-net-datacenter"
 ard_kubevirt_datacenter_cidr: "10.0.100.0/24"
 ard_kubevirt_delete_namespace: false
 ard_kubevirt_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
