@@ -10,6 +10,80 @@
     name: _provider_state
   when: _provider_state_stat.stat.exists
 
+- name: Initialize KubeVirt destroy targets from defaults
+  ansible.builtin.set_fact:
+    _kubevirt_destroy_namespace: "{{ ard_kubevirt_namespace }}"
+    _kubevirt_destroy_vm_names: []
+    _kubevirt_destroy_rootdisk_names: []
+    _kubevirt_destroy_service_names: []
+    _kubevirt_destroy_vm_state_complete: false
+
+- name: Build KubeVirt destroy targets from provider state
+  ansible.builtin.set_fact:
+    _kubevirt_destroy_namespace: "{{ _provider_state.ard_kubevirt_namespace | default(ard_kubevirt_namespace) }}"
+    _kubevirt_destroy_vm_names: >-
+      {{ _provider_state.nodes | default([], true) | map(attribute='vm_name', default='') | select('truthy') | list }}
+    _kubevirt_destroy_rootdisk_names: >-
+      {{ _provider_state.nodes | default([], true) | map(attribute='vm_name', default='') | select('truthy') | map('regex_replace', '$', '-rootdisk') | list }}
+    _kubevirt_destroy_service_names: >-
+      {{ [_provider_state.controller_lb_service | default('')] | select('truthy') | list }}
+    _kubevirt_destroy_vm_state_complete: >-
+      {{ (_provider_state.nodes | default([], true) | map(attribute='vm_name', default='') | select('truthy') | list | length
+           == (_provider_state.nodes | default([], true) | length)
+         ) and (_provider_state.nodes | default([], true) | length > 0)
+      }}
+  when: _provider_state_stat.stat.exists
+
+- name: Delete VirtualMachines by persisted name
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - vm
+      - "{{ item }}"
+      - -n
+      - "{{ _kubevirt_destroy_namespace }}"
+      - --ignore-not-found
+      - --wait=true
+      - --timeout=120s
+  loop: "{{ _kubevirt_destroy_vm_names }}"
+  register: _delete_vms
+  changed_when: "'deleted' in (_delete_vms.stdout | default(''))"
+  when: _kubevirt_destroy_vm_names | length > 0
+  tags: requires_cluster
+
+- name: Delete DataVolumes by persisted name
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - dv
+      - "{{ item }}"
+      - -n
+      - "{{ _kubevirt_destroy_namespace }}"
+      - --ignore-not-found
+  loop: "{{ _kubevirt_destroy_rootdisk_names }}"
+  register: _delete_dvs
+  changed_when: "'deleted' in (_delete_dvs.stdout | default(''))"
+  when: _kubevirt_destroy_rootdisk_names | length > 0
+  tags: requires_cluster
+
+- name: Delete Services by persisted name
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - svc
+      - "{{ item }}"
+      - -n
+      - "{{ _kubevirt_destroy_namespace }}"
+      - --ignore-not-found
+  loop: "{{ _kubevirt_destroy_service_names }}"
+  register: _delete_svcs
+  changed_when: "'deleted' in (_delete_svcs.stdout | default(''))"
+  when: _kubevirt_destroy_service_names | length > 0
+  tags: requires_cluster
+
 - name: Delete VirtualMachines by label selector
   ansible.builtin.command:
     argv:
@@ -19,12 +93,13 @@
       - -l
       - "ard.teim.app/deployment={{ ard_deployment_name }}"
       - -n
-      - "{{ ard_kubevirt_namespace }}"
+      - "{{ _kubevirt_destroy_namespace }}"
       - --ignore-not-found
       - --wait=true
       - --timeout=120s
-  register: _delete_vms
-  changed_when: "'deleted' in _delete_vms.stdout"
+  register: _delete_vms_legacy
+  changed_when: "'deleted' in (_delete_vms_legacy.stdout | default(''))"
+  when: not _provider_state_stat.stat.exists or not _kubevirt_destroy_vm_state_complete
   tags: requires_cluster
 
 - name: Delete Services by label selector
@@ -36,10 +111,11 @@
       - -l
       - "ard.teim.app/deployment={{ ard_deployment_name }}"
       - -n
-      - "{{ ard_kubevirt_namespace }}"
+      - "{{ _kubevirt_destroy_namespace }}"
       - --ignore-not-found
-  register: _delete_svcs
-  changed_when: "'deleted' in _delete_svcs.stdout"
+  register: _delete_svcs_legacy
+  changed_when: "'deleted' in (_delete_svcs_legacy.stdout | default(''))"
+  when: not _provider_state_stat.stat.exists or _kubevirt_destroy_service_names | length == 0
   tags: requires_cluster
 
 - name: Delete orphaned DataVolumes by label selector
@@ -51,10 +127,11 @@
       - -l
       - "ard.teim.app/deployment={{ ard_deployment_name }}"
       - -n
-      - "{{ ard_kubevirt_namespace }}"
+      - "{{ _kubevirt_destroy_namespace }}"
       - --ignore-not-found
-  register: _delete_dvs
-  changed_when: "'deleted' in _delete_dvs.stdout"
+  register: _delete_dvs_legacy
+  changed_when: "'deleted' in (_delete_dvs_legacy.stdout | default(''))"
+  when: not _provider_state_stat.stat.exists or not _kubevirt_destroy_vm_state_complete
   tags: requires_cluster
 
 - name: Delete namespace
@@ -63,7 +140,7 @@
       - oc
       - delete
       - namespace
-      - "{{ ard_kubevirt_namespace }}"
+      - "{{ _kubevirt_destroy_namespace }}"
       - --ignore-not-found
   when: ard_kubevirt_delete_namespace | default(false) | bool
   register: _delete_ns
