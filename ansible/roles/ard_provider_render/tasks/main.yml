@@ -100,6 +100,24 @@
     ard_render_services_config: {}
     ard_render_node_profiles: []
 
+- name: Validate ARD node pool classes
+  ansible.builtin.assert:
+    that:
+      - _ard_pool_selected_class == '' or _ard_pool_selected_class in ard_render_node_classes
+    fail_msg: >-
+      Node pool '{{ _ard_pool_key | default('unnamed') }}' uses unsupported node class
+      '{{ _ard_pool_selected_class }}'. Supported classes: {{ ard_render_node_classes.keys() | list | join(', ') }}.
+  vars:
+    _ard_pool_type: "{{ item.type | default('', true) }}"
+    _ard_pool_key: "{{ item.name | default(_ard_pool_type, true) }}"
+    _ard_pool_overrides: "{{ (ard_render_overrides | default({})).get('node_pools', {}) }}"
+    _ard_effective_pool: >-
+      {{ item |
+         combine(_ard_pool_overrides.get(_ard_pool_type, {}), recursive=True) |
+         combine(_ard_pool_overrides.get(_ard_pool_key, {}), recursive=True) }}
+    _ard_pool_selected_class: "{{ _ard_effective_pool.class | default(ard_render_node_types.get(_ard_pool_type, {}).get('class', ''), true) }}"
+  loop: "{{ ard_render_topology_config.node_pools | default([]) }}"
+
 - name: Compose requested ARD service profiles
   ansible.builtin.set_fact:
     ard_render_services_config: >-
@@ -127,6 +145,9 @@
       {{ ard_render_provider_profile_config.provider_defaults |
          combine(ard_render_branch_config.provider_defaults | default({}), recursive=True) |
          combine((ard_render_overrides | default({})).get('provider_defaults', {}), recursive=True) }}
+    ard_render_provider_node_class_defaults: >-
+      {{ ard_render_provider_profile_config.provider_node_class_defaults | default({}, true) |
+         combine((ard_render_overrides | default({})).get('provider_node_class_defaults', {}), recursive=True) }}
 
 - name: Resolve explicit provider prefix input
   ansible.builtin.set_fact:
@@ -166,6 +187,11 @@
          default((ard_provider in ['libvirt', 'static']) |
            ternary('ard-' ~ ard_deployment_name, ard_provider_resource_prefix_default), true) }}
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
+    ard_render_workload_default_image: >-
+      {{ ard_devstack_image |
+         default(ard_render_image |
+         default(ard_render_branch_config.devstack.image |
+         default('', true), true), true) }}
     ard_devstack_image_effective: >-
       {{ ard_devstack_image |
          default(ard_render_image |

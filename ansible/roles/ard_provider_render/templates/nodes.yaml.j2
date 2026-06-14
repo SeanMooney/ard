@@ -5,25 +5,30 @@ ard_nodes:
 {% set node_overrides = ard_render_node_overrides | default({}) %}
 {% set _render_for_kubevirt = ard_provider == 'kubevirt' %}
 {% for raw_pool in ard_render_topology_config.node_pools | default([]) %}
-{% set pool_key = raw_pool.name | default(raw_pool.type) %}
-{% set pool = raw_pool | combine(pool_overrides.get(raw_pool.type, {}), recursive=True) | combine(pool_overrides.get(pool_key, {}), recursive=True) %}
-{% set node_type = ard_render_node_types[pool.type] %}
+{% set pool_type = raw_pool.get('type', none) %}
+{% set pool_key = raw_pool.get('name', none) | default(pool_type, true) %}
+{% set pool = raw_pool | combine(pool_overrides.get(pool_type, {}), recursive=True) | combine(pool_overrides.get(pool_key, {}), recursive=True) %}
+{% set node_type = ard_render_node_types.get(pool_type, {}) %}
+{% set name_type = pool.type | default('node') %}
+{% set selected_node_class = pool.class | default(node_type.get('class', none), true) %}
+{% set selected_node_class_defaults = ard_render_provider_node_class_defaults.get(selected_node_class, {}) %}
 {% for index in range(1, (pool.count | int) + 1) %}
 {% if pool.name is defined and (pool.count | int) == 1 %}
 {% set generated_name = pool.name %}
 {% else %}
-{% set generated_name = (pool.name_format | default(pool.type ~ '-' ~ (index | string)) | replace('{type}', pool.type) | replace('{index}', index | string)) %}
+{% set _generated_name_template = pool.name_format | default(name_type ~ '-' ~ (index | string)) %}
+{% set generated_name = (_generated_name_template | replace('{type}', name_type) | replace('{index}', index | string)) %}
 {% endif %}
 {% if pool.hostname is defined and (pool.count | int) == 1 %}
 {% set generated_hostname = pool.hostname %}
 {% else %}
-{% set generated_hostname = (pool.hostname_format | default(pool.name_format | default(pool.type ~ '-' ~ (index | string))) | replace('{type}', pool.type) | replace('{index}', index | string)) %}
+{% set _generated_hostname_template = pool.hostname_format | default(pool.name_format | default(name_type ~ '-' ~ (index | string))) %}
+{% set generated_hostname = (_generated_hostname_template | replace('{type}', name_type) | replace('{index}', index | string)) %}
 {% endif %}
 {% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_provider_resource_prefix + '-' + generated_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
 {% set node = node_type | combine(pool, recursive=True) | combine(generated_node, recursive=True) | combine(node_override, recursive=True) %}
-{% set raw_node_image_vars = node.image_vars | default([]) %}
-{% set node_image_var_list = (([raw_node_image_vars] if raw_node_image_vars is string else raw_node_image_vars) + ([node.image_var] if node.image_var is defined else [])) | unique | list %}
+{% set node_image_var_list = (([node.image_vars] if node.image_vars is string else node.image_vars | default([])) + ([node.image_var] if node.image_var is defined else [])) | unique | list %}
 {% set node_image_namespace = namespace(images=[]) %}
 {% for image_var in node_image_var_list %}
 {% if image_var %}
@@ -34,6 +39,27 @@ ard_nodes:
 {% endif %}
 {% endfor %}
 {% set node_workload_image = (node_image_namespace.images | length == 1) | ternary(node_image_namespace.images[0], ((node_image_namespace.images | length > 1) | ternary('__ARD_IMAGE_CONFLICT__', ''))) %}
+{% set resolved_flavor = node.flavor | default('', true) %}
+{% if resolved_flavor == '' %}
+{% set resolved_flavor = selected_node_class_defaults.get('flavor', '') %}
+{% endif %}
+{% if resolved_flavor == '' %}
+{% set resolved_flavor = ard_render_provider_defaults.get('flavor', ard_render_compute_flavor) %}
+{% endif %}
+{% set resolved_image = node.image | default('', true) %}
+{% if resolved_image == '' %}
+{% if node_workload_image == '__ARD_IMAGE_CONFLICT__' %}
+{% set resolved_image = '__ARD_IMAGE_CONFLICT__' %}
+{% elif node_workload_image != '' %}
+{% set resolved_image = node_workload_image %}
+{% elif ard_render_workload_default_image | default('', true) != '' %}
+{% set resolved_image = ard_render_workload_default_image %}
+{% elif selected_node_class_defaults.get('image', '') != '' %}
+{% set resolved_image = selected_node_class_defaults.image %}
+{% else %}
+{% set resolved_image = ard_render_provider_defaults.image | default(ard_render_default_image, true) %}
+{% endif %}
+{% endif %}
   - name: {{ node.name }}
     hostname: {{ node.hostname }}
 {% if node.manage_etc_hosts is defined and not _render_for_kubevirt %}
@@ -44,8 +70,8 @@ ard_nodes:
 {% for group in node.groups | default([]) | unique %}
       - {{ group }}
 {% endfor %}
-    image: {{ node.image | default(node_workload_image | default(ard_render_default_image, true), true) }}
-    flavor: {{ node.flavor | default(ard_render_compute_flavor) }}
+    image: {{ resolved_image }}
+    flavor: {{ resolved_flavor }}
     preference: {{ node.preference | default(ard_render_vm_preference) }}
     networks:
 {% set node_network_overrides = node_override.networks | default({}) if node_override.networks is mapping else {} %}

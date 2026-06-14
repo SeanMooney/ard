@@ -153,12 +153,53 @@
         - oko-edpm-compute
 
     # ------------------------------------------------------------------
-    # provider-profiles preset — kubevirt profile structure
+    # node-types preset — node classes and compatibility node types
+    # ------------------------------------------------------------------
+    - name: Load node-types preset
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../files/presets/node-types.yaml"
+        name: _node_types_preset
+
+    - name: Verify node class catalog exists
+      ansible.builtin.assert:
+        that:
+          - _node_types_preset.ard_render_node_classes is defined
+          - _node_types_preset.ard_render_node_classes.keys() | list | sort == ['default', 'extra-small', 'large', 'medium', 'small']
+        fail_msg: "Node class catalog is missing or has unexpected class names"
+
+    - name: Verify compatibility node types select classes
+      ansible.builtin.assert:
+        that:
+          - _node_types_preset.ard_render_node_types.controller.class == 'large'
+          - _node_types_preset.ard_render_node_types.compute.class == 'default'
+          - _node_types_preset.ard_render_node_types.microshift.class == 'medium'
+          - _node_types_preset.ard_render_node_types.controller.flavor == 'devstack-control'
+          - _node_types_preset.ard_render_node_types.compute.flavor == 'devstack-compute'
+          - _node_types_preset.ard_render_node_types.microshift.flavor == 'microshift-node'
+        fail_msg: "Compatibility node type class/flavor mapping is unexpected"
+
+    # ------------------------------------------------------------------
+    # provider-profiles preset — kubevirt profile structure and node class mappings
     # ------------------------------------------------------------------
     - name: Load provider-profiles preset
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../../files/presets/provider-profiles.yaml"
         name: _provider_profiles_preset
+
+    - name: Verify provider node-class flavor mappings
+      ansible.builtin.assert:
+        that:
+          - _provider_profiles_preset.ard_render_provider_profiles['local-libvirt'].provider_node_class_defaults.large.flavor == 'oko-microshift-node'
+          - _provider_profiles_preset.ard_render_provider_profiles['local-libvirt'].provider_node_class_defaults.medium.flavor == 'microshift-node'
+          - _provider_profiles_preset.ard_render_provider_profiles['local-libvirt'].provider_node_class_defaults.default.flavor == 'devstack-compute'
+          - _provider_profiles_preset.ard_render_provider_profiles['local-libvirt'].provider_node_class_defaults.small.flavor == 'oko-edpm-compute'
+          - _provider_profiles_preset.ard_render_provider_profiles['local-libvirt'].provider_node_class_defaults['extra-small'].flavor == 'bridge-test'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_node_class_defaults.large.flavor == 'devstack-control'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_node_class_defaults.medium.flavor == 'devstack-control'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_node_class_defaults.default.flavor == 'devstack-compute'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_node_class_defaults.small.flavor == 'devstack-compute'
+          - _provider_profiles_preset.ard_render_provider_profiles.kubevirt.provider_node_class_defaults['extra-small'].flavor == 'devstack-compute'
+        fail_msg: "Provider node-class flavor mappings are unexpected"
 
     - name: Verify kubevirt provider profile exists in preset
       ansible.builtin.assert:

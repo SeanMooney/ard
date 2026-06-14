@@ -1,6 +1,19 @@
 ---
+ard_render_node_classes:
+  large:
+    description: High-memory workload node, 16G target
+  medium:
+    description: Medium workload node, 8-12G-ish target
+  default:
+    description: Standard workload node, 8G target
+  small:
+    description: Small workload node, 4G target
+  extra-small:
+    description: Minimal test node, 1G target
+
 ard_render_node_types:
   controller:
+    class: large
     groups:
       - controller
       - switch
@@ -10,6 +23,7 @@ ard_render_node_types:
     flavor: devstack-control
 
   compute:
+    class: default
     groups:
       - compute
       - peers
@@ -20,6 +34,7 @@ ard_render_node_types:
     flavor: devstack-compute
 
   microshift:
+    class: medium
     groups:
       - microshift
     profiles:
