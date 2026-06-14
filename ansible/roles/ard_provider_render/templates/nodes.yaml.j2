@@ -22,8 +22,18 @@ ard_nodes:
 {% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_provider_resource_prefix + '-' + generated_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
 {% set node = node_type | combine(pool, recursive=True) | combine(generated_node, recursive=True) | combine(node_override, recursive=True) %}
-{% set node_image_var = node.image_var | default('') %}
-{% set node_workload_image = lookup('ansible.builtin.vars', node_image_var, default='') if node_image_var else '' %}
+{% set raw_node_image_vars = node.image_vars | default([]) %}
+{% set node_image_var_list = (([raw_node_image_vars] if raw_node_image_vars is string else raw_node_image_vars) + ([node.image_var] if node.image_var is defined else [])) | unique | list %}
+{% set node_image_namespace = namespace(images=[]) %}
+{% for image_var in node_image_var_list %}
+{% if image_var %}
+{% set resolved_image = lookup('ansible.builtin.vars', image_var, default='') %}
+{% if resolved_image and resolved_image not in node_image_namespace.images %}
+{% set node_image_namespace.images = node_image_namespace.images + [resolved_image] %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% set node_workload_image = (node_image_namespace.images | length == 1) | ternary(node_image_namespace.images[0], ((node_image_namespace.images | length > 1) | ternary('__ARD_IMAGE_CONFLICT__', ''))) %}
   - name: {{ node.name }}
     hostname: {{ node.hostname }}
 {% if node.manage_etc_hosts is defined and not _render_for_kubevirt %}

@@ -214,6 +214,15 @@
   ansible.builtin.set_fact:
     ard_render_nodes: "{{ ard_render_nodes_doc.ard_nodes }}"
 
+- name: Validate workload image resolution
+  ansible.builtin.assert:
+    that:
+      - ard_render_nodes | selectattr('image', 'equalto', '__ARD_IMAGE_CONFLICT__') | list | length == 0
+    fail_msg: >-
+      One or more node pools resolve to conflicting workload image defaults.
+      Set an explicit pool/node image to disambiguate pools with multiple
+      workload image variables.
+
 - name: Resolve requested ARD network names from rendered nodes
   ansible.builtin.set_fact:
     ard_render_requested_network_names: >-
