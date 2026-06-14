@@ -178,6 +178,37 @@
           - _node_types_preset.ard_render_node_types.microshift.flavor == 'microshift-node'
         fail_msg: "Compatibility node type class/flavor mapping is unexpected"
 
+    - name: Verify workload role mappings exist
+      ansible.builtin.assert:
+        that:
+          - _node_types_preset.ard_render_workload_roles.devstack.devstack_controller.groups | sort == ['controller', 'switch']
+          - _node_types_preset.ard_render_workload_roles.devstack.devstack_compute.groups | sort == ['compute', 'peers', 'subnode']
+          - _node_types_preset.ard_render_workload_roles.microshift.microshift_node.groups == ['microshift']
+          - _node_types_preset.ard_render_workload_roles.oko.microshift_node.groups == ['microshift']
+          - _node_types_preset.ard_render_workload_roles.oko.edpm_compute.groups | sort == ['compute', 'peers', 'subnode']
+          - _node_types_preset.ard_render_workload_roles.oko.edpm_compute.image_var == 'ard_edpm_image_effective'
+        fail_msg: "Workload role mappings are missing or unexpected"
+
+    # ------------------------------------------------------------------
+    # topologies preset — workload-family topology mappings and aliases
+    # ------------------------------------------------------------------
+    - name: Load topologies preset
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../files/presets/topologies.yaml"
+        name: _topologies_preset
+
+    - name: Verify workload-family topology presets and aliases
+      ansible.builtin.assert:
+        that:
+          - _topologies_preset.ard_render_workload_topologies.devstack['aio-plus-compute'].node_pools[0].workload_roles | sort == ['devstack_compute', 'devstack_controller']
+          - _topologies_preset.ard_render_workload_topologies.devstack['aio-plus-compute'].node_pools[1].workload_roles == ['devstack_compute']
+          - _topologies_preset.ard_render_workload_topologies.oko['microshift-two-edpm-compute'].node_pools[1].workload_roles == ['edpm_compute']
+          - _topologies_preset.ard_render_topology_aliases['one-controller-one-compute'].workload == 'devstack'
+          - _topologies_preset.ard_render_topology_aliases['one-controller-one-compute'].topology == 'aio-plus-compute'
+          - _topologies_preset.ard_render_topology_aliases['oko-microshift-two-compute'].workload == 'oko'
+          - _topologies_preset.ard_render_topology_aliases['oko-microshift-two-compute'].topology == 'microshift-two-edpm-compute'
+        fail_msg: "Workload topology presets or legacy aliases are unexpected"
+
     # ------------------------------------------------------------------
     # provider-profiles preset — kubevirt profile structure and node class mappings
     # ------------------------------------------------------------------

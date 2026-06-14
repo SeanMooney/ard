@@ -1,0 +1,66 @@
+---
+- name: Verify ard_provider_render workload role group rendering
+  hosts: all
+  gather_facts: false
+  vars:
+    _render_base_dir: /tmp/ard-provider-render-molecule
+  tasks:
+    - name: Load rendered DevStack all-in-one canonical nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/devstack-all-in-one/nodes.yaml"
+        name: _devstack_aio_collision
+
+    - name: Verify canonical all-in-one uses workload roles despite legacy name collision
+      ansible.builtin.assert:
+        that:
+          - _devstack_aio_collision.ard_nodes | length == 1
+          - (_devstack_aio_collision.ard_nodes | selectattr('name', 'equalto', 'controller') | first).workload_roles | sort == ['devstack_compute', 'devstack_controller']
+          - (_devstack_aio_collision.ard_nodes | selectattr('name', 'equalto', 'controller') | first).groups | sort == ['compute', 'controller', 'peers', 'subnode', 'switch']
+          - (_devstack_aio_collision.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
+        fail_msg: "Canonical all-in-one workload topology was masked by legacy topology"
+
+    - name: Load rendered DevStack canonical nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/devstack-aio-plus-compute/nodes.yaml"
+        name: _devstack_aio
+
+    - name: Verify DevStack AIO workload roles drive inventory groups
+      ansible.builtin.assert:
+        that:
+          - _devstack_aio.ard_nodes | length == 2
+          - (_devstack_aio.ard_nodes | selectattr('name', 'equalto', 'controller') | first).workload_roles | sort == ['devstack_compute', 'devstack_controller']
+          - (_devstack_aio.ard_nodes | selectattr('name', 'equalto', 'controller') | first).groups | sort == ['compute', 'controller', 'peers', 'subnode', 'switch']
+          - (_devstack_aio.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).workload_roles == ['devstack_compute']
+          - (_devstack_aio.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).groups | sort == ['compute', 'peers', 'subnode']
+        fail_msg: "DevStack workload roles did not render expected inventory groups"
+
+    - name: Load rendered OKO canonical nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/oko-microshift-two-edpm-compute/nodes.yaml"
+        name: _oko
+
+    - name: Verify OKO EDPM workload role drives compute-compatible groups
+      ansible.builtin.assert:
+        that:
+          - _oko.ard_nodes | length == 3
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).workload_roles == ['microshift_node']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).groups == ['microshift']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).workload_roles == ['edpm_compute']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).groups | sort == ['compute', 'peers', 'subnode']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).image == 'centos-stream-9'
+        fail_msg: "OKO workload roles did not render expected EDPM groups or image"
+
+    - name: Load rendered legacy alias nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/legacy-one-controller-one-compute/nodes.yaml"
+        name: _legacy
+
+    - name: Verify legacy topology rendering remains compatible
+      ansible.builtin.assert:
+        that:
+          - _legacy.ard_nodes | length == 2
+          - (_legacy.ard_nodes | selectattr('name', 'equalto', 'controller') | first).groups | sort == ['controller', 'switch']
+          - (_legacy.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).groups | sort == ['compute', 'peers', 'subnode']
+          - (_legacy.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
+          - (_legacy.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).flavor == 'devstack-compute'
+        fail_msg: "Legacy topology output changed unexpectedly"
