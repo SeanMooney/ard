@@ -76,7 +76,7 @@ ard_render_topologies:
         name_format: "edpm-compute-{index}"
         hostname_format: "edpm-compute-{index}"
         manage_etc_hosts: false
-        image: centos-stream-9
+        image_var: ard_edpm_image_effective
         flavor: oko-edpm-compute
         networks:
           - name: ard-mgmt

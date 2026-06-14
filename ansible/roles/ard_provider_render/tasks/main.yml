@@ -50,6 +50,10 @@
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../ard_provider_common/files/presets/services.yaml"
 
+- name: Load ARD render workload presets
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../ard_provider_common/files/presets/workloads.yaml"
+
 - name: Load ARD render node type presets
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../ard_provider_common/files/presets/node-types.yaml"
@@ -167,6 +171,14 @@
          default(ard_render_image |
          default(ard_render_branch_config.devstack.image |
          default(ard_render_provider_defaults.image, true), true), true) }}
+    ard_microshift_image_effective: >-
+      {{ ard_microshift_image |
+         default(ard_render_image |
+         default((ard_topology is match('^oko-')) |
+         ternary(ard_render_workload_presets.oko.microshift_image, ard_render_workload_presets.microshift.image), true), true) }}
+    ard_edpm_image_effective: >-
+      {{ ard_edpm_image |
+         default(ard_render_workload_presets.oko.edpm_image, true) }}
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
@@ -352,6 +364,8 @@
       ard_topology: {{ ard_topology }}
       ard_service_profiles: {{ ard_render_service_profile_list | to_json }}
       ard_devstack_image: {{ ard_render_default_image }}
+      ard_microshift_image: {{ ard_microshift_image_effective }}
+      ard_edpm_image: {{ ard_edpm_image_effective }}
       ard_render_image: {{ ard_render_default_image }}
       ard_default_image: {{ ard_render_default_image }}
       ard_default_controller_flavor: {{ ard_render_controller_flavor }}

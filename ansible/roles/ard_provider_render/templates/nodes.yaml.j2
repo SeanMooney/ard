@@ -22,6 +22,8 @@ ard_nodes:
 {% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_provider_resource_prefix + '-' + generated_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
 {% set node = node_type | combine(pool, recursive=True) | combine(generated_node, recursive=True) | combine(node_override, recursive=True) %}
+{% set node_image_var = node.image_var | default('') %}
+{% set node_workload_image = lookup('ansible.builtin.vars', node_image_var, default='') if node_image_var else '' %}
   - name: {{ node.name }}
     hostname: {{ node.hostname }}
 {% if node.manage_etc_hosts is defined and not _render_for_kubevirt %}
@@ -32,7 +34,7 @@ ard_nodes:
 {% for group in node.groups | default([]) | unique %}
       - {{ group }}
 {% endfor %}
-    image: {{ node.image | default(ard_render_default_image) }}
+    image: {{ node.image | default(node_workload_image | default(ard_render_default_image, true), true) }}
     flavor: {{ node.flavor | default(ard_render_compute_flavor) }}
     preference: {{ node.preference | default(ard_render_vm_preference) }}
     networks:
