@@ -8,5 +8,4 @@ ard_render_branches:
     devstack:
       common:
         devstack_branch: stable/2026.1
-    provider_defaults:
       image: ubuntu-24.04
