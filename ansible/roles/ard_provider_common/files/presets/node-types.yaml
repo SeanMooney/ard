@@ -26,3 +26,4 @@ ard_render_node_types:
       - ssh
       - nested_virt
     flavor: microshift-node
+    image_var: ard_microshift_image_effective

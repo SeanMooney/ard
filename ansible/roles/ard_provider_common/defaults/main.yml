@@ -16,6 +16,8 @@ ard_static_default_private_key_file: "{{ lookup('env', 'HOME') + '/.ssh/id_ed255
 ard_target_branch: master
 ard_devstack_branch: "{{ ard_target_branch | default('master') }}"
 ard_devstack_image: ""
+ard_microshift_image: ""
+ard_edpm_image: ""
 ard_render_image: ""
 ard_service_profiles:
   - devstack

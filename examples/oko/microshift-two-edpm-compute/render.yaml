@@ -4,5 +4,4 @@ ard_provider: libvirt
 ard_provider_profile: local-libvirt
 ard_topology: oko-microshift-two-compute
 ard_service_profiles: []
-ard_render_image: centos-stream-10
 ard_libvirt_network_cidr: 192.168.96.0/24
