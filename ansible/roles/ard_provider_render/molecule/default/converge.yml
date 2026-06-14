@@ -1,0 +1,63 @@
+---
+- name: Converge ard_provider_render workload topology cases
+  hosts: all
+  gather_facts: false
+  vars:
+    _render_base_dir: /tmp/ard-provider-render-molecule
+  roles:
+    - ard_provider_common
+  tasks:
+    - name: Remove prior render outputs
+      ansible.builtin.file:
+        path: "{{ _render_base_dir }}"
+        state: absent
+
+    - name: Render legacy alias topology case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/legacy-one-controller-one-compute"
+        ard_deployment_name: legacy-one-controller-one-compute
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_topology: one-controller-one-compute
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.123.0/24
+
+    - name: Render canonical all-in-one topology with legacy name collision
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/devstack-all-in-one"
+        ard_deployment_name: devstack-all-in-one
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_workload: devstack
+        ard_workload_topology: all-in-one
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.120.0/24
+
+    - name: Render canonical workload topology cases
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/{{ render_case.name }}"
+        ard_deployment_name: "{{ render_case.name }}"
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_workload: "{{ render_case.workload }}"
+        ard_workload_topology: "{{ render_case.topology }}"
+        ard_topology: "{{ render_case.topology }}"
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: "{{ render_case.cidr }}"
+      loop:
+        - name: devstack-aio-plus-compute
+          workload: devstack
+          topology: aio-plus-compute
+          cidr: 192.168.121.0/24
+        - name: oko-microshift-two-edpm-compute
+          workload: oko
+          topology: microshift-two-edpm-compute
+          cidr: 192.168.122.0/24
+      loop_control:
+        loop_var: render_case

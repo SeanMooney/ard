@@ -9,7 +9,18 @@ ard_nodes:
 {% set pool_key = raw_pool.get('name', none) | default(pool_type, true) %}
 {% set pool = raw_pool | combine(pool_overrides.get(pool_type, {}), recursive=True) | combine(pool_overrides.get(pool_key, {}), recursive=True) %}
 {% set node_type = ard_render_node_types.get(pool_type, {}) %}
-{% set name_type = pool.type | default('node') %}
+{% set pool_workload_roles = ([pool.workload_roles] if pool.workload_roles is string else pool.workload_roles | default([])) %}
+{% set workload_role_catalog = ard_render_workload_roles.get(ard_workload, {}) | default({}) %}
+{% set workload_role_namespace = namespace(groups=[], profiles=[], image_vars=[]) %}
+{% for workload_role_name in pool_workload_roles %}
+{% set workload_role = workload_role_catalog.get(workload_role_name, {}) %}
+{% set workload_role_namespace.groups = (workload_role_namespace.groups + (workload_role.groups | default([]))) | unique | list %}
+{% set workload_role_namespace.profiles = (workload_role_namespace.profiles + (workload_role.profiles | default([])) + (workload_role.node_profiles | default([]))) | unique | list %}
+{% set workload_role_image_vars = ([workload_role.image_vars] if workload_role.image_vars is string else workload_role.image_vars | default([])) + ([workload_role.image_var] if workload_role.image_var is defined else []) %}
+{% set workload_role_namespace.image_vars = (workload_role_namespace.image_vars + workload_role_image_vars) | unique | list %}
+{% endfor %}
+{% set workload_role_defaults = {'groups': workload_role_namespace.groups, 'profiles': workload_role_namespace.profiles, 'image_vars': workload_role_namespace.image_vars} %}
+{% set name_type = pool.type | default(pool.name | default('node')) %}
 {% set selected_node_class = pool.class | default(node_type.get('class', none), true) %}
 {% set selected_node_class_defaults = ard_render_provider_node_class_defaults.get(selected_node_class, {}) %}
 {% for index in range(1, (pool.count | int) + 1) %}
@@ -27,7 +38,7 @@ ard_nodes:
 {% endif %}
 {% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_provider_resource_prefix + '-' + generated_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
-{% set node = node_type | combine(pool, recursive=True) | combine(generated_node, recursive=True) | combine(node_override, recursive=True) %}
+{% set node = node_type | combine(workload_role_defaults, recursive=True, list_merge='append') | combine(pool, recursive=True, list_merge='append') | combine(generated_node, recursive=True) | combine(node_override, recursive=True, list_merge='append') %}
 {% set node_image_var_list = (([node.image_vars] if node.image_vars is string else node.image_vars | default([])) + ([node.image_var] if node.image_var is defined else [])) | unique | list %}
 {% set node_image_namespace = namespace(images=[]) %}
 {% for image_var in node_image_var_list %}
@@ -70,6 +81,12 @@ ard_nodes:
 {% for group in node.groups | default([]) | unique %}
       - {{ group }}
 {% endfor %}
+{% if node.workload_roles is defined %}
+    workload_roles:
+{% for workload_role in ([node.workload_roles] if node.workload_roles is string else node.workload_roles | default([])) | unique %}
+      - {{ workload_role }}
+{% endfor %}
+{% endif %}
     image: {{ resolved_image }}
     flavor: {{ resolved_flavor }}
     preference: {{ node.preference | default(ard_render_vm_preference) }}

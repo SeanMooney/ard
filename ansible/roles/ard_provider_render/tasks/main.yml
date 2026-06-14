@@ -36,6 +36,8 @@
     ard_provider: "{{ ard_provider | default('libvirt') }}"
     ard_provider_profile: "{{ (ard_provider == 'static' and ard_provider_profile == 'local-libvirt') | ternary('local-static', ard_provider_profile) }}"
     ard_topology: "{{ ard_topology | default('one-controller-one-compute') }}"
+    ard_workload_topology_explicit: "{{ ard_workload_topology is defined and (ard_workload_topology | default('', true) | string | length > 0) }}"
+    ard_workload_topology_input: "{{ ard_workload_topology | default(ard_topology | default('one-controller-one-compute'), true) }}"
     ard_devstack_branch_effective: "{{ ard_devstack_branch | default(ard_target_branch | default('master'), true) }}"
 
 - name: Load ARD render topology presets
@@ -66,6 +68,25 @@
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../ard_provider_common/files/presets/provider-profiles.yaml"
 
+- name: Normalize ARD workload topology selection
+  ansible.builtin.set_fact:
+    ard_workload_topology_input: "{{ ard_workload_topology | default(ard_topology, true) }}"
+    ard_workload_topology_alias_config: "{{ ard_render_topology_aliases.get(ard_workload_topology | default(ard_topology, true), {}) }}"
+
+- name: Resolve ARD workload and topology names
+  ansible.builtin.set_fact:
+    ard_workload_effective: >-
+      {{ ard_workload | default(
+           (ard_workload_topology_input.split('/')[0] if '/' in ard_workload_topology_input else ard_workload_topology_alias_config.get('workload', 'devstack')),
+           true) }}
+    ard_workload_topology_effective: >-
+      {{ (ard_workload_topology_input.split('/')[1] if '/' in ard_workload_topology_input else ard_workload_topology_alias_config.get('topology', ard_workload_topology_input)) }}
+
+- name: Normalize ARD workload compatibility facts
+  ansible.builtin.set_fact:
+    ard_workload: "{{ ard_workload_effective }}"
+    ard_workload_topology: "{{ ard_workload_topology_effective }}"
+
 - name: Normalize ARD render service profile list
   ansible.builtin.set_fact:
     ard_render_service_profile_list: >-
@@ -79,19 +100,32 @@
   ansible.builtin.assert:
     that:
       - ard_provider in ['libvirt', 'static', 'kubevirt']
-      - ard_topology in ard_render_topologies
+      - >-
+        ((ard_workload_topology_explicit | bool) and
+         ard_workload in ard_render_workload_topologies and
+         ard_workload_topology in ard_render_workload_topologies[ard_workload]) or
+        ((not (ard_workload_topology_explicit | bool)) and
+         (ard_topology in ard_render_topologies or
+          (ard_workload in ard_render_workload_topologies and
+           ard_workload_topology in ard_render_workload_topologies[ard_workload])))
       - ard_provider_profile in ard_render_provider_profiles
       - ard_render_service_profile_list | difference(ard_render_services.keys() | list) | length == 0
       - ard_provider == 'kubevirt' or ard_libvirt_network_cidr is match('^([0-9]{1,3}\.){3}0/24$')
     fail_msg: >-
       Unsupported render input. provider={{ ard_provider }},
-      provider_profile={{ ard_provider_profile }}, topology={{ ard_topology }},
+      provider_profile={{ ard_provider_profile }}, topology={{ ard_topology }}, workload={{ ard_workload }}, workload_topology={{ ard_workload_topology }},
       services={{ ard_render_service_profile_list }}, cidr={{ ard_libvirt_network_cidr }}.
 
 - name: Compose ARD topology preset
   ansible.builtin.set_fact:
+    ard_render_topology_base_config: >-
+      {{ ((not (ard_workload_topology_explicit | bool)) and ard_topology in ard_render_topologies) |
+         ternary(ard_render_topologies.get(ard_topology, {}), ard_render_workload_topologies[ard_workload][ard_workload_topology]) }}
+
+- name: Compose ARD topology overrides
+  ansible.builtin.set_fact:
     ard_render_topology_config: >-
-      {{ ard_render_topologies[ard_topology] |
+      {{ ard_render_topology_base_config |
          combine((ard_render_overrides | default({})).get('topology', {}), recursive=True) |
          combine(ard_topology_overrides | default({}), recursive=True) }}
 
@@ -116,6 +150,26 @@
          combine(_ard_pool_overrides.get(_ard_pool_type, {}), recursive=True) |
          combine(_ard_pool_overrides.get(_ard_pool_key, {}), recursive=True) }}
     _ard_pool_selected_class: "{{ _ard_effective_pool.class | default(ard_render_node_types.get(_ard_pool_type, {}).get('class', ''), true) }}"
+  loop: "{{ ard_render_topology_config.node_pools | default([]) }}"
+
+- name: Validate ARD workload roles
+  ansible.builtin.assert:
+    that:
+      - _ard_pool_workload_roles | difference(_ard_supported_workload_roles) | length == 0
+    fail_msg: >-
+      Node pool '{{ _ard_pool_key | default('unnamed') }}' uses unsupported workload role(s)
+      for workload '{{ ard_workload }}': {{ _ard_pool_workload_roles | difference(_ard_supported_workload_roles) | join(', ') }}.
+      Supported roles: {{ _ard_supported_workload_roles | join(', ') }}.
+  vars:
+    _ard_pool_type: "{{ item.type | default('', true) }}"
+    _ard_pool_key: "{{ item.name | default(_ard_pool_type, true) }}"
+    _ard_pool_overrides: "{{ (ard_render_overrides | default({})).get('node_pools', {}) }}"
+    _ard_effective_pool: >-
+      {{ item |
+         combine(_ard_pool_overrides.get(_ard_pool_type, {}), recursive=True) |
+         combine(_ard_pool_overrides.get(_ard_pool_key, {}), recursive=True) }}
+    _ard_pool_workload_roles: "{{ ([ _ard_effective_pool.workload_roles ] if _ard_effective_pool.workload_roles is string else _ard_effective_pool.workload_roles | default([])) }}"
+    _ard_supported_workload_roles: "{{ (ard_render_workload_roles.get(ard_workload, {}) | default({})).keys() | list }}"
   loop: "{{ ard_render_topology_config.node_pools | default([]) }}"
 
 - name: Compose requested ARD service profiles
@@ -396,6 +450,8 @@
 
       ard_devstack_branch: {{ ard_devstack_branch_effective }}
       ard_target_branch: {{ ard_devstack_branch_effective }}
+      ard_workload: {{ ard_workload }}
+      ard_workload_topology: {{ ard_workload_topology }}
       ard_topology: {{ ard_topology }}
       ard_service_profiles: {{ ard_render_service_profile_list | to_json }}
       ard_devstack_image: {{ ard_render_default_image }}

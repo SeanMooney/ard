@@ -11,6 +11,51 @@ ard_render_node_classes:
   extra-small:
     description: Minimal test node, 1G target
 
+ard_render_workload_roles:
+  devstack:
+    devstack_controller:
+      groups:
+        - controller
+        - switch
+      profiles:
+        - ssh
+        - nested_virt
+    devstack_compute:
+      groups:
+        - compute
+        - peers
+        - subnode
+      profiles:
+        - ssh
+        - nested_virt
+
+  microshift:
+    microshift_node:
+      groups:
+        - microshift
+      profiles:
+        - ssh
+        - nested_virt
+      image_var: ard_microshift_image_effective
+
+  oko:
+    microshift_node:
+      groups:
+        - microshift
+      profiles:
+        - ssh
+        - nested_virt
+      image_var: ard_microshift_image_effective
+    edpm_compute:
+      groups:
+        - compute
+        - peers
+        - subnode
+      profiles:
+        - ssh
+        - nested_virt
+      image_var: ard_edpm_image_effective
+
 ard_render_node_types:
   controller:
     class: large

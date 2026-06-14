@@ -1,4 +1,132 @@
 ---
+ard_render_workload_topologies:
+  devstack:
+    all-in-one:
+      controller_runs_compute: true
+      node_pools:
+        - type: controller
+          name: controller
+          class: large
+          count: 1
+          hostname: controller
+          workload_roles:
+            - devstack_controller
+            - devstack_compute
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+
+    aio-plus-compute:
+      controller_runs_compute: true
+      node_pools:
+        - type: controller
+          name: controller
+          class: large
+          count: 1
+          hostname: controller
+          workload_roles:
+            - devstack_controller
+            - devstack_compute
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+        - type: compute
+          class: default
+          count: 1
+          name_format: "compute-{index}"
+          hostname_format: "compute-{index}"
+          workload_roles:
+            - devstack_compute
+          networks:
+            - name: ard-mgmt
+              ip_start: 3
+
+    one-controller-two-compute:
+      controller_runs_compute: false
+      node_pools:
+        - type: controller
+          name: controller
+          class: large
+          count: 1
+          hostname: controller
+          workload_roles:
+            - devstack_controller
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+        - type: compute
+          name: compute
+          class: default
+          count: 2
+          name_format: "compute-{index}"
+          hostname_format: "compute-{index}"
+          workload_roles:
+            - devstack_compute
+          networks:
+            - name: ard-mgmt
+              ip_start: 3
+
+  microshift:
+    single-node:
+      controller_runs_compute: false
+      node_pools:
+        - type: microshift
+          name: microshift
+          class: medium
+          count: 1
+          hostname: microshift
+          workload_roles:
+            - microshift_node
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+
+  oko:
+    microshift-two-edpm-compute:
+      controller_runs_compute: false
+      node_pools:
+        - name: microshift
+          class: large
+          count: 1
+          hostname: microshift
+          workload_roles:
+            - microshift_node
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+            - name: datacenter
+              mac_start: 2
+        - name: edpm-compute
+          class: small
+          count: 2
+          name_format: "edpm-compute-{index}"
+          hostname_format: "edpm-compute-{index}"
+          workload_roles:
+            - edpm_compute
+          manage_etc_hosts: false
+          networks:
+            - name: ard-mgmt
+              ip_start: 10
+            - name: datacenter
+              mac_start: 10
+
+ard_render_topology_aliases:
+  all-in-one:
+    workload: devstack
+    topology: all-in-one
+  one-controller-one-compute:
+    workload: devstack
+    topology: aio-plus-compute
+  one-controller-two-compute:
+    workload: devstack
+    topology: one-controller-two-compute
+  microshift-single-node:
+    workload: microshift
+    topology: single-node
+  oko-microshift-two-compute:
+    workload: oko
+    topology: microshift-two-edpm-compute
+
 ard_render_topologies:
   all-in-one:
     controller_runs_compute: true
