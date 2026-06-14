@@ -4,9 +4,21 @@ ard_render_provider_profiles:
     provider: libvirt
     provider_defaults:
       image: debian-13
+      flavor: devstack-compute
       controller_flavor: devstack-control
       compute_flavor: devstack-compute
       vm_preference: devstack
+    provider_node_class_defaults:
+      large:
+        flavor: oko-microshift-node
+      medium:
+        flavor: microshift-node
+      default:
+        flavor: devstack-compute
+      small:
+        flavor: oko-edpm-compute
+      extra-small:
+        flavor: bridge-test
     capabilities:
       network_modes:
         - nat
@@ -15,18 +27,45 @@ ard_render_provider_profiles:
     provider: static
     provider_defaults:
       image: debian-13
+      flavor: devstack-compute
       controller_flavor: devstack-control
       compute_flavor: devstack-compute
       vm_preference: devstack
+    provider_node_class_defaults:
+      large:
+        flavor: devstack-compute
+      medium:
+        flavor: devstack-compute
+      default:
+        flavor: devstack-compute
+      small:
+        flavor: devstack-compute
+      extra-small:
+        flavor: devstack-compute
     capabilities: {}
   kubevirt:
     provider: kubevirt
     provider_defaults:
       image: debian-13
+      flavor: devstack-compute
       controller_flavor: devstack-control
       compute_flavor: devstack-compute
       vm_preference: devstack
+    provider_node_class_defaults:
+      large:
+        flavor: devstack-control
+      medium:
+        flavor: devstack-control
+      default:
+        flavor: devstack-compute
+      small:
+        flavor: devstack-compute
+      extra-small:
+        flavor: devstack-compute
     capabilities:
       networks:
         - ard-mgmt
         - datacenter
+      network_modes:
+        - nat
+        - isolated
