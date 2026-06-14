@@ -162,7 +162,11 @@
          default((ard_provider in ['libvirt', 'static']) |
            ternary('ard-' ~ ard_deployment_name, ard_provider_resource_prefix_default), true) }}
     ard_libvirt_network_name: "{{ ard_libvirt_network_name | default('ard-' + ard_deployment_name) }}"
-    ard_devstack_image_effective: "{{ ard_devstack_image | default(ard_render_image | default(ard_render_provider_defaults.image, true), true) }}"
+    ard_devstack_image_effective: >-
+      {{ ard_devstack_image |
+         default(ard_render_image |
+         default(ard_render_branch_config.devstack.image |
+         default(ard_render_provider_defaults.image, true), true), true) }}
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
