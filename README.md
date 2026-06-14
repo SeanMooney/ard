@@ -5,11 +5,13 @@ deployments. The primary local workflow uses Ansible provider playbooks to
 provision libvirt VMs, generate an ARD/Zuul-like inventory, and then run the
 existing DevStack deployment roles inside those VMs.
 
-The current local provider target is libvirt. KubeVirt is planned as a provider, OpenShift-related workloads are supported, and `static` is now available for deployments on pre-provisioned SSH hosts.
+The primary local provider target is libvirt. KubeVirt and `static` are also provider paths; `static` targets pre-provisioned SSH hosts.
 
 Docs navigation was reorganized; see:
 - `docs/repo-navigation.md` for repo layout and entry points
 - `docs/README.md` for the documentation index
+- `docs/concepts/ard-render-model.md` for user-facing render model concepts and examples
+- `docs/architecture/render-contracts.md` for contributor render/provider contracts
 - `ansible/README.md` for Ansible structure and canonical playbook paths
 
 ## Quick start
@@ -211,28 +213,33 @@ compute-2
 
 Topology presets are built from generic node pools. Singleton pools can set an explicit name such as `controller`; counted pools default to readable hyphenated names such as `{type}-{index}`. Multinode topologies disable `nova-compute` on the controller through the rendered controller group vars when the topology says the controller does not run compute services.
 
-## Render intent and service profiles
+## Render intent, examples, and service profiles
 
-Render can start from a small intent file:
-
-```yaml
----
-ard_provider: libvirt
-ard_provider_profile: local-libvirt
-ard_target_branch: stable/2026.1
-ard_topology: one-controller-one-compute
-ard_service_profiles:
-  - devstack
-  - ovn
-  - tempest
-ard_libvirt_network_cidr: 192.168.98.0/24
-```
-
-Use it with:
+The `examples/` tree is the primary interface for reusable render intent. The
+same example can be used through Make, Molecule, or direct Ansible. Examples
+carry `ard_render_schema_version: 1` and describe workload/topology intent;
+provider, identity, namespace, CIDR, and scenario-specific values can be
+overridden by the caller.
 
 ```bash
-make render ARD_DEPLOYMENT=stable-test ARD_RENDER_FILE=examples/render.yaml
+make render \
+  ARD_DEPLOYMENT=stable-test \
+  ARD_RENDER_FILE=examples/devstack/aio-plus-compute/render.yaml \
+  ARD_TARGET_BRANCH=stable/2026.1 \
+  ARD_NETWORK_CIDR=192.168.98.0/24
+
+uv run ansible-playbook -i localhost, ansible/playbooks/provider/render.yaml \
+  -e ard_deployment_name=stable-test \
+  -e @examples/devstack/aio-plus-compute/render.yaml
 ```
+
+Molecule scenarios set `provisioner.ard_render_file` to one of these examples
+and keep scenario-local overrides under `provisioner.ard`.
+
+See `docs/concepts/ard-render-model.md` for the render model, provider identity,
+node classes, networks, and state artifacts. See
+`docs/architecture/render-contracts.md` for contributor-level schema and merge
+contracts.
 
 Use `ard_render_overrides` for simple kustomize-like customizations. Overrides use ordinary recursive dictionary merge semantics: later dictionaries replace scalar and list values for the relevant section.
 
@@ -366,11 +373,12 @@ provider resources.
 
 ## Molecule scenarios
 
-Top-level Molecule scenarios are full ARD/libvirt-backed DevStack validation
-flows. They call the same provider playbooks used by Make and do not use
-Vagrant. The scenario source of truth lives in `molecule.yml` under
-`provisioner.ard`; Molecule `platforms` are intentionally omitted so topology
-and node names are defined only once by ARD render presets.
+Top-level Molecule scenarios are full ARD-backed validation flows. They call
+the same provider playbooks used by Make and do not use Vagrant. Migrated
+scenarios load reusable intent from `provisioner.ard_render_file` and keep only
+scenario-local overrides in `molecule.yml` under `provisioner.ard`; Molecule
+`platforms` are intentionally omitted so topology and node names are defined
+only once by ARD render presets.
 
 Available scenarios:
 

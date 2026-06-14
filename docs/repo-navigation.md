@@ -9,7 +9,7 @@
 - `molecule/` — CI/test scenarios
 - `submodules/` — external upstream sources
 - `ansible/` — all Ansible playbooks, roles, and data
-- `docs/` — docs index and design plans
+- `docs/` — docs index, render model concepts, architecture contracts, and design plans
 
 ## Ansible layout
 
@@ -36,6 +36,8 @@
 
 - **Provider behavior:** `ansible/playbooks/provider/` and `ansible/roles/ard_provider_*`
 - **Static provider entry points:** `ansible/roles/ard_static_*`
-- **KubeVirt provider placeholder:** not yet documented
+- **Render model concepts:** `docs/concepts/ard-render-model.md`
+- **Render/provider contracts:** `docs/architecture/render-contracts.md`
+- **KubeVirt provider behavior:** render/provider contracts plus `ansible/roles/ard_kubevirt_*`
 - **Workload composition:** `ansible/playbooks/workloads/`; select MicroShift with `ARD_WORKLOAD=microshift`
 - **Libvirt implementation details:** `ansible/roles/ard_libvirt_*`
