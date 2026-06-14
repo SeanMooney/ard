@@ -7,7 +7,7 @@ driver:
 provisioner:
   name: ansible
   env:
-    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_STDOUT_CALLBACK: community.general.yaml
   ard_render_file: ../../examples/provider-test/single-node/render.yaml
   ard:
     ard_deployment_name: molecule-libvirt-single

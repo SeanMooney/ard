@@ -49,7 +49,7 @@
 
 - name: Configure pip proxy
   become: true
-  ansible.builtin.ini_file:
+  community.general.ini_file:
     path: /etc/pip.conf
     section: global
     option: proxy
