@@ -7,7 +7,7 @@ driver:
 provisioner:
   name: ansible
   env:
-    ANSIBLE_STDOUT_CALLBACK: yaml
+    ANSIBLE_STDOUT_CALLBACK: community.general.yaml
     # This role's molecule test uses the full provider pipeline.
     # MOLECULE_PROJECT_DIRECTORY must point to the repo root.
     MOLECULE_PROJECT_DIRECTORY: "${MOLECULE_PROJECT_DIRECTORY}/../../.."

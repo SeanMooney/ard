@@ -33,7 +33,7 @@
     ard_build_ssh_target_user: "{{ ansible_user | default('stack') }}"
   tasks:
     - name: Authorize build public key
-      ansible.builtin.authorized_key:
+      ansible.posix.authorized_key:
         user: "{{ ard_build_ssh_target_user }}"
         manage_dir: true
         key: "{{ lookup('file', ard_build_ssh_key ~ '.pub') }}"
