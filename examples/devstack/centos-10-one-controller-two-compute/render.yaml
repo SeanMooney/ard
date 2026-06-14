@@ -1,0 +1,12 @@
+---
+ard_render_schema_version: 1
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_devstack_branch: master
+ard_devstack_image: centos-stream-10
+ard_topology: one-controller-two-compute
+ard_service_profiles:
+  - devstack
+  - ovn
+  - tempest
+ard_libvirt_network_cidr: 192.168.113.0/24

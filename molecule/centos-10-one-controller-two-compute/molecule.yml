@@ -1,0 +1,34 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: community.general.yaml
+  ard_render_file: ../../examples/devstack/centos-10-one-controller-two-compute/render.yaml
+  ard:
+    ard_deployment_name: molecule-centos-10-one-controller-two-compute
+    ard_provider_resource_prefix: ard-molecule-cs10-octc
+    libvirt:
+      network_name: ard-molecule-cs10-octc
+      network_cidr: 192.168.113.0/24
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

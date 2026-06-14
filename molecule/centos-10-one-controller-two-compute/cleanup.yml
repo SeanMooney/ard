@@ -1,0 +1,9 @@
+---
+- name: Cleanup Molecule scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No cleanup required
+      ansible.builtin.debug:
+        msg: ARD workspace cleanup is explicit; destroy removes provider resources.
