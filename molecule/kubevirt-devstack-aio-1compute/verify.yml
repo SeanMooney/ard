@@ -11,6 +11,35 @@
       - ansible/playbooks/network/verify-multinode-bridge.yaml
       - ansible/playbooks/workloads/devstack/verify.yaml
   tasks:
+    - name: Load Molecule merged render vars
+      ansible.builtin.include_vars:
+        file: "{{ ard_deployment_dir }}/.molecule-render-vars.yaml"
+        name: _molecule_render_vars
+
+    - name: Load rendered deployment vars
+      ansible.builtin.include_vars:
+        file: "{{ ard_deployment_dir }}/deployment.yaml"
+        name: _rendered_deployment
+
+    - name: Load rendered nodes
+      ansible.builtin.include_vars:
+        file: "{{ ard_deployment_dir }}/nodes.yaml"
+        name: _rendered_nodes
+
+    - name: Verify Molecule render-file merge and KubeVirt canonical identity
+      ansible.builtin.assert:
+        that:
+          - _molecule_render_vars.ard_render_schema_version | int == 1
+          - _molecule_render_vars.ard_provider == 'kubevirt'
+          - _molecule_render_vars.ard_provider_profile == 'kubevirt'
+          - _molecule_render_vars.ard_deployment_name == 'smooney-ardtest-mn'
+          - _molecule_render_vars.ard_topology == 'one-controller-one-compute'
+          - _molecule_render_vars.ard_libvirt_network_cidr == '192.168.96.0/24'
+          - _rendered_deployment.ard_provider == 'kubevirt'
+          - _rendered_deployment.ard_provider_resource_prefix == 'smooney-ardtest-mn'
+          - (_rendered_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).provider_resource_name == 'smooney-ardtest-mn-controller'
+        fail_msg: "Molecule render-file merge or KubeVirt canonical identity changed unexpectedly"
+
     - name: Run reusable ARD verify playbooks
       ansible.builtin.command:
         argv:

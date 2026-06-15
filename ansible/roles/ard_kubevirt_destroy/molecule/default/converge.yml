@@ -16,4 +16,27 @@
           - switch
   roles:
     - role: ard_provider_common
-    - role: ard_kubevirt_destroy
+  tasks:
+    - name: Ensure test deployment directory exists
+      ansible.builtin.file:
+        path: "{{ ard_deployment_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write persisted KubeVirt provider state fixture
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_kubevirt_namespace: persisted-namespace
+          controller_lb_service: persisted-controller-lb
+          nodes:
+            - name: controller
+              vm_name: persisted-controller
+            - name: compute-1
+              vm_name: persisted-compute-1
+
+    - name: Run KubeVirt destroy role against persisted state
+      ansible.builtin.include_role:
+        name: ard_kubevirt_destroy

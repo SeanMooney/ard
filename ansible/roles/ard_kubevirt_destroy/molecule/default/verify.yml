@@ -2,19 +2,26 @@
 - name: Verify
   hosts: all
   gather_facts: false
+  vars:
+    ard_kubevirt_namespace: test-namespace
+    ard_deployment_name: smooney-devstack-1
+    ard_deployment_dir: /tmp/ard-test-deployment
+  roles:
+    - role: ard_provider_common
   tasks:
-    # ------------------------------------------------------------------
-    # The destroy role completed without error when:
-    # - provider-state.yaml is absent (stat correctly skips include_vars)
-    # - All oc commands are skipped (requires_cluster tag)
-    # Converge + idempotence passing proves the role handles the
-    # absent-state path cleanly. Nothing else to verify in molecule
-    # since all destructive actions require a live cluster.
-    # ------------------------------------------------------------------
-    - name: Verify destroy role completed successfully
+    - name: Re-run KubeVirt destroy role to expose persisted-state facts
+      ansible.builtin.include_role:
+        name: ard_kubevirt_destroy
+
+    - name: Verify destroy role loaded persisted provider-state targets
       ansible.builtin.assert:
         that:
-          - true
+          - _provider_state_stat.stat.exists
+          - _kubevirt_destroy_namespace == 'persisted-namespace'
+          - _kubevirt_destroy_vm_names == ['persisted-controller', 'persisted-compute-1']
+          - _kubevirt_destroy_rootdisk_names == ['persisted-controller-rootdisk', 'persisted-compute-1-rootdisk']
+          - _kubevirt_destroy_service_names == ['persisted-controller-lb']
+          - _kubevirt_destroy_vm_state_complete | bool
         success_msg: >-
-          destroy role handles absent provider-state and skipped
-          cluster tasks without error
+          destroy role honors persisted provider-state targets while
+          cluster tasks are skipped in Molecule
