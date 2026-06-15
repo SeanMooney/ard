@@ -17,6 +17,8 @@
           - ansible/playbooks/provider/deploy-devstack.yaml
           - -e
           - ard_deployment_dir={{ ard_deployment_dir }}
+          - -e
+          - devstack_use_local_cache={{ (lookup('env', 'ARD_DEVSTACK_USE_LOCAL_CACHE') | default('false', true)) | bool | lower }}
       environment:
         ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
         ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"

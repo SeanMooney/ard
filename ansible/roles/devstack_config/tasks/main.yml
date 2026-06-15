@@ -125,7 +125,7 @@
       external_bridge_mtu: {{ _devstack_external_bridge_mtu }}
       devstack_libvirt_type: {{ _devstack_libvirt_type }}
       stack_user_password: {{ _devstack_stack_user_password }}
-      use_local_cache: {{ _devstack_use_local_cache }}
+      devstack_use_local_cache: {{ _devstack_use_local_cache }}
       ard_devstack_sync_data_role: {{ _devstack_sync_data_role }}
       devstack_endpoint_nodepool_key: {{ _devstack_endpoint_key }}
       {% if devstack_branch is defined %}
