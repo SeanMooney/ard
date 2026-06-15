@@ -3,6 +3,19 @@
 - name: ensure local cache dirs
   hosts: localhost
   tasks:
+    - name: Check generated DevStack vars
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/devstack/common.yaml"
+      register: devstack_common_vars_file
+      when: ard_deployment_dir is defined
+
+    - name: Load generated DevStack vars for localhost cache control
+      ansible.builtin.include_vars:
+        file: "{{ devstack_common_vars_file.stat.path }}"
+      when:
+        - devstack_common_vars_file is defined
+        - devstack_common_vars_file.stat.exists
+
     - block:
         - name: ensure local cache
           file:
@@ -24,7 +37,23 @@
           file:
             path: '~/.cache/ard/repos'
             state: directory
-      when: "use_local_cache | default(false) | bool"
+
+        - name: prune old local pip and package cache files
+          ansible.builtin.shell: |
+            set -euo pipefail
+            find "{{ lookup('env', 'HOME') }}/.cache/ard/pip" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/apt" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/dnf" \
+                 -type f -mtime +{{ devstack_cache_prune_days | default(90) | int }} -print -delete
+            find "{{ lookup('env', 'HOME') }}/.cache/ard/pip" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/apt" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/dnf" \
+                 -depth -type d -empty -mtime +{{ devstack_cache_prune_days | default(90) | int }} -print -delete
+          args:
+            executable: /bin/bash
+          register: devstack_cache_prune
+          changed_when: devstack_cache_prune.stdout | length > 0
+      when: "devstack_use_local_cache | default(false) | bool"
   tags:
     - common
     - cache
@@ -129,7 +158,7 @@
               - "--exclude=__pycache__/"
               - "--exclude=*.pyc"
           with_items: "{{repo_names.stdout_lines}}"
-      when: "use_local_cache | default(false) | bool"
+      when: "devstack_use_local_cache | default(false) | bool"
 
 - name: "deploy devstack controller"
   tags: controller
@@ -244,4 +273,22 @@
             label: "{{ item }}"
           changed_when: true
 
-      when: "use_local_cache | default(false) | bool"
+        - name: prune old local pip and package cache files after pull
+          ansible.builtin.shell: |
+            set -euo pipefail
+            find "{{ lookup('env', 'HOME') }}/.cache/ard/pip" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/apt" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/dnf" \
+                 -type f -mtime +{{ devstack_cache_prune_days | default(90) | int }} -print -delete
+            find "{{ lookup('env', 'HOME') }}/.cache/ard/pip" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/apt" \
+                 "{{ lookup('env', 'HOME') }}/.cache/ard/dnf" \
+                 -depth -type d -empty -mtime +{{ devstack_cache_prune_days | default(90) | int }} -print -delete
+          args:
+            executable: /bin/bash
+          register: devstack_cache_prune_after_pull
+          changed_when: devstack_cache_prune_after_pull.stdout | length > 0
+          delegate_to: localhost
+          run_once: true
+
+      when: "devstack_use_local_cache | default(false) | bool"

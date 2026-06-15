@@ -8,6 +8,11 @@
     ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
     ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
   tasks:
+    - name: Check for rendered deployment
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/deployment.yaml"
+      register: _ard_deployment_stat
+
     - name: Destroy ARD provider resources
       ansible.builtin.command:
         argv:
@@ -23,3 +28,4 @@
       args:
         chdir: "{{ ard_project_dir }}"
       changed_when: true
+      when: _ard_deployment_stat.stat.exists
