@@ -64,3 +64,99 @@
           - (_legacy.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
           - (_legacy.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).flavor == 'devstack-compute'
         fail_msg: "Legacy topology output changed unexpectedly"
+
+    - name: Load rendered DevStack stable deployment vars
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/devstack-stable-branch/deployment.yaml"
+        name: _stable_deployment
+
+    - name: Load rendered DevStack stable common vars
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/devstack-stable-branch/devstack/common.yaml"
+        name: _stable_common
+
+    - name: Verify DevStack branch alias and image defaults render
+      ansible.builtin.assert:
+        that:
+          - _stable_deployment.ard_devstack_branch == 'stable/2026.1'
+          - _stable_deployment.ard_target_branch == 'stable/2026.1'
+          - _stable_deployment.ard_devstack_image == 'ubuntu-24.04'
+          - _stable_deployment.ard_render_image == 'ubuntu-24.04'
+          - _stable_common.devstack_branch == 'stable/2026.1'
+        fail_msg: "Stable DevStack branch alias/image/common vars did not render as expected"
+
+    - name: Load rendered KubeVirt normal deployment vars
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/kubevirt-normal/deployment.yaml"
+        name: _kubevirt_deployment
+
+    - name: Load rendered KubeVirt normal nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/kubevirt-normal/nodes.yaml"
+        name: _kubevirt_nodes
+
+    - name: Verify KubeVirt render uses canonical identity and omits libvirt-only node data
+      ansible.builtin.assert:
+        that:
+          - _kubevirt_deployment.ard_provider == 'kubevirt'
+          - _kubevirt_deployment.ard_provider_profile == 'kubevirt'
+          - _kubevirt_deployment.ard_deployment_name == 'ardtest-aio'
+          - _kubevirt_deployment.ard_provider_resource_prefix == 'molecule-user-ardtest-aio'
+          - _kubevirt_deployment.ard_resource_name_prefix == 'molecule-user-ardtest-aio'
+          - _kubevirt_nodes.ard_nodes | length == 2
+          - (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).provider_resource_name == 'molecule-user-ardtest-aio-controller'
+          - (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
+          - "'mac' not in ((_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).networks[0])"
+          - "'profiles' not in (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first)"
+        fail_msg: "KubeVirt normal render identity or node shape changed unexpectedly"
+
+    - name: Load rendered provider network capability success nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/network-capability-success/nodes.yaml"
+        name: _network_success
+
+    - name: Check provider network capability failure marker
+      ansible.builtin.stat:
+        path: "{{ _render_base_dir }}/network-capability-failure.expected"
+      register: _network_capability_failure_marker
+
+    - name: Verify provider network capability success and expected failure path
+      ansible.builtin.assert:
+        that:
+          - _network_capability_failure_marker.stat.exists
+          - (_network_success.ard_nodes | selectattr('name', 'equalto', 'controller') | first).networks[0].name == 'isolated-test'
+          - (_network_success.ard_nodes | selectattr('name', 'equalto', 'controller') | first).networks[0].mac is defined
+          - "'ip' not in ((_network_success.ard_nodes | selectattr('name', 'equalto', 'controller') | first).networks[0])"
+        fail_msg: "Provider network capability validation success/failure coverage did not behave as expected"
+
+    - name: Load rendered workload image success nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/workload-image-success/nodes.yaml"
+        name: _workload_image_success
+
+    - name: Check workload image conflict failure marker
+      ansible.builtin.stat:
+        path: "{{ _render_base_dir }}/workload-image-conflict.expected"
+      register: _workload_image_conflict_failure_marker
+
+    - name: Verify workload image explicit default and conflict validation path
+      ansible.builtin.assert:
+        that:
+          - _workload_image_conflict_failure_marker.stat.exists
+          - (_workload_image_success.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).workload_roles | sort == ['edpm_compute', 'microshift_node']
+          - (_workload_image_success.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).image == 'centos-stream-10'
+        fail_msg: "Workload image default success/conflict validation coverage did not behave as expected"
+
+    - name: Load rendered node-class precedence nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/node-class-precedence/nodes.yaml"
+        name: _node_class_precedence
+
+    - name: Verify node-class mappings and provider flavor/image precedence
+      ansible.builtin.assert:
+        that:
+          - (_node_class_precedence.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
+          - (_node_class_precedence.ard_nodes | selectattr('name', 'equalto', 'controller') | first).image == 'almalinux-10'
+          - (_node_class_precedence.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).flavor == 'bridge-test'
+          - (_node_class_precedence.ard_nodes | selectattr('name', 'equalto', 'compute-1') | first).image == 'almalinux-10'
+        fail_msg: "Node class/provider precedence render output changed unexpectedly"

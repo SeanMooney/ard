@@ -61,3 +61,208 @@
           cidr: 192.168.122.0/24
       loop_control:
         loop_var: render_case
+
+    - name: Render DevStack stable branch alias case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/devstack-stable-branch"
+        ard_deployment_name: devstack-stable-branch
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_topology: one-controller-one-compute
+        ard_target_branch: stable/2026.1
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.124.0/24
+
+    - name: Render KubeVirt canonical prefix case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/kubevirt-normal"
+        ard_deployment_name: ardtest-aio
+        ard_user: molecule-user
+        ard_provider: kubevirt
+        ard_provider_profile: kubevirt
+        ard_provider_resource_prefix: molecule-user-ardtest-aio
+        ard_workload: devstack
+        ard_workload_topology: aio-plus-compute
+        ard_topology: aio-plus-compute
+        ard_service_profiles: []
+        ard_kubevirt_namespace: molecule-namespace
+
+    - name: Render provider network capability success case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/network-capability-success"
+        ard_deployment_name: network-capability-success
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_workload: devstack
+        ard_workload_topology: all-in-one
+        ard_topology: all-in-one
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.125.0/24
+        ard_render_overrides:
+          networks:
+            isolated-test:
+              mode: isolated
+          node_pools:
+            controller:
+              networks:
+                - name: isolated-test
+                  mac_start: 50
+
+    - name: Initialize provider network capability failure marker
+      ansible.builtin.set_fact:
+        _network_capability_failure_seen: false
+
+    - name: Attempt provider network capability failure case
+      block:
+        - name: Attempt render with unsupported KubeVirt network
+          ansible.builtin.include_role:
+            name: ard_provider_render
+          vars:
+            ard_deployment_dir: "{{ _render_base_dir }}/network-capability-failure"
+            ard_deployment_name: network-capability-failure
+            ard_user: molecule-user
+            ard_provider: kubevirt
+            ard_provider_profile: kubevirt
+            ard_provider_resource_prefix: network-capability-failure
+            ard_workload: devstack
+            ard_workload_topology: all-in-one
+            ard_topology: all-in-one
+            ard_service_profiles: []
+            ard_kubevirt_namespace: molecule-namespace
+            ard_render_overrides:
+              networks:
+                unsupported-net:
+                  mode: isolated
+              node_pools:
+                controller:
+                  networks:
+                    - name: unsupported-net
+      rescue:
+        - name: Verify unsupported-network failure reason
+          ansible.builtin.assert:
+            that:
+              - >-
+                'not supported by provider profile' in (ansible_failed_result.msg | default(''))
+                or 'not supported by provider profile' in (ansible_failed_result.results | default([]) | to_json)
+              - >-
+                'unsupported-net' in (ansible_failed_result.msg | default(''))
+                or 'unsupported-net' in (ansible_failed_result.results | default([]) | to_json)
+            fail_msg: "Unsupported-network render failed for an unexpected reason: {{ ansible_failed_result }}"
+
+        - name: Record expected unsupported-network render failure
+          ansible.builtin.copy:
+            dest: "{{ _render_base_dir }}/network-capability-failure.expected"
+            mode: "0644"
+            content: "expected unsupported network failure\n"
+
+        - name: Mark provider network capability failure as observed
+          ansible.builtin.set_fact:
+            _network_capability_failure_seen: true
+
+    - name: Fail if unsupported-network render unexpectedly succeeded
+      ansible.builtin.fail:
+        msg: KubeVirt render accepted an unsupported provider network name
+      when: not _network_capability_failure_seen | bool
+
+    - name: Render workload image explicit default success case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/workload-image-success"
+        ard_deployment_name: workload-image-success
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_workload: oko
+        ard_workload_topology: microshift-two-edpm-compute
+        ard_topology: microshift-two-edpm-compute
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.126.0/24
+        ard_render_overrides:
+          node_pools:
+            microshift:
+              workload_roles:
+                - microshift_node
+                - edpm_compute
+              image: centos-stream-10
+
+    - name: Initialize workload image conflict failure marker
+      ansible.builtin.set_fact:
+        _workload_image_conflict_failure_seen: false
+
+    - name: Attempt workload image conflict failure case
+      block:
+        - name: Attempt render with conflicting workload image defaults
+          ansible.builtin.include_role:
+            name: ard_provider_render
+          vars:
+            ard_deployment_dir: "{{ _render_base_dir }}/workload-image-conflict"
+            ard_deployment_name: workload-image-conflict
+            ard_provider: libvirt
+            ard_provider_profile: local-libvirt
+            ard_workload: oko
+            ard_workload_topology: microshift-two-edpm-compute
+            ard_topology: microshift-two-edpm-compute
+            ard_service_profiles: []
+            ard_libvirt_network_cidr: 192.168.127.0/24
+            ard_render_overrides:
+              node_pools:
+                microshift:
+                  workload_roles:
+                    - microshift_node
+                    - edpm_compute
+      rescue:
+        - name: Verify workload-image conflict failure reason
+          ansible.builtin.assert:
+            that:
+              - >-
+                'conflicting workload image defaults' in (ansible_failed_result.msg | default(''))
+                or 'conflicting workload image defaults' in (ansible_failed_result.results | default([]) | to_json)
+            fail_msg: "Workload image conflict render failed for an unexpected reason: {{ ansible_failed_result }}"
+
+        - name: Record expected workload-image conflict render failure
+          ansible.builtin.copy:
+            dest: "{{ _render_base_dir }}/workload-image-conflict.expected"
+            mode: "0644"
+            content: "expected workload image conflict failure\n"
+
+        - name: Mark workload image conflict failure as observed
+          ansible.builtin.set_fact:
+            _workload_image_conflict_failure_seen: true
+
+    - name: Fail if workload image conflict render unexpectedly succeeded
+      ansible.builtin.fail:
+        msg: Ambiguous workload image defaults were accepted
+      when: not _workload_image_conflict_failure_seen | bool
+
+    - name: Render node-class and provider precedence case
+      ansible.builtin.include_role:
+        name: ard_provider_render
+      vars:
+        ard_deployment_dir: "{{ _render_base_dir }}/node-class-precedence"
+        ard_deployment_name: node-class-precedence
+        ard_provider: libvirt
+        ard_provider_profile: local-libvirt
+        ard_workload: devstack
+        ard_workload_topology: aio-plus-compute
+        ard_topology: aio-plus-compute
+        ard_service_profiles: []
+        ard_libvirt_network_cidr: 192.168.128.0/24
+        ard_render_overrides:
+          provider_defaults:
+            image: rocky-linux-10
+          provider_node_class_defaults:
+            large:
+              image: almalinux-10
+          node_pools:
+            compute:
+              class: large
+              flavor: ''
+        ard_render_node_overrides:
+          compute-1:
+            flavor: bridge-test
