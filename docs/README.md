@@ -6,7 +6,11 @@
 - [concepts/ard-render-model.md](concepts/ard-render-model.md) — user-facing render model and examples guide
 - [architecture/](architecture/) — stable design references
   - [ARD_PROVIDER_DESIGN.md](architecture/ARD_PROVIDER_DESIGN.md)
+  - [network-overlays.md](architecture/network-overlays.md) — provider networks, ARD bridge overlays, GRETAP, VLANs, and KubeVirt OKO networking
   - [render-contracts.md](architecture/render-contracts.md) — contributor contracts for render inputs, presets, providers, and generated state
+- [workloads/](workloads/) — workload-specific operational notes
+  - [kubevirt-oko-networking.md](workloads/kubevirt-oko-networking.md) — quick reference for the `kubevirt-oko` Molecule scenario
+- [../examples/](../examples/) — render-file examples with per-directory README files
 - [drafts/](drafts/) — work-in-progress reference notes
   - [ARD_OCI_DESIGN.md](drafts/ARD_OCI_DESIGN.md)
 
