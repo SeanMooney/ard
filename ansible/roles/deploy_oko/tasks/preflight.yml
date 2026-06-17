@@ -46,6 +46,27 @@
   register: _oko_nodes
   changed_when: false
 
+- name: Discover MicroShift DNS service address
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - -n
+      - openshift-dns
+      - get
+      - service/dns-default
+      - -o
+      - "jsonpath={.spec.clusterIP}"
+  register: _oko_microshift_dns_service_ip
+  changed_when: false
+  when: oko_dns_forwarder == 'auto'
+
+- name: Use MicroShift DNS as OKO DNS forwarder
+  ansible.builtin.set_fact:
+    oko_dns_forwarder: "{{ _oko_microshift_dns_service_ip.stdout }}"
+  when: oko_dns_forwarder == 'auto'
+
 - name: Check local-path StorageClass
   ansible.builtin.command:
     argv:

@@ -102,14 +102,15 @@ stop() {
         iptables  -t nat -D POSTROUTING -s "$IPV4_SRC" ! -o "$BRIDGE" -j MASQUERADE 2>/dev/null || true
     fi
 
-    ip link set "$BRIDGE" down 2>/dev/null || true
 {% for peer in groups['peers'] %}
     detach_port "gre_peer_{{ loop.index0 }}"
     ip link del "gre_peer_{{ loop.index0 }}" 2>/dev/null || true
 {% endfor %}
-    if ! bridge_is_ovs; then
-        ip link del "$BRIDGE" 2>/dev/null || true
-    fi
+    # Leave the bridge itself intact. Some workloads (for example OKO on
+    # MicroShift) share this bridge with NetworkManager, MetalLB, VLAN links,
+    # and service IPs; deleting it during an ard-bridge restart drops that
+    # workload state.
+    ip link set "$BRIDGE" up 2>/dev/null || true
 }
 
 {% else %}
@@ -137,12 +138,11 @@ start() {
 }
 
 stop() {
-    ip link set "$BRIDGE" down 2>/dev/null || true
     detach_port gre_switch
     ip link del gre_switch 2>/dev/null || true
-    if ! bridge_is_ovs; then
-        ip link del "$BRIDGE" 2>/dev/null || true
-    fi
+    # Leave the bridge itself intact. It may be shared with workload network
+    # state such as OVS/MetalLB/VLAN configuration.
+    ip link set "$BRIDGE" up 2>/dev/null || true
 }
 
 {% endif %}

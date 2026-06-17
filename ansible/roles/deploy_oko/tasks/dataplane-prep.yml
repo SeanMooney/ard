@@ -1,0 +1,112 @@
+---
+- name: Ensure EDPM hostnames are FQDNs for dataplane validation
+  become: true
+  ansible.builtin.hostname:
+    name: "{{ hostvars[item].ansible_hostname_fqdn | default(item ~ '.' ~ oko_ctlplane_dns_domain, true) }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups[oko_edpm_group] | default([]) }}"
+  when: oko_apply_dataplane_resources | bool
+
+- name: Ensure EDPM FQDNs resolve locally
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^{{ hostvars[item].nodepool.private_ipv4 | default(hostvars[item].ansible_host) | regex_escape }}\\s+"
+    line: >-
+      {{ hostvars[item].nodepool.private_ipv4 | default(hostvars[item].ansible_host) }}
+      {{ item }}.{{ oko_ctlplane_dns_domain }} {{ item }}
+  delegate_to: "{{ item }}"
+  loop: "{{ groups[oko_edpm_group] | default([]) }}"
+  when: oko_apply_dataplane_resources | bool
+
+
+- name: Install EDPM ctlplane-to-OVS uplink helper
+  become: true
+  ansible.builtin.copy:
+    dest: /usr/local/bin/ard-oko-edpm-uplink.sh
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      linux_bridge={{ oko_ctlplane_bridge | quote }}
+      ovs_bridge={{ oko_neutron_physical_bridge_name | quote }}
+      ovs_end={{ oko_edpm_bridge_veth_ovs | quote }}
+      linux_end={{ oko_edpm_bridge_veth_linux | quote }}
+      mtu={{ oko_network_mtu | quote }}
+
+      deadline=$((SECONDS + 600))
+      while [ $SECONDS -lt $deadline ]; do
+        ip link show "$linux_bridge" >/dev/null 2>&1 && command -v ovs-vsctl >/dev/null 2>&1 && ovs-vsctl br-exists "$ovs_bridge" && break
+        sleep 3
+      done
+      ip link show "$linux_bridge" >/dev/null 2>&1
+      ovs-vsctl br-exists "$ovs_bridge"
+
+      # Wait for os-net-config to finish before adding out-of-band links that
+      # are intentionally absent from its desired nmstate.
+      while pgrep -af 'os-net-config --config-file /etc/os-net-config/config.yaml' >/dev/null 2>&1; do
+        [ $SECONDS -lt $deadline ] || exit 1
+        sleep 3
+      done
+
+      systemctl restart ard-bridge.service || true
+
+      if ! ip link show "$ovs_end" >/dev/null 2>&1; then
+        ip link del "$linux_end" >/dev/null 2>&1 || true
+        ip link add "$ovs_end" type veth peer name "$linux_end"
+      fi
+
+      ip link set "$ovs_end" mtu "$mtu"
+      ip link set "$linux_end" mtu "$mtu"
+      ip link set "$linux_end" master "$linux_bridge"
+      ip link set "$linux_end" up
+      ip link set "$ovs_end" up
+      ovs-vsctl --may-exist add-port "$ovs_bridge" "$ovs_end"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups[oko_edpm_group] | default([]) }}"
+  when:
+    - oko_apply_dataplane_resources | bool
+    - oko_edpm_bridge_veth_enabled | bool
+
+- name: Install EDPM ctlplane-to-OVS uplink service
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ard-oko-edpm-uplink.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Wire ARD OKO EDPM ctlplane bridge to OVS br-ex
+      After=network-online.target openvswitch.service ard-bridge.service
+      Wants=network-online.target openvswitch.service ard-bridge.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/ard-oko-edpm-uplink.sh
+      RemainAfterExit=yes
+      TimeoutStartSec=700
+
+      [Install]
+      WantedBy=multi-user.target
+  delegate_to: "{{ item }}"
+  loop: "{{ groups[oko_edpm_group] | default([]) }}"
+  when:
+    - oko_apply_dataplane_resources | bool
+    - oko_edpm_bridge_veth_enabled | bool
+
+- name: Enable and start EDPM ctlplane-to-OVS uplink service
+  become: true
+  ansible.builtin.systemd:
+    name: ard-oko-edpm-uplink.service
+    daemon_reload: true
+    enabled: true
+    state: restarted
+    no_block: true
+  delegate_to: "{{ item }}"
+  loop: "{{ groups[oko_edpm_group] | default([]) }}"
+  when:
+    - oko_apply_dataplane_resources | bool
+    - oko_edpm_bridge_veth_enabled | bool

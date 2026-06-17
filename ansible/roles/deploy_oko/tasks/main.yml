@@ -48,6 +48,9 @@
     fail_msg: Dataplane apply requires control-plane resources to be applied and Ready first.
   when: oko_apply_dataplane_resources | bool
 
+- name: Prepare EDPM hosts for OKO dataplane
+  ansible.builtin.import_tasks: dataplane-prep.yml
+
 - name: Apply OKO dataplane manifests
   ansible.builtin.import_tasks: dataplane-apply.yml
 

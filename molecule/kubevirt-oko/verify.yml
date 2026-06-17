@@ -1,0 +1,70 @@
+---
+- name: Verify KubeVirt OKO deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
+  environment:
+    ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+    ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+  tasks:
+    - name: Check deployment inventory exists
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/inventory.yaml"
+      register: _deployment_inventory
+
+    - name: Require deployment inventory
+      ansible.builtin.assert:
+        that:
+          - _deployment_inventory.stat.exists
+
+    - name: Verify OKO control plane and dataplane are ready
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - microshift
+          - -b
+          - -m
+          - shell
+          - -a
+          - >-
+            set -euo pipefail;
+            test -f /home/stack/ard-oko/README.md;
+            oc --kubeconfig /home/stack/.kube/config -n openstack wait --for=condition=Ready openstackcontrolplane/openstack --timeout=30s;
+            oc --kubeconfig /home/stack/.kube/config -n openstack wait --for=condition=Ready openstackdataplanedeployment/edpm-deployment --timeout=30s;
+            oc --kubeconfig /home/stack/.kube/config -n openstack get svc dnsmasq-dns -o jsonpath='{.status.loadBalancer.ingress[0].ip}' | grep -q '^192\.168\.122\.'
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: false
+
+    - name: Verify EDPM package access and bridge uplink state
+      ansible.builtin.command:
+        argv:
+          - ansible
+          - -i
+          - "{{ ard_deployment_dir }}/inventory.yaml"
+          - compute
+          - -b
+          - -m
+          - shell
+          - -a
+          - >-
+            set -euo pipefail;
+            getent ahostsv4 rabbitmq-cell1.openstack.svc | grep -q '^192\.168\.122\.86';
+            timeout 5 bash -c '</dev/tcp/rabbitmq-cell1.openstack.svc/5671';
+            timeout 20 dnf -q makecache --refresh >/dev/null;
+            systemctl is-active --quiet ard-bridge.service;
+            systemctl is-active --quiet ard-oko-edpm-uplink.service;
+            ip link show ospbr;
+            ip link show oko-ospbr;
+            ip link show oko-br-ex;
+            ovs-vsctl br-exists br-ex;
+            ovs-vsctl list-ports br-ex | grep -qx oko-br-ex
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: false

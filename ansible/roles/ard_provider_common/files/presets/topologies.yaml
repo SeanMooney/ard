@@ -91,6 +91,8 @@ ard_render_workload_topologies:
           hostname: microshift
           workload_roles:
             - microshift_node
+          groups:
+            - switch
           networks:
             - name: ard-mgmt
               ip_start: 2
@@ -194,6 +196,8 @@ ard_render_topologies:
         name: microshift
         hostname: microshift
         flavor: oko-microshift-node
+        groups:
+          - switch
         networks:
           - name: ard-mgmt
             ip_start: 2

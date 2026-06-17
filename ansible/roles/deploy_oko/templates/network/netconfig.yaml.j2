@@ -7,6 +7,7 @@ spec:
   networks:
     - name: ctlplane
       dnsDomain: ctlplane.example.com
+      mtu: {{ oko_ctlplane_mtu }}
       subnets:
         - name: subnet1
           allocationRanges:
@@ -16,6 +17,7 @@ spec:
           gateway: {{ oko_ctlplane_gateway }}
     - name: internalapi
       dnsDomain: internalapi.example.com
+      mtu: {{ oko_internalapi_mtu }}
       subnets:
         - name: subnet1
           allocationRanges:
@@ -25,6 +27,7 @@ spec:
           vlan: {{ oko_internalapi_vlan }}
     - name: storage
       dnsDomain: storage.example.com
+      mtu: {{ oko_storage_mtu }}
       subnets:
         - name: subnet1
           allocationRanges:
@@ -34,6 +37,7 @@ spec:
           vlan: {{ oko_storage_vlan }}
     - name: tenant
       dnsDomain: tenant.example.com
+      mtu: {{ oko_tenant_mtu }}
       subnets:
         - name: subnet1
           allocationRanges:
