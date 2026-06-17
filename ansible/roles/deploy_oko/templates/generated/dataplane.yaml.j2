@@ -46,7 +46,10 @@ spec:
         registry_url: {{ oko_registry_url }}
         edpm_nodes_validation_validate_controllers_icmp: false
         edpm_nodes_validation_validate_gateway_icmp: false
-        neutron_public_interface_name: eth0
+{% if oko_edpm_bridge_veth_enabled | bool %}
+        edpm_network_config_nonconfigured_cleanup: false
+{% endif %}
+        neutron_public_interface_name: {{ oko_edpm_public_interface_name }}
     ansibleSSHPrivateKeySecret: {{ oko_edpm_ssh_secret_name }}
   nodes:
 {% for node in oko_edpm_nodes %}

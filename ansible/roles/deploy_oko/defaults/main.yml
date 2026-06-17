@@ -28,7 +28,9 @@ oko_nfs_export_mode: "0777"
 oko_nfs_export_options: rw,sync,no_root_squash,no_subtree_check
 oko_nfs_export_file: /etc/exports.d/ard-cinder.exports
 oko_nfs_export_network: "*"
-oko_nfs_server: "{{ ansible_host | default(ansible_default_ipv4.address | default(inventory_hostname)) }}"
+# Cinder volume pods and EDPM computes consume this share from the OKO
+# ctlplane/overlay network, not necessarily from the Ansible management network.
+oko_nfs_server: "{{ oko_microshift_ctlplane_ip }}"
 
 # EDPM dataplane settings. ARD's combined OKO topology renders compute hosts in
 # the compute inventory group.
@@ -83,6 +85,25 @@ oko_ctlplane_allocation_start: 192.168.122.100
 oko_ctlplane_allocation_end: 192.168.122.200
 oko_ctlplane_nad_start: 192.168.122.30
 oko_ctlplane_nad_end: 192.168.122.70
+# KubeVirt Multus/datacenter networking commonly exposes 1400-byte guest NICs.
+# Keep OKO/EDPM networking below that underlay instead of assuming 1500.
+oko_network_mtu: 1300
+oko_ctlplane_mtu: "{{ oko_network_mtu }}"
+oko_vlan_network_mtu: "{{ (oko_network_mtu | int) - 4 }}"
+oko_internalapi_mtu: "{{ oko_vlan_network_mtu }}"
+oko_storage_mtu: "{{ oko_vlan_network_mtu }}"
+oko_tenant_mtu: "{{ oko_vlan_network_mtu }}"
+oko_neutron_global_physnet_mtu: "{{ oko_network_mtu }}"
+oko_neutron_physical_bridge_name: br-ex
+# Used by EDPM Neutron services after os-net-config has built the dataplane
+# bridge. Keep this configurable instead of assuming the provider NIC is eth1.
+oko_edpm_public_interface_name: "{{ oko_ctlplane_bridge }}"
+# When the ctlplane is an ARD Linux bridge/GRETAP mesh, os-net-config must not
+# treat that bridge as an Ethernet member of br-ex. A veth pair gives OVS a
+# normal interface while the peer remains attached to the Linux bridge mesh.
+oko_edpm_bridge_veth_enabled: false
+oko_edpm_bridge_veth_ovs: oko-br-ex
+oko_edpm_bridge_veth_linux: oko-ospbr
 oko_internal_api_loadbalancer_ip: 192.168.122.80
 oko_dns_loadbalancer_ip: 192.168.122.81
 # Set on OpenStack LoadBalancer Services so MicroShift's built-in LB status
@@ -98,7 +119,10 @@ oko_rabbitmq_lb_workaround_enabled: true
 oko_rabbitmq_lb_workaround_service_name: rabbitmq-ard-lb
 oko_rabbitmq_cell1_lb_workaround_service_name: rabbitmq-cell1-ard-lb
 oko_rabbitmq_lb_workaround_wait_timeout: 300
-oko_dns_forwarder: "{{ ansible_default_ipv4.gateway | default(oko_ctlplane_gateway, true) }}"
+# Forward OpenStack dnsmasq to MicroShift DNS by default. The preflight task
+# resolves this from openshift-dns/dns-default so EDPM nodes can use the
+# ctlplane dnsmasq VIP for both OpenStack names and corporate/external names.
+oko_dns_forwarder: auto
 # Route host suffix used for OpenStack public API endpoints. MicroShift does
 # not provide a cluster apps domain, so ARD renders explicit Route hosts.
 oko_route_domain: apps.example.com
@@ -110,14 +134,19 @@ oko_route_hosts:
   - neutron-public-openstack.{{ oko_route_domain }}
   - nova-public-openstack.{{ oko_route_domain }}
   - nova-novncproxy-cell1-public-openstack.{{ oko_route_domain }}
-# ARD OKO topology attaches a dedicated isolated libvirt network named
-# datacenter as the second NIC on MicroShift and EDPM nodes. Network-isolated
-# OKO NADs are layered on this interface.
-oko_datacenter_interface: eth1
+# ARD OKO topology attaches a dedicated datacenter network to MicroShift and
+# EDPM nodes. Interface names differ by image/provider (for example eth1 on
+# CentOS Stream 9 and enp2s0 on CentOS Stream 10/KubeVirt), so discover the
+# MicroShift datacenter NIC by default.
+oko_datacenter_interface: auto
 # Match install_yamls' network-isolation model: the added datacenter NIC is
 # enslaved into a Linux bridge, and ctlplane/datacentre attachments plus
 # MetalLB L2 advertisements use that bridge.
 oko_ctlplane_bridge: ospbr
+# Existing libvirt OKO topologies build the ctlplane bridge by enslaving a
+# dedicated datacenter NIC. KubeVirt OKO uses ard_multinode_bridge to create a
+# GRETAP-backed ctlplane bridge instead, so it must not enslave the underlay NIC.
+oko_manage_ctlplane_bridge_slave: true
 oko_ctlplane_master: "{{ oko_ctlplane_bridge }}"
 oko_internalapi_cidr: 172.17.0.0/24
 oko_internalapi_allocation_start: 172.17.0.100
@@ -128,21 +157,21 @@ oko_internalapi_nad_end: 172.17.0.70
 # and SB consumes the second. EDPM OVN connects to SB.
 oko_ovn_sb_db_ip: 172.17.0.31
 oko_internalapi_vlan: 20
-oko_internalapi_master: "{{ oko_datacenter_interface }}.{{ oko_internalapi_vlan }}"
+oko_internalapi_master: "{{ oko_ctlplane_bridge }}.{{ oko_internalapi_vlan }}"
 oko_storage_cidr: 172.18.0.0/24
 oko_storage_allocation_start: 172.18.0.100
 oko_storage_allocation_end: 172.18.0.250
 oko_storage_nad_start: 172.18.0.30
 oko_storage_nad_end: 172.18.0.70
 oko_storage_vlan: 21
-oko_storage_master: "{{ oko_datacenter_interface }}.{{ oko_storage_vlan }}"
+oko_storage_master: "{{ oko_ctlplane_bridge }}.{{ oko_storage_vlan }}"
 oko_tenant_cidr: 172.19.0.0/24
 oko_tenant_allocation_start: 172.19.0.100
 oko_tenant_allocation_end: 172.19.0.250
 oko_tenant_nad_start: 172.19.0.30
 oko_tenant_nad_end: 172.19.0.70
 oko_tenant_vlan: 22
-oko_tenant_master: "{{ oko_datacenter_interface }}.{{ oko_tenant_vlan }}"
+oko_tenant_master: "{{ oko_ctlplane_bridge }}.{{ oko_tenant_vlan }}"
 
 # OpenStack image defaults copied into generated dataplane input; tune per
 # deployment once the operator stack is installed.

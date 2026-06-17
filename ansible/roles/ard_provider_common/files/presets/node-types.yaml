@@ -42,6 +42,7 @@ ard_render_workload_roles:
     microshift_node:
       groups:
         - microshift
+        - switch
       profiles:
         - ssh
         - nested_virt

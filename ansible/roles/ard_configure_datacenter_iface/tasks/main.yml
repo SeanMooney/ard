@@ -13,15 +13,60 @@
           - network
 
     - name: Find secondary interface (not primary, not loopback)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        configured={{ ard_datacenter_iface | default('') | quote }}
+        target={{ nodepool.datacenter_ipv4 | quote }}
+        default_iface={{ ansible_default_ipv4.interface | default('') | quote }}
+
+        is_real_candidate() {
+          iface="$1"
+          case "$iface" in
+            lo|"$default_iface"|ovs-system|br-*|virbr*|docker*|veth*|tap*|tun*|dummy*|bond*|team*|gre*|gretap*|erspan*|genev*|genev_sys_*|ovn-*|cni*|flannel*)
+              return 1
+              ;;
+          esac
+          [ -e "/sys/class/net/$iface/device" ]
+        }
+
+        if [ -n "$configured" ]; then
+          echo "$configured"
+          exit 0
+        fi
+
+        found=$(ip -j -4 addr show | python3 -c '
+        import json, sys
+        target = sys.argv[1]
+        for link in json.load(sys.stdin):
+            ifname = link.get("ifname", "")
+            for addr in link.get("addr_info", []):
+                if addr.get("family") == "inet" and addr.get("local") == target:
+                    print(ifname)
+                    raise SystemExit(0)
+        ' "$target")
+        if [ -n "$found" ] && is_real_candidate "$found"; then
+          echo "$found"
+          exit 0
+        fi
+
+        for path in /sys/class/net/*; do
+          iface=${path##*/}
+          if is_real_candidate "$iface"; then
+            echo "$iface"
+            exit 0
+          fi
+        done
+
+        echo "Could not discover datacenter interface" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      register: _dc_iface_discovery
+      changed_when: false
+
+    - name: Record datacenter interface
       ansible.builtin.set_fact:
-        _dc_iface: >-
-          {{ ard_datacenter_iface if ard_datacenter_iface else
-             (ansible_interfaces
-              | reject('equalto', 'lo')
-              | reject('equalto', ansible_default_ipv4.interface | default(''))
-              | reject('search', '^(docker|veth|br-|virbr|tun|tap|dummy)')
-              | sort
-              | first) }}
+        _dc_iface: "{{ _dc_iface_discovery.stdout | trim }}"
 
     - name: Display detected datacenter interface
       ansible.builtin.debug:
@@ -31,11 +76,35 @@
       become: true
       ansible.builtin.command:
         cmd: >-
-          ip addr add {{ nodepool.datacenter_ipv4 }}/{{ ard_datacenter_prefix_len }}
+          ip addr replace {{ nodepool.datacenter_ipv4 }}/{{ ard_datacenter_prefix_len }}
           dev {{ _dc_iface }}
-      register: _dc_ip_add
-      changed_when: _dc_ip_add.rc == 0
-      failed_when: _dc_ip_add.rc != 0 and 'already' not in _dc_ip_add.stderr and 'File exists' not in _dc_ip_add.stderr
+      changed_when: true
+
+    - name: Persist datacenter interface IP with NetworkManager when active
+      become: true
+      ansible.builtin.shell: |
+        set -euo pipefail
+        iface={{ _dc_iface | quote }}
+        address={{ nodepool.datacenter_ipv4 }}/{{ ard_datacenter_prefix_len }}
+        if ! command -v nmcli >/dev/null 2>&1; then
+          exit 0
+        fi
+        con=$(nmcli -t -f NAME,DEVICE con show --active | awk -F: -v dev="$iface" '$2 == dev {print $1; exit}')
+        if [ -z "$con" ]; then
+          con="ard-datacenter-${iface}"
+          nmcli con add type ethernet con-name "$con" ifname "$iface" >/dev/null
+        fi
+        nmcli con mod "$con" \
+          ipv4.method manual \
+          ipv4.addresses "$address" \
+          ipv4.never-default yes \
+          ipv6.method disabled \
+          connection.autoconnect yes
+        nmcli con up "$con" >/dev/null
+        ip addr replace "$address" dev "$iface"
+      args:
+        executable: /bin/bash
+      changed_when: true
 
     - name: Bring datacenter interface up
       become: true

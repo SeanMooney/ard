@@ -44,7 +44,7 @@
         that:
           - _oko.ard_nodes | length == 3
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).workload_roles == ['microshift_node']
-          - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).groups == ['microshift']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).groups | sort == ['microshift', 'switch']
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).workload_roles == ['edpm_compute']
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).groups | sort == ['compute', 'peers', 'subnode']
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).image == 'centos-stream-9'

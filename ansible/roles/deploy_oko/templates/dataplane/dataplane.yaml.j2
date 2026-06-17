@@ -39,10 +39,12 @@ data:
       - ip_netmask: {{ ctlplane_ip }}/{{ ctlplane_cidr }}
       routes: []
       members:
+{% endraw %}{% if not (oko_edpm_bridge_veth_enabled | bool) %}{% raw %}
       - type: interface
-        name: nic2
+        name: {{ neutron_public_interface_name }}
         mtu: {{ min_viable_mtu }}
         primary: true
+{% endraw %}{% endif %}{% raw %}
     {% for network in nodeset_networks %}
       - type: vlan
         mtu: {{ lookup('vars', networks_lower[network] ~ '_mtu') }}
@@ -59,17 +61,9 @@ metadata:
   name: neutron-edpm
   namespace: {{ oko_namespace }}
 data:
-  physical_bridge_name: br-ex
-  public_interface_name: eth1
----
-apiVersion: dataplane.openstack.org/v1beta1
-kind: OpenStackDataPlaneDeployment
-metadata:
-  name: {{ oko_edpm_deployment_name }}
-  namespace: {{ oko_namespace }}
-spec:
-  nodeSets:
-    - {{ oko_edpm_nodeset_name }}
+  physical_bridge_name: {{ oko_neutron_physical_bridge_name }}
+  public_interface_name: {{ oko_edpm_public_interface_name }}
+  global_physnet_mtu: "{{ oko_neutron_global_physnet_mtu }}"
 ---
 apiVersion: dataplane.openstack.org/v1beta1
 kind: OpenStackDataPlaneNodeSet
@@ -93,8 +87,14 @@ spec:
         registry_url: {{ oko_registry_url }}
         edpm_nodes_validation_validate_controllers_icmp: false
         edpm_nodes_validation_validate_gateway_icmp: false
+        edpm_network_config_nonconfigured_cleanup: {{ (not (oko_edpm_bridge_veth_enabled | bool)) | lower }}
         ctlplane_host_routes: []
-        neutron_public_interface_name: eth1
+        ctlplane_mtu: {{ oko_ctlplane_mtu }}
+        internalapi_mtu: {{ oko_internalapi_mtu }}
+        storage_mtu: {{ oko_storage_mtu }}
+        tenant_mtu: {{ oko_tenant_mtu }}
+        neutron_public_interface_name: {{ oko_edpm_public_interface_name }}
+        neutron_global_physnet_mtu: {{ oko_neutron_global_physnet_mtu }}
         edpm_ovn_dbs:
           - {{ oko_ovn_sb_db_ip }}
       ansibleVarsFrom:
@@ -158,3 +158,12 @@ spec:
     - neutron-metadata
     - libvirt
     - nova
+---
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneDeployment
+metadata:
+  name: {{ oko_edpm_deployment_name }}
+  namespace: {{ oko_namespace }}
+spec:
+  nodeSets:
+    - {{ oko_edpm_nodeset_name }}

@@ -117,7 +117,7 @@
     _dc_prefix: "{{ ard_kubevirt_datacenter_cidr | regex_replace('\\.[0-9]+/.*$', '.') }}"
     _peer_names: "{{ ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list }}"
     _dc_ip: >-
-      {{ _dc_prefix }}{{ 1 if ('controller' in item.groups or 'switch' in item.groups) else (_peer_names.index(item.name) + 2) }}
+      {{ _dc_prefix }}{{ 1 if (item.name == _controller_node.name or 'switch' in item.groups) else (_peer_names.index(item.name) + 2) }}
   loop: "{{ ard_nodes }}"
   loop_control:
     label: "{{ item.name }}"

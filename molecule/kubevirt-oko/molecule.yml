@@ -1,0 +1,37 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: default
+  ard_render_file: ../../examples/oko/microshift-two-edpm-compute/render.yaml
+  ard:
+    ard_deployment_name: smooney-ardtest-oko
+    ard_provider: kubevirt
+    ard_provider_profile: kubevirt
+    ard_kubevirt_datacenter_network: true
+    ard_apply_wait_timeout: 300
+    oko_manage_ctlplane_bridge_slave: false
+    oko_edpm_bridge_veth_enabled: true
+    oko_edpm_public_interface_name: oko-br-ex
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

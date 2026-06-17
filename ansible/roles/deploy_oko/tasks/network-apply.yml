@@ -1,12 +1,161 @@
 ---
+- name: Discover OKO datacenter interface
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    configured={{ oko_datacenter_interface | quote }}
+    if [ -n "$configured" ] && [ "$configured" != "auto" ]; then
+      echo "$configured"
+      exit 0
+    fi
+
+    bridge={{ oko_ctlplane_bridge | quote }}
+    target={{ nodepool.datacenter_ipv4 | default('') | quote }}
+    if [ -n "$target" ]; then
+      found=$(ip -j -4 addr show | python3 -c '
+    import json, sys
+    target = sys.argv[1]
+    bridge = sys.argv[2]
+    for link in json.load(sys.stdin):
+        if link.get("ifname") == bridge:
+            continue
+        for addr in link.get("addr_info", []):
+            if addr.get("family") == "inet" and addr.get("local") == target:
+                print(link["ifname"])
+                raise SystemExit(0)
+    ' "$target" "$bridge")
+      if [ -n "$found" ] && [ -e "/sys/class/net/$found/device" ]; then
+        echo "$found"
+        exit 0
+      fi
+    fi
+
+    if [ -d "/sys/class/net/$bridge/brif" ]; then
+      for path in /sys/class/net/$bridge/brif/*; do
+        [ -e "$path" ] || continue
+        iface=${path##*/}
+        case "$iface" in
+          gre*|gretap*|erspan*|genev*|genev_sys_*|veth*|tap*|tun*|dummy*|ovn-*|cni*|flannel*)
+            continue
+            ;;
+        esac
+        [ -e "/sys/class/net/$iface/device" ] || continue
+        echo "$iface"
+        exit 0
+      done
+    fi
+
+    default_iface=$(ip -o route show default 2>/dev/null | awk '{print $5; exit}')
+    for path in /sys/class/net/*; do
+      iface=${path##*/}
+      case "$iface" in
+        lo|$default_iface|ovs-system|br-*|virbr*|docker*|veth*|tap*|tun*|dummy*|ovn-*|genev_sys_*)
+          continue
+          ;;
+      esac
+      # Keep this to real guest NICs. MicroShift creates many virtual pod and
+      # OVS devices that must not be enslaved into the OKO trunk bridge.
+      [ -e "$path/device" ] || continue
+      echo "$iface"
+      exit 0
+    done
+
+    echo "Could not discover OKO datacenter interface" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  register: _oko_datacenter_iface_discovery
+  changed_when: false
+  when:
+    - oko_apply_network_resources | bool
+    - oko_manage_ctlplane_bridge_slave | bool
+
+- name: Record OKO datacenter interface
+  ansible.builtin.set_fact:
+    _oko_datacenter_iface_effective: "{{ _oko_datacenter_iface_discovery.stdout | trim }}"
+  when:
+    - oko_apply_network_resources | bool
+    - oko_manage_ctlplane_bridge_slave | bool
+
+- name: Ensure pre-created OKO ctlplane bridge has MicroShift addresses
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    bridge={{ oko_ctlplane_bridge | quote }}
+    prefix={{ oko_ctlplane_cidr.split('/')[1] | quote }}
+    addr={{ oko_microshift_ctlplane_ip | quote }}
+
+    if ! ip link show "$bridge" >/dev/null 2>&1; then
+      echo "Ctlplane bridge $bridge does not exist; run pre-multinode first" >&2
+      exit 1
+    fi
+
+    ip link set "$bridge" up
+    ip addr replace "$addr/$prefix" dev "$bridge"
+    ip route replace {{ oko_ctlplane_cidr }} dev "$bridge" src "$addr"
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when:
+    - oko_apply_network_resources | bool
+    - not (oko_manage_ctlplane_bridge_slave | bool)
+
+- name: Enable bridge netfilter for OKO LoadBalancer traffic
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/ard-oko-br-netfilter.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      br_netfilter
+  when: oko_apply_network_resources | bool
+
+- name: Load bridge netfilter module for OKO LoadBalancer traffic
+  become: true
+  ansible.builtin.command:
+    argv:
+      - modprobe
+      - br_netfilter
+  changed_when: false
+  when: oko_apply_network_resources | bool
+
+- name: Persist bridge netfilter sysctls for OKO LoadBalancer traffic
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-ard-oko-bridge-netfilter.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      net.bridge.bridge-nf-call-iptables = 1
+  when: oko_apply_network_resources | bool
+
+- name: Apply bridge netfilter sysctls for OKO LoadBalancer traffic
+  become: true
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -p
+      - /etc/sysctl.d/99-ard-oko-bridge-netfilter.conf
+  changed_when: false
+  when: oko_apply_network_resources | bool
+
 - name: Ensure OKO ctlplane bridge exists on datacenter network
   become: true
   ansible.builtin.shell: |
     set -euo pipefail
     bridge={{ oko_ctlplane_bridge | quote }}
-    iface={{ oko_datacenter_interface | quote }}
+    iface={{ _oko_datacenter_iface_effective | quote }}
     prefix={{ oko_ctlplane_cidr.split('/')[1] | quote }}
     addr={{ oko_microshift_ctlplane_ip | quote }}
+    dc_addr={{ nodepool.datacenter_ipv4 | default('') | quote }}
+    dc_prefix={{ ard_datacenter_prefix_len | default(24) | quote }}
+
+    if ! ip link show "$iface" >/dev/null 2>&1; then
+      echo "Datacenter interface $iface does not exist" >&2
+      exit 1
+    fi
 
     if ! nmcli -t -f NAME con show | grep -Fxq "$bridge"; then
       nmcli con add type bridge con-name "$bridge" ifname "$bridge" >/dev/null
@@ -16,7 +165,8 @@
       ipv4.method manual \
       ipv4.addresses "$addr/$prefix" \
       ipv4.never-default yes \
-      ipv6.method disabled
+      ipv6.method disabled \
+      connection.autoconnect yes
 
     slave_con="${bridge}-${iface}"
     if ! nmcli -t -f NAME con show | grep -Fxq "$slave_con"; then
@@ -27,27 +177,40 @@
       ipv6.method disabled \
       connection.autoconnect yes
 
-    # Existing ARD runs may have configured the IP directly on the datacenter
-    # NIC before the bridge was introduced. Make that connection harmless so
-    # the ctlplane address lives only on the bridge.
-    if nmcli -t -f NAME con show | grep -Fxq "$iface"; then
-      nmcli con mod "$iface" \
+    # Disable any standalone active profile on the datacenter NIC before
+    # bringing it up as a bridge port. This handles cloud-init/NetworkManager
+    # names such as "Wired connection 1" as well as old ARD iface profiles.
+    nmcli -t -f NAME,DEVICE con show --active | awk -F: -v dev="$iface" '$2 == dev {print $1}' | while read -r con; do
+      [ -n "$con" ] || continue
+      [ "$con" = "$slave_con" ] && continue
+      nmcli con mod "$con" \
+        connection.autoconnect no \
         ipv4.method disabled \
         ipv4.addresses '' \
         ipv4.never-default yes \
         ipv6.method disabled || true
-      nmcli con down "$iface" >/dev/null 2>&1 || true
-    fi
+      nmcli con down "$con" >/dev/null 2>&1 || true
+    done
 
     nmcli con up "$bridge" >/dev/null
     nmcli con up "$slave_con" >/dev/null
-    ip addr replace "$addr/$prefix" dev "$bridge"
     ip link set "$bridge" up
+    ip addr replace "$addr/$prefix" dev "$bridge"
     ip route replace {{ oko_ctlplane_cidr }} dev "$bridge" src "$addr"
+
+    # Keep the ARD datacenter transport address on the bridge once the physical
+    # NIC is enslaved. KubeVirt/Multus uses that underlay for host-to-host
+    # traffic while MicroShift NADs attach to the bridge and bridge VLANs.
+    if [ -n "$dc_addr" ]; then
+      ip addr del "$dc_addr/$dc_prefix" dev "$iface" >/dev/null 2>&1 || true
+      ip addr replace "$dc_addr/$dc_prefix" dev "$bridge"
+    fi
   args:
     executable: /bin/bash
   changed_when: false
-  when: oko_apply_network_resources | bool
+  when:
+    - oko_apply_network_resources | bool
+    - oko_manage_ctlplane_bridge_slave | bool
 
 - name: Ensure OKO VLAN NetworkManager connections exist on datacenter network
   become: true
@@ -64,16 +227,16 @@
     executable: /bin/bash
   loop:
     - name: "{{ oko_internalapi_master }}"
-      parent: "{{ oko_datacenter_interface }}"
+      parent: "{{ oko_ctlplane_bridge }}"
       vlan: "{{ oko_internalapi_vlan }}"
     - name: "{{ oko_storage_master }}"
-      parent: "{{ oko_datacenter_interface }}"
+      parent: "{{ oko_ctlplane_bridge }}"
       vlan: "{{ oko_storage_vlan }}"
     - name: "{{ oko_tenant_master }}"
-      parent: "{{ oko_datacenter_interface }}"
+      parent: "{{ oko_ctlplane_bridge }}"
       vlan: "{{ oko_tenant_vlan }}"
   register: _oko_vlan_links
-  changed_when: "'created' in _oko_vlan_links.stdout"
+  changed_when: "'created' in (_oko_vlan_links.stdout | default(''))"
   when: oko_apply_network_resources | bool
 
 - name: Apply OKO network resources
