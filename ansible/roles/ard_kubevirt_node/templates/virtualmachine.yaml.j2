@@ -32,7 +32,7 @@ spec:
         sourceRef:
           kind: "{{ _node_image_source_kind }}"
           name: "{{ _node_image_name }}"
-          namespace: "{{ ard_kubevirt_namespace }}"
+          namespace: "{{ _node_image_namespace }}"
         storage:
           resources:
             requests:
@@ -44,8 +44,8 @@ spec:
     kind: VirtualMachineInstancetype
     name: "{{ _node_instancetype }}"
   preference:
-    kind: VirtualMachinePreference
-    name: "{{ ard_default_vm_preference }}"
+    kind: "{{ _node_preference_kind }}"
+    name: "{{ _node_preference_name }}"
   runStrategy: Always
   template:
     metadata:
@@ -93,6 +93,7 @@ spec:
         - cloudInitNoCloud:
             userData: |
               #cloud-config
+              preserve_hostname: false
               hostname: {{ _node_hostname }}
               manage_etc_hosts: true
               users:
@@ -112,4 +113,6 @@ spec:
                     password: {{ stack_user_password | default('tester') }}
                     type: text
               ssh_pwauth: true
+              runcmd:
+                - [hostnamectl, set-hostname, {{ _node_hostname }}]
           name: cloudinitdisk

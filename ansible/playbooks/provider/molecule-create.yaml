@@ -236,6 +236,9 @@
         - output_key: ard_default_vm_preference
           canonical_key: ard_default_vm_preference
           legacy_key: default_vm_preference
+        - output_key: ard_apply_wait_timeout
+          canonical_key: ard_apply_wait_timeout
+          legacy_key: apply_wait_timeout
 
     - name: Add explicit Molecule provider resource prefix override
       ansible.builtin.set_fact:
@@ -297,6 +300,32 @@
         - output_key: ard_kubevirt_user_prefix_enabled
           canonical_key: ard_kubevirt_user_prefix_enabled
           legacy_key: user_prefix_enabled
+        - output_key: ard_kubevirt_datacenter_network
+          canonical_key: ard_kubevirt_datacenter_network
+          legacy_key: datacenter_network
+
+    - name: Resolve current OpenShift project for KubeVirt Molecule namespace
+      ansible.builtin.command:
+        argv:
+          - oc
+          - project
+          - --short
+      changed_when: false
+      register: _ard_kubevirt_current_project
+      when:
+        - _ard_provider_for_prefix == 'kubevirt'
+        - _ard_molecule_ard_overrides.ard_kubevirt_namespace is not defined
+        - ard_molecule_render_file_data.ard_kubevirt_namespace is not defined
+
+    - name: Use current OpenShift project for KubeVirt Molecule namespace
+      ansible.builtin.set_fact:
+        _ard_molecule_ard_overrides: >-
+          {{ _ard_molecule_ard_overrides |
+             combine({'ard_kubevirt_namespace': _ard_kubevirt_current_project.stdout | trim},
+                     recursive=True, list_merge='replace') }}
+      when:
+        - _ard_kubevirt_current_project.stdout is defined
+        - _ard_kubevirt_current_project.stdout | default('', true) | trim | length > 0
 
     - name: Merge render file and scenario values with v1 semantics
       ansible.builtin.set_fact:

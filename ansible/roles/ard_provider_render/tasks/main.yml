@@ -487,6 +487,7 @@
       ard_kubevirt_ssh_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
       ard_kubevirt_headless_service: {{ ard_kubevirt_headless_service }}
       ard_kubevirt_controller_service_ports: {{ ard_kubevirt_controller_service_ports | to_json }}
+      ard_apply_wait_timeout: {{ ard_apply_wait_timeout }}
       ard_networks:
       {% for network_name, network in ard_render_networks_config.items() %}
         {{ network_name }}:

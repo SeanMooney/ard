@@ -7,8 +7,11 @@
   ansible.builtin.set_fact:
     _node_volume_name: "{{ _node_resource_name }}-rootdisk"
     _node_instancetype: "{{ ard_flavors[ard_node.flavor].provider.kubevirt.instancetype }}"
+    _node_preference_kind: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.preference_kind | default('VirtualMachinePreference') }}"
+    _node_preference_name: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.preference | default(ard_default_vm_preference) }}"
     _node_image_source_kind: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.source_kind }}"
     _node_image_name: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.name }}"
+    _node_image_namespace: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.kubevirt.namespace | default(ard_kubevirt_namespace) }}"
     _node_hostname: "{{ ard_node.hostname | default(ard_node.name) }}"
 
 - name: Render VirtualMachine manifest for {{ ard_node.name }}

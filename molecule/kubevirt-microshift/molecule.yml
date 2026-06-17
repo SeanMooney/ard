@@ -1,0 +1,34 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_STDOUT_CALLBACK: community.general.yaml
+  ard_render_file: ../../examples/microshift/single-node/render.yaml
+  ard:
+    ard_deployment_name: smooney-ardtest-ms
+    ard_provider: kubevirt
+    ard_provider_profile: kubevirt
+    ard_kubevirt_datacenter_network: false
+    ard_apply_wait_timeout: 300
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy
+  create_sequence:
+    - dependency
+    - create
+  destroy_sequence:
+    - dependency
+    - destroy

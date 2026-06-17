@@ -20,6 +20,8 @@ microshift_api_advertise_address: "{{ microshift_node_ip }}"
 microshift_hostname_override: "{{ inventory_hostname }}"
 
 microshift_networking: ovnk
+microshift_ovn_mtu: ""
+microshift_ovn_mtu_headroom: 100
 microshift_install_topolvm: false
 microshift_install_local_path_provisioner: true
 microshift_install_multus: true
