@@ -16,6 +16,7 @@
     _kubevirt_destroy_vm_names: []
     _kubevirt_destroy_rootdisk_names: []
     _kubevirt_destroy_service_names: []
+    _kubevirt_destroy_udn_names: []
     _kubevirt_destroy_vm_state_complete: false
 
 - name: Build KubeVirt destroy targets from provider state
@@ -26,7 +27,9 @@
     _kubevirt_destroy_rootdisk_names: >-
       {{ _provider_state.nodes | default([], true) | map(attribute='vm_name', default='') | select('truthy') | map('regex_replace', '$', '-rootdisk') | list }}
     _kubevirt_destroy_service_names: >-
-      {{ [_provider_state.controller_lb_service | default('')] | select('truthy') | list }}
+      {{ [_provider_state.controller_lb_service | default(''), _provider_state.headless_service | default('')] | select('truthy') | list }}
+    _kubevirt_destroy_udn_names: >-
+      {{ [_provider_state.datacenter_network | default('')] | select('truthy') | list }}
     _kubevirt_destroy_vm_state_complete: >-
       {{ (_provider_state.nodes | default([], true) | map(attribute='vm_name', default='') | select('truthy') | list | length
            == (_provider_state.nodes | default([], true) | length)
@@ -84,6 +87,22 @@
   when: _kubevirt_destroy_service_names | length > 0
   tags: requires_cluster
 
+- name: Delete UserDefinedNetworks by persisted name
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - userdefinednetwork
+      - "{{ item }}"
+      - -n
+      - "{{ _kubevirt_destroy_namespace }}"
+      - --ignore-not-found
+  loop: "{{ _kubevirt_destroy_udn_names }}"
+  register: _delete_udns
+  changed_when: "'deleted' in (_delete_udns.stdout | default(''))"
+  when: _kubevirt_destroy_udn_names | length > 0
+  tags: requires_cluster
+
 - name: Delete VirtualMachines by label selector
   ansible.builtin.command:
     argv:
@@ -132,6 +151,22 @@
   register: _delete_dvs_legacy
   changed_when: "'deleted' in (_delete_dvs_legacy.stdout | default(''))"
   when: not _provider_state_stat.stat.exists or not _kubevirt_destroy_vm_state_complete
+  tags: requires_cluster
+
+- name: Delete UserDefinedNetworks by label selector
+  ansible.builtin.command:
+    argv:
+      - oc
+      - delete
+      - userdefinednetwork
+      - -l
+      - "ard.teim.app/deployment={{ ard_deployment_name }}"
+      - -n
+      - "{{ _kubevirt_destroy_namespace }}"
+      - --ignore-not-found
+  register: _delete_udns_legacy
+  changed_when: "'deleted' in (_delete_udns_legacy.stdout | default(''))"
+  when: not _provider_state_stat.stat.exists or _kubevirt_destroy_udn_names | length == 0
   tags: requires_cluster
 
 - name: Delete namespace

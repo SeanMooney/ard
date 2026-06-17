@@ -1,0 +1,31 @@
+---
+- name: Destroy ARD KubeVirt deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
+    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
+    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
+  tasks:
+    - name: Check for rendered deployment
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/deployment.yaml"
+      register: _ard_deployment_stat
+
+    - name: Destroy ARD provider resources
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - -i
+          - localhost,
+          - ansible/playbooks/provider/destroy.yaml
+          - -e
+          - ard_deployment_dir={{ ard_deployment_dir }}
+      environment:
+        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
+        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
+      args:
+        chdir: "{{ ard_project_dir }}"
+      changed_when: true
+      when: _ard_deployment_stat.stat.exists

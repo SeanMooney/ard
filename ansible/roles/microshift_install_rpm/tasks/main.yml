@@ -29,6 +29,16 @@
     name: "{{ microshift_rpm_packages }}"
     state: present
 
+- name: Restart CRI-O to apply proxy drop-ins
+  become: true
+  ansible.builtin.systemd:
+    name: crio.service
+    state: restarted
+    daemon_reload: true
+  when: >-
+    (ard_http_proxy | default('') | length > 0)
+    or (ard_https_proxy | default('') | length > 0)
+
 - name: Prepare TopoLVM backing disk file
   become: true
   ansible.builtin.shell: |
@@ -90,6 +100,33 @@
         nodeIP: {{ microshift_node_ip }}
   register: microshift_config_file
 
+- name: Gather non-loopback interface MTUs for MicroShift OVN
+  ansible.builtin.shell: |
+    set -o pipefail
+    ip -o link show | awk '$2 != "lo:" { for (i = 1; i <= NF; i++) if ($i == "mtu") print $(i + 1) }'
+  args:
+    executable: /bin/bash
+  register: microshift_iface_mtu_result
+  changed_when: false
+  when: microshift_networking == 'ovnk'
+
+- name: Compute MicroShift OVN MTU
+  ansible.builtin.set_fact:
+    microshift_ovn_mtu_effective: >-
+      {{ microshift_ovn_mtu if (microshift_ovn_mtu | string | length > 0) else
+         ((microshift_iface_mtu_result.stdout_lines | map('int') | list | min) - (microshift_ovn_mtu_headroom | int)) }}
+  when: microshift_networking == 'ovnk'
+
+- name: Configure MicroShift OVN MTU
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/microshift/ovn.yaml
+    mode: "0644"
+    content: |
+      mtu: {{ microshift_ovn_mtu_effective }}
+  register: microshift_ovn_config_file
+  when: microshift_networking == 'ovnk'
+
 - name: Ensure MicroShift OVS init drop-in directory exists
   become: true
   ansible.builtin.file:
@@ -123,7 +160,10 @@
     name: microshift.service
     state: restarted
     daemon_reload: true
-  when: microshift_config_file.changed or (microshift_ovs_init_dropin.changed | default(false))
+  when: >-
+    microshift_config_file.changed
+    or (microshift_ovn_config_file.changed | default(false))
+    or (microshift_ovs_init_dropin.changed | default(false))
 
 - name: Wait for MicroShift kubeconfig
   become: true

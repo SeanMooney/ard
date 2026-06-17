@@ -91,10 +91,19 @@
     'datavolumes' not in _ard_kv_cdi_api.stdout
   tags: requires_cluster
 
-- name: Verify image DataSource exists
+- name: Resolve default KubeVirt image source
+  ansible.builtin.set_fact:
+    _ard_kv_default_image_source_kind: "{{ ard_images[ard_default_image].provider.kubevirt.source_kind }}"
+    _ard_kv_default_image_name: "{{ ard_images[ard_default_image].provider.kubevirt.name }}"
+    _ard_kv_default_image_namespace: "{{ ard_images[ard_default_image].provider.kubevirt.namespace | default(ard_kubevirt_namespace) }}"
+    _ard_kv_default_preference_kind: "{{ ard_images[ard_default_image].provider.kubevirt.preference_kind | default('VirtualMachinePreference') }}"
+    _ard_kv_default_preference_name: "{{ ard_images[ard_default_image].provider.kubevirt.preference | default(ard_default_vm_preference) }}"
+  tags: requires_cluster
+
+- name: Verify default image DataSource exists
   ansible.builtin.command: >-
-    oc get datasource {{ ard_kubevirt_image_datasource }}
-    -n {{ ard_kubevirt_namespace }}
+    oc get {{ _ard_kv_default_image_source_kind | lower }} {{ _ard_kv_default_image_name }}
+    -n {{ _ard_kv_default_image_namespace }}
   changed_when: false
   register: _ard_kv_datasource_check
   failed_when: _ard_kv_datasource_check.rc != 0
@@ -124,19 +133,20 @@
     - item.rc != 0
   tags: requires_cluster
 
-- name: Check VirtualMachinePreference exists
+- name: Check default VirtualMachine preference exists
   ansible.builtin.command: >-
-    oc get virtualmachinepreference {{ ard_default_vm_preference }}
+    oc get {{ _ard_kv_default_preference_kind | lower }} {{ _ard_kv_default_preference_name }}
   changed_when: false
   failed_when: false
   register: _ard_kv_preference_check
   tags: requires_cluster
 
-- name: Warn about missing VirtualMachinePreference
+- name: Warn about missing default VirtualMachine preference
   ansible.builtin.debug:
     msg: >-
-      WARNING: VirtualMachinePreference '{{ ard_default_vm_preference }}'
-      not found. Run 'make kubevirt-resources' to create it.
+      WARNING: {{ _ard_kv_default_preference_kind }} '{{ _ard_kv_default_preference_name }}'
+      not found. Run 'make kubevirt-resources' to create namespace-local
+      preferences, or use a cluster preference that already exists.
   when:
     - _ard_kv_preference_check.rc is defined
     - _ard_kv_preference_check.rc != 0

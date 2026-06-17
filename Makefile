@@ -62,6 +62,7 @@ ARD_DEPLOYMENT_EXTRA_VARS = \
 
 ARD_DEPLOY_PLAYBOOK_devstack = ansible/playbooks/provider/deploy-devstack.yaml
 ARD_DEPLOY_PLAYBOOK_microshift = ansible/playbooks/workloads/microshift/deploy.yaml
+ARD_DEPLOY_PLAYBOOK_oko = ansible/playbooks/workloads/oko/deploy.yaml
 ARD_DEPLOY_PLAYBOOK = $(ARD_DEPLOY_PLAYBOOK_$(ARD_WORKLOAD))
 
 default:

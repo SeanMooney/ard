@@ -36,6 +36,40 @@
     - ansible_distribution == 'CentOS'
     - ansible_distribution_major_version == '10'
 
+- name: Ensure CRI-O systemd drop-in directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/crio.service.d
+    state: directory
+    mode: "0755"
+  when: >-
+    (ard_http_proxy | default('') | length > 0)
+    or (ard_https_proxy | default('') | length > 0)
+
+- name: Configure CRI-O proxy for image pulls
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/crio.service.d/10-ard-proxy.conf
+    mode: "0644"
+    content: |
+      [Service]
+      Environment="HTTP_PROXY={{ ard_http_proxy | default('') }}"
+      Environment="HTTPS_PROXY={{ ard_https_proxy | default('') }}"
+      Environment="NO_PROXY={{ ard_no_proxy | default('') }}"
+      Environment="http_proxy={{ ard_http_proxy | default('') }}"
+      Environment="https_proxy={{ ard_https_proxy | default('') }}"
+      Environment="no_proxy={{ ard_no_proxy | default('') }}"
+  register: microshift_crio_proxy_dropin
+  when: >-
+    (ard_http_proxy | default('') | length > 0)
+    or (ard_https_proxy | default('') | length > 0)
+
+- name: Reload systemd for CRI-O proxy drop-in
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: microshift_crio_proxy_dropin.changed | default(false)
+
 - name: Enable firewalld
   become: true
   ansible.builtin.systemd:

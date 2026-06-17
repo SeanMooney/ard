@@ -129,7 +129,10 @@ ard_images:
     provider:
       kubevirt:
         source_kind: DataSource
-        name: centos-stream-9
+        name: centos-stream9
+        namespace: openshift-virtualization-os-images
+        preference_kind: VirtualMachineClusterPreference
+        preference: centos.stream9
       libvirt:
         url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
         name: centos-stream-9
@@ -144,7 +147,10 @@ ard_images:
     provider:
       kubevirt:
         source_kind: DataSource
-        name: centos-stream-10
+        name: centos-stream10
+        namespace: openshift-virtualization-os-images
+        preference_kind: VirtualMachineClusterPreference
+        preference: centos.stream10
       libvirt:
         url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
         name: centos-stream-10

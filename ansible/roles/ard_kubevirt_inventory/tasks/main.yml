@@ -55,6 +55,32 @@
     _controller_lb_ip: "{{ _lb_ip_result.stdout | default('') }}"
   tags: requires_cluster
 
+- name: Wait for LoadBalancer Service endpoints
+  ansible.builtin.command:
+    argv:
+      - oc
+      - get
+      - "endpoints/{{ _controller_node_resource_name }}-lb"
+      - -n
+      - "{{ ard_kubevirt_namespace }}"
+      - -o
+      - "jsonpath={.subsets[0].addresses[0].ip}"
+  register: _lb_endpoint_result
+  until: _lb_endpoint_result.stdout | length > 0
+  retries: "{{ ((ard_apply_wait_timeout | int) / 5) | round(0, 'ceil') | int }}"
+  delay: 5
+  changed_when: false
+  tags: requires_cluster
+
+- name: Wait for SSH TCP on controller LoadBalancer
+  ansible.builtin.wait_for:
+    host: "{{ _controller_lb_ip }}"
+    port: 22
+    state: started
+    timeout: "{{ ard_apply_wait_timeout | int }}"
+    sleep: 5
+  tags: requires_cluster
+
 - name: Discover VMI pod IPs for all nodes
   ansible.builtin.command:
     argv:
@@ -69,6 +95,9 @@
   loop_control:
     label: "{{ item.name }}"
   register: _vmi_ips
+  until: _vmi_ips.stdout | default('') | length > 0
+  retries: "{{ ((ard_apply_wait_timeout | int) / 5) | round(0, 'ceil') | int }}"
+  delay: 5
   changed_when: false
   tags: requires_cluster
 
@@ -105,7 +134,7 @@
         hosts:
       {% set peer_names = ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list %}
       {% for node in ard_nodes %}
-      {% set is_controller = 'controller' in node.groups %}
+      {% set is_controller = node.name == _controller_node.name %}
       {% set node_ip = _node_ips[node.name] | default('') %}
       {% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
       {% set dc_offset = 1 if is_controller else 2 + peer_names.index(node.name) if 'peers' in node.groups else 0 %}
@@ -115,16 +144,16 @@
             ansible_user: stack
             ansible_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
       {% if is_controller %}
-            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no"
       {% else %}
             ansible_ssh_common_args: >-
               -o StrictHostKeyChecking=no
               -o UserKnownHostsFile=/dev/null
-              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
+              -o ForwardX11=no
+              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
       {% endif %}
             ard_deployment_name: {{ ard_deployment_name }}
-            {% set node_provider_resource_name = node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ node.name) %}
-            ard_provider_resource_name: {{ node_provider_resource_name }}
+            ard_provider_resource_name: {{ node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ node.name) }}
             nodepool:
               private_ipv4: {{ node_ip }}
               public_ipv4: {{ ansible_host }}
@@ -169,6 +198,8 @@
       ard_provider_resource_prefix: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}
       ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
       controller_lb_service: {{ _controller_node_resource_name }}-lb
+      headless_service: {{ ard_kubevirt_headless_service }}
+      datacenter_network: {{ ard_kubevirt_datacenter_network_name if (ard_kubevirt_datacenter_network | default(false) | bool) else '' }}
       controller_lb_ip: {{ _controller_lb_ip | default('') }}
       nodes:
       {% for node in ard_nodes %}
@@ -183,20 +214,20 @@
     name: "{{ item.name }}"
     groups: "{{ ['ard_provider_nodes'] + item.groups }}"
     ansible_host: >-
-      {{ _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')) }}
+      {{ _controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default('')) }}
     ansible_user: stack
     ansible_private_key_file: "{{ ard_kubevirt_ssh_private_key_file }}"
     ansible_ssh_common_args: >-
-      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' if 'controller' in item.groups
-         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-              ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no' if item.name == _controller_node.name
+         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
+              ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
               ~ ' -i ' ~ ard_kubevirt_ssh_private_key_file
               ~ ' -W %h:%p stack@' ~ _controller_lb_ip ~ '"' }}
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ item.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ item.name) }}"
     nodepool: >-
       {{ {'private_ipv4': _node_ips[item.name] | default(''),
-          'public_ipv4': _controller_lb_ip if 'controller' in item.groups else (_node_ips[item.name] | default('')),
+          'public_ipv4': _controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default('')),
           'public_ipv6': ''
          } | combine({'datacenter_ipv4': _datacenter_ips[item.name]} if _datacenter_ips is defined and item.name in _datacenter_ips else {})
            | combine({'bridge_ipv4': ard_inventory_bridge_ipv4} if ard_inventory_bridge_ipv4 | length > 0 else {})

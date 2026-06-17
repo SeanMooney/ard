@@ -4,6 +4,7 @@
   gather_facts: true
   vars:
     ard_kubevirt_namespace: test-namespace
+    ard_kubevirt_datacenter_network: false
     ard_stack_public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest molecule-test
     ard_deployment_name: smooney-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
@@ -308,8 +309,11 @@
         _node_resource_name: smooney-devstack-1-controller
         _node_volume_name: smooney-devstack-1-controller-rootdisk
         _node_instancetype: devstack-8c16g
+        _node_preference_kind: VirtualMachinePreference
+        _node_preference_name: devstack
         _node_image_source_kind: DataSource
         _node_image_name: debian-13
+        _node_image_namespace: test-namespace
         _node_hostname: controller
         ard_kubevirt_storage_class: my-storage-class
 

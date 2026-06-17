@@ -102,7 +102,7 @@
     # ------------------------------------------------------------------
     # ard_images — kubevirt provider entries for all images
     # ------------------------------------------------------------------
-    - name: Verify ard_images kubevirt entries exist for each image
+    - name: Verify ard_images kubevirt entries exist for namespace-local images
       ansible.builtin.assert:
         that:
           - ard_images[item] is defined
@@ -110,17 +110,36 @@
           - ard_images[item].provider.kubevirt is defined
           - ard_images[item].provider.kubevirt.source_kind == 'DataSource'
           - ard_images[item].provider.kubevirt.name == item
+          - ard_images[item].provider.kubevirt.namespace is not defined
         fail_msg: >-
           ard_images['{{ item }}'].provider.kubevirt is missing or
           has wrong source_kind/name
       loop:
         - debian-13
         - ubuntu-24.04
-        - centos-stream-9
-        - centos-stream-10
         - fedora-eln
         - almalinux-10
         - rocky-linux-10
+
+    - name: Verify CentOS KubeVirt DataSource entries use shared boot-source namespace
+      ansible.builtin.assert:
+        that:
+          - ard_images[item.key] is defined
+          - ard_images[item.key].provider.kubevirt.source_kind == 'DataSource'
+          - ard_images[item.key].provider.kubevirt.name == item.value
+          - ard_images[item.key].provider.kubevirt.namespace == 'openshift-virtualization-os-images'
+          - ard_images[item.key].provider.kubevirt.preference_kind == 'VirtualMachineClusterPreference'
+          - ard_images[item.key].provider.kubevirt.preference == item.preference
+        fail_msg: >-
+          ard_images['{{ item.key }}'].provider.kubevirt should reference
+          DataSource/{{ item.value }} in openshift-virtualization-os-images
+      loop:
+        - key: centos-stream-9
+          value: centos-stream9
+          preference: centos.stream9
+        - key: centos-stream-10
+          value: centos-stream10
+          preference: centos.stream10
 
     # ------------------------------------------------------------------
     # ard_flavors — kubevirt instancetype mappings
