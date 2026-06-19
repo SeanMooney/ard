@@ -2,7 +2,7 @@
 - name: Ensure EDPM hostnames are FQDNs for dataplane validation
   become: true
   ansible.builtin.hostname:
-    name: "{{ hostvars[item].ansible_hostname_fqdn | default(item ~ '.' ~ oko_ctlplane_dns_domain, true) }}"
+    name: "{{ hostvars[item].ansible_fqdn | default(item ~ '.' ~ oko_ctlplane_dns_domain, true) }}"
   delegate_to: "{{ item }}"
   loop: "{{ groups[oko_edpm_group] | default([]) }}"
   when: oko_apply_dataplane_resources | bool

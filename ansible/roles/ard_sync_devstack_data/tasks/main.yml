@@ -34,14 +34,14 @@
   become: true
   ansible.builtin.fetch:
     src: "{{ ard_sync_devstack_data_archive }}"
-    dest: "{{ zuul.executor.work_root }}/ard-devstack-data.tar.gz"
+    dest: "{{ ard_sync_devstack_work_root }}/ard-devstack-data.tar.gz"
     flat: true
   when: inventory_hostname == groups['controller'][0]
 
 - name: Copy DevStack data archive to subnodes
   become: true
   ansible.builtin.copy:
-    src: "{{ zuul.executor.work_root }}/ard-devstack-data.tar.gz"
+    src: "{{ ard_sync_devstack_work_root }}/ard-devstack-data.tar.gz"
     dest: "{{ ard_sync_devstack_data_archive }}"
     owner: stack
     group: stack

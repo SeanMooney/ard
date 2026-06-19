@@ -2,13 +2,13 @@
 
 .PHONY: \
 	default render apply ping ssh ssh-print deploy verify destroy destroy-clean-generated clean-generated cleanup site \
-	molecule-test molecule-role-tests molecule-role-%
+	kubevirt-resources molecule-test molecule-role-tests molecule-role-%
 
 ARD_PROVIDER ?= libvirt
 ARD_DEPLOYMENT ?= devstack-1
 ARD_DEPLOYMENTS_DIR ?= $(CURDIR)/deployments
 ARD_USER ?= $(shell whoami)
-ARD_KUBEVIRT_NAMESPACE ?=
+ARD_KUBEVIRT_NAMESPACE ?= $(shell oc project --short 2>/dev/null)
 
 # Deployment name incorporates user prefix for shared-tenancy providers
 ARD_DEPLOYMENT_NAME_kubevirt = $(ARD_USER)-$(ARD_DEPLOYMENT)
@@ -125,6 +125,11 @@ cleanup:
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
 site: render apply deploy verify
+
+kubevirt-resources:
+	@test -n "$(ARD_KUBEVIRT_NAMESPACE)" || (echo "Set ARD_KUBEVIRT_NAMESPACE or log in with oc and select a project" >&2; exit 1)
+	oc apply -n "$(ARD_KUBEVIRT_NAMESPACE)" \
+		-f ansible/files/kubevirt/devstack-instancetype-preference.yaml
 
 MOLECULE_ROLE_DIRS := $(sort $(dir $(wildcard ansible/roles/*/molecule/*/molecule.yml)))
 

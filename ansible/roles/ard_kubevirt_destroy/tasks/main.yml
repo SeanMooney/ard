@@ -179,5 +179,5 @@
       - --ignore-not-found
   when: ard_kubevirt_delete_namespace | default(false) | bool
   register: _delete_ns
-  changed_when: "'deleted' in _delete_ns.stdout"
+  changed_when: "'deleted' in (_delete_ns.stdout | default(''))"
   tags: requires_cluster

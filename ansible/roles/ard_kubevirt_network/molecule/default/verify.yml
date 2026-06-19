@@ -4,7 +4,7 @@
   gather_facts: true
   vars:
     ard_kubevirt_namespace: test-namespace
-    ard_deployment_name: smooney-devstack-1
+    ard_deployment_name: ard-test-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
   roles:
     - role: ard_provider_common
@@ -48,12 +48,12 @@
     - name: Verify headless Service metadata
       ansible.builtin.assert:
         that:
-          - _headless_svc.metadata.name == 'smooney-devstack-1-headless'
+          - _headless_svc.metadata.name == 'ard-test-devstack-1-headless'
           - _headless_svc.metadata.namespace == 'test-namespace'
           - _headless_svc.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
           - _headless_svc.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
-          - _headless_svc.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
-          - _headless_svc.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _headless_svc.metadata.labels['app.kubernetes.io/instance'] == 'ard-test-devstack-1'
+          - _headless_svc.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _headless_svc.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
         fail_msg: "Headless Service metadata labels are incorrect"
 
@@ -61,7 +61,7 @@
       ansible.builtin.assert:
         that:
           - _headless_svc.spec.clusterIP == 'None'
-          - _headless_svc.spec.selector['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _headless_svc.spec.selector['ard.teim.app/deployment'] == 'ard-test-devstack-1'
         fail_msg: "Headless Service spec is incorrect"
 
     - name: Verify only expected labels present in manifest
@@ -103,6 +103,6 @@
     - name: Verify core labels still present with extra labels
       ansible.builtin.assert:
         that:
-          - _headless_with_labels.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _headless_with_labels.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _headless_with_labels.spec.clusterIP == 'None'
         fail_msg: "Core manifest content corrupted when extra labels present"

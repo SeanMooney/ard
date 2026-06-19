@@ -1041,7 +1041,7 @@ ard_kubevirt_namespace: ard-devstack
 # needs to force a specific class.
 ard_kubevirt_storage_class: null
 ard_kubevirt_network_mode: masquerade
-ard_kubevirt_ssh_access: nodeport
+ard_kubevirt_ssh_access: loadbalancer
 ard_kubevirt_image_source: datavolume
 ard_kubevirt_default_image: debian-13
 ard_kubevirt_default_controller_flavor: devstack-control
@@ -1051,20 +1051,20 @@ ard_kubevirt_ensure_instancetype_resources: false
 ard_kubevirt_delete_namespace: false
 ```
 
-Allowed initial SSH access modes:
+Implemented SSH access mode:
 
 ```yaml
-ard_kubevirt_ssh_access: nodeport      # expose each VM SSH via a NodePort Service
-ard_kubevirt_ssh_access: loadbalancer  # expose each VM SSH via LoadBalancer Service, if available
-ard_kubevirt_ssh_access: port_forward  # local/dev only; less suitable for long-running automation
-ard_kubevirt_ssh_access: bastion       # future mode using a bastion pod/VM
+ard_kubevirt_ssh_access: loadbalancer  # expose controller VM SSH via a LoadBalancer Service
 ```
+
+Other modes such as `nodeport`, `port_forward`, or `bastion` are design
+placeholders until their inventory and lifecycle paths are implemented.
 
 Initial recommendation:
 
 ```yaml
 ard_kubevirt_network_mode: masquerade
-ard_kubevirt_ssh_access: nodeport
+ard_kubevirt_ssh_access: loadbalancer
 ```
 
 ### 11.2 Roles
@@ -1719,7 +1719,7 @@ For remote OpenShift work:
 ```yaml
 ard_provider: kubevirt
 ard_kubevirt_network_mode: masquerade
-ard_kubevirt_ssh_access: nodeport
+ard_kubevirt_ssh_access: loadbalancer
 ard_kubevirt_storage_class: null
 ard_kubevirt_default_image: debian-13
 ard_kubevirt_default_controller_flavor: devstack-control

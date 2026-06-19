@@ -6,7 +6,8 @@
     ard_kubevirt_namespace: test-namespace
     ard_kubevirt_datacenter_network: false
     ard_stack_public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest molecule-test
-    ard_deployment_name: smooney-devstack-1
+    ard_kubevirt_ssh_key_secret: ard-test-pub-key
+    ard_deployment_name: ard-test-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
     ard_nodes:
       - name: controller
@@ -81,7 +82,7 @@
     - name: Verify controller VM name and namespace
       ansible.builtin.assert:
         that:
-          - _controller_vm.metadata.name == 'smooney-devstack-1-controller'
+          - _controller_vm.metadata.name == 'ard-test-devstack-1-controller'
           - _controller_vm.metadata.namespace == 'test-namespace'
         fail_msg: "Controller VM name/namespace incorrect"
 
@@ -90,8 +91,8 @@
         that:
           - _controller_vm.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
           - _controller_vm.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
-          - _controller_vm.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
-          - _controller_vm.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.metadata.labels['app.kubernetes.io/instance'] == 'ard-test-devstack-1'
+          - _controller_vm.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _controller_vm.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
           - _controller_vm.metadata.labels['ard.teim.app/node'] == 'controller'
         fail_msg: "Controller VM metadata labels incorrect"
@@ -126,7 +127,7 @@
       ansible.builtin.assert:
         that:
           - _controller_vm.spec.dataVolumeTemplates | length == 1
-          - _controller_vm.spec.dataVolumeTemplates[0].metadata.name == 'smooney-devstack-1-controller-rootdisk'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.name == 'ard-test-devstack-1-controller-rootdisk'
           - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.kind == 'DataSource'
           - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.name == 'debian-13'
           - _controller_vm.spec.dataVolumeTemplates[0].spec.sourceRef.namespace == 'test-namespace'
@@ -143,8 +144,8 @@
         that:
           - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/part-of'] == 'ard'
           - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
-          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
-          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'ard-test-devstack-1'
+          - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/provider'] == 'kubevirt'
           - _controller_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/node'] == 'controller'
         fail_msg: "Controller VM dataVolumeTemplate labels incorrect"
@@ -161,23 +162,23 @@
     - name: Verify controller VM template labels
       ansible.builtin.assert:
         that:
-          - _controller_vm.spec.template.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _controller_vm.spec.template.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _controller_vm.spec.template.metadata.labels['ard.teim.app/node'] == 'controller'
-          - _controller_vm.spec.template.metadata.labels['network.kubevirt.io/headlessService'] == 'smooney-devstack-1-headless'
+          - _controller_vm.spec.template.metadata.labels['network.kubevirt.io/headlessService'] == 'ard-test-devstack-1-headless'
         fail_msg: "Controller VM template labels incorrect"
 
     - name: Verify controller VM accessCredentials
       ansible.builtin.assert:
         that:
           - _controller_vm.spec.template.spec.accessCredentials | length == 1
-          - _controller_vm.spec.template.spec.accessCredentials[0].sshPublicKey.source.secret.secretName == 'smooney-pub-key'
+          - _controller_vm.spec.template.spec.accessCredentials[0].sshPublicKey.source.secret.secretName == 'ard-test-pub-key'
           - _controller_vm.spec.template.spec.accessCredentials[0].sshPublicKey.propagationMethod.noCloud is defined
         fail_msg: "Controller VM accessCredentials incorrect"
 
     - name: Verify controller VM subdomain and network
       ansible.builtin.assert:
         that:
-          - _controller_vm.spec.template.spec.subdomain == 'smooney-devstack-1-headless'
+          - _controller_vm.spec.template.spec.subdomain == 'ard-test-devstack-1-headless'
           - _controller_vm.spec.template.spec.networks | length == 1
           - _controller_vm.spec.template.spec.networks[0].name == 'default'
           - _controller_vm.spec.template.spec.networks[0].pod.vmNetworkCIDR == '192.168.121.0/24'
@@ -228,7 +229,7 @@
     - name: Verify compute-1 VM name
       ansible.builtin.assert:
         that:
-          - _compute_vm.metadata.name == 'smooney-devstack-1-compute-1'
+          - _compute_vm.metadata.name == 'ard-test-devstack-1-compute-1'
         fail_msg: "Compute-1 VM name incorrect"
 
     - name: Verify compute-1 VM instancetype (devstack-8c8g)
@@ -246,7 +247,7 @@
     - name: Verify compute-1 rootdisk volume name
       ansible.builtin.assert:
         that:
-          - _compute_vm.spec.dataVolumeTemplates[0].metadata.name == 'smooney-devstack-1-compute-1-rootdisk'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.name == 'ard-test-devstack-1-compute-1-rootdisk'
         fail_msg: "Compute-1 rootdisk volume name incorrect"
 
     - name: Verify compute-1 VM dataVolumeTemplate labels
@@ -259,8 +260,8 @@
         that:
           - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/part-of'] == 'ard'
           - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
-          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
-          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['app.kubernetes.io/instance'] == 'ard-test-devstack-1'
+          - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/provider'] == 'kubevirt'
           - _compute_vm.spec.dataVolumeTemplates[0].metadata.labels['ard.teim.app/node'] == 'compute-1'
         fail_msg: "Compute-1 VM dataVolumeTemplate labels incorrect"
@@ -306,8 +307,8 @@
           hostname: controller
           flavor: devstack-control
           image: debian-13
-        _node_resource_name: smooney-devstack-1-controller
-        _node_volume_name: smooney-devstack-1-controller-rootdisk
+        _node_resource_name: ard-test-devstack-1-controller
+        _node_volume_name: ard-test-devstack-1-controller-rootdisk
         _node_instancetype: devstack-8c16g
         _node_preference_kind: VirtualMachinePreference
         _node_preference_name: devstack

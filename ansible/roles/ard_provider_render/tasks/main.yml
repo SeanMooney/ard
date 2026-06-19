@@ -254,7 +254,7 @@
     ard_microshift_image_effective: >-
       {{ ard_microshift_image |
          default(ard_render_image |
-         default((ard_topology is match('^oko-')) |
+         default((ard_workload == 'oko') |
          ternary(ard_render_workload_presets.oko.microshift_image, ard_render_workload_presets.microshift.image), true), true) }}
     ard_edpm_image_effective: >-
       {{ ard_edpm_image |

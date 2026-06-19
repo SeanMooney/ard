@@ -284,7 +284,7 @@ ard_flavors:
     nested_virt: false
     provider:
       kubevirt:
-        instancetype: devstack-8c8g
+        instancetype: devstack-2c1g
       libvirt:
         vcpus: 2
         memory_mb: 1024
