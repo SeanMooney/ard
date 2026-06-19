@@ -80,6 +80,9 @@
       changed_when: true
 
     - name: Run ARD OKO deployment playbook
+      # Workload variables are passed to the workload playbook here because
+      # provisioner.ard in molecule.yml is consumed only by molecule-create.yaml
+      # for render/provider inputs.
       ansible.builtin.command:
         argv: >-
           {{ ['ansible-playbook', '-i', ard_deployment_dir ~ '/inventory.yaml',

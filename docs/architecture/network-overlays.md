@@ -6,7 +6,8 @@ VMs when a scenario needs multi-node service networks that are independent of
 the provider implementation.
 
 This document describes the common model and then calls out the KubeVirt OKO
-variant that uses a Multus datacenter underlay plus an ARD GRETAP overlay.
+variant that uses an OVN-Kubernetes UserDefinedNetwork datacenter underlay plus
+an ARD GRETAP overlay.
 
 ## Common network layers
 
@@ -14,7 +15,7 @@ variant that uses a Multus datacenter underlay plus an ARD GRETAP overlay.
 +-----------------------------------------------------------------------+
 | Provider layer                                                        |
 |                                                                       |
-|  libvirt network, KubeVirt pod network, KubeVirt Multus attachment,   |
+|  libvirt network, KubeVirt pod network, KubeVirt UDN attachment,      |
 |  or another provider-specific network created by provider roles       |
 +-----------------------------------------------------------------------+
                  |                          |
@@ -57,9 +58,14 @@ state.
       VM A NIC        VM B NIC        VM C NIC
 ```
 
-For KubeVirt, this network is backed by a Multus attachment to a Linux bridge
-in the cluster. In the OKO KubeVirt topology it commonly uses `10.0.100.0/24`.
-Those addresses are GRETAP endpoints, not OpenStack ctlplane addresses.
+For KubeVirt, this network is currently backed by an OVN-Kubernetes
+`UserDefinedNetwork` with Layer2 topology and IPAM disabled. In the OKO
+KubeVirt topology it commonly uses `10.0.100.0/24`. Those addresses are GRETAP
+endpoints, not OpenStack ctlplane addresses.
+
+The KubeVirt datacenter network therefore requires an OpenShift cluster using
+OVN-Kubernetes with the `k8s.ovn.org/v1` `UserDefinedNetwork` API available.
+It is not a generic host-local bridge NetworkAttachmentDefinition.
 
 ## ARD multinode bridge overlay
 
@@ -114,7 +120,7 @@ underlay packets.
 ```text
                          KubeVirt namespace
 
-        Multus/Linux bridge datacenter underlay: 10.0.100.0/24
+        OVN-K UDN datacenter underlay: 10.0.100.0/24
    -----------------------------------------------------------------
           | 10.0.100.1              | 10.0.100.2       | 10.0.100.3
           |                         |                  |
@@ -245,9 +251,9 @@ site. Do not commit site-specific proxy hostnames or IP addresses.
 
 ## MTU model
 
-Provider underlays may expose guest NICs with an MTU below 1500. KubeVirt and
-Multus commonly use a lower MTU than a default Ethernet link. The OKO KubeVirt
-scenario therefore uses a conservative MTU:
+Provider underlays may expose guest NICs with an MTU below 1500. KubeVirt
+secondary network attachments commonly use a lower MTU than a default Ethernet
+link. The OKO KubeVirt scenario therefore uses a conservative MTU:
 
 ```yaml
 oko_network_mtu: 1300

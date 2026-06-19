@@ -45,7 +45,7 @@
       - "jsonpath={.status.loadBalancer.ingress[0].ip}"
   register: _lb_ip_result
   until: _lb_ip_result.stdout | length > 0
-  retries: 60
+  retries: "{{ ((ard_apply_wait_timeout | int) / 5) | round(0, 'ceil') | int }}"
   delay: 5
   changed_when: false
   tags: requires_cluster
@@ -125,66 +125,10 @@
   tags: requires_cluster
 
 - name: Write inventory.yaml
-  ansible.builtin.copy:
+  ansible.builtin.template:
+    src: inventory.yaml.j2
     dest: "{{ ard_deployment_dir }}/inventory.yaml"
     mode: "0644"
-    content: |
-      ---
-      all:
-        hosts:
-      {% set peer_names = ard_nodes | selectattr('groups', 'contains', 'peers') | map(attribute='name') | list %}
-      {% for node in ard_nodes %}
-      {% set is_controller = node.name == _controller_node.name %}
-      {% set node_ip = _node_ips[node.name] | default('') %}
-      {% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
-      {% set dc_offset = 1 if is_controller else 2 + peer_names.index(node.name) if 'peers' in node.groups else 0 %}
-      {% set bridge_offset = bridge_address_offset | int if 'switch' in node.groups else (bridge_address_offset | int + 1 + peer_names.index(node.name)) if 'peers' in node.groups else none %}
-          {{ node.name }}:
-            ansible_host: {{ ansible_host }}
-            ansible_user: stack
-            ansible_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
-      {% if is_controller %}
-            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no"
-      {% else %}
-            ansible_ssh_common_args: >-
-              -o StrictHostKeyChecking=no
-              -o UserKnownHostsFile=/dev/null
-              -o ForwardX11=no
-              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
-      {% endif %}
-            ard_deployment_name: {{ ard_deployment_name }}
-            ard_provider_resource_name: {{ node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ node.name) }}
-            nodepool:
-              private_ipv4: {{ node_ip }}
-              public_ipv4: {{ ansible_host }}
-              public_ipv6: ""
-      {% if _datacenter_ips is defined and node.name in _datacenter_ips %}
-              datacenter_ipv4: {{ _datacenter_ips[node.name] }}
-      {% endif %}
-      {% if bridge_offset is not none %}
-              bridge_ipv4: {{ bridge_address_prefix }}.{{ bridge_offset }}
-      {% endif %}
-            zuul:
-              executor:
-                log_root: /tmp/zuul_logs
-                work_root: /tmp/work_root
-      {% endfor %}
-        children:
-      {% set group_names = [] %}
-      {% for node in ard_nodes %}
-      {% for group in node.groups %}
-      {% if group not in group_names %}
-      {% set _ = group_names.append(group) %}
-      {% endif %}
-      {% endfor %}
-      {% endfor %}
-      {% for group in group_names %}
-          {{ group }}:
-            hosts:
-      {% for node in ard_nodes if group in node.groups %}
-              {{ node.name }}:
-      {% endfor %}
-      {% endfor %}
   tags: requires_cluster
 
 - name: Write provider-state.yaml

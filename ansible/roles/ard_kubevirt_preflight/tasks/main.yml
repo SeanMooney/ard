@@ -189,7 +189,8 @@
             | map(attribute='value'))
             | map('join', '=')
             | list) }}
+  register: _ard_kv_secret_labels
   when:
     - ard_kubevirt_extra_labels | length > 0
-  changed_when: false
+  changed_when: "'not labeled' not in (_ard_kv_secret_labels.stdout | default(''))"
   tags: requires_cluster

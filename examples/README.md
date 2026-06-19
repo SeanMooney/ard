@@ -35,3 +35,5 @@ provider to KubeVirt from its scenario config.
   `-e` at runtime.
 - See [../docs/architecture/network-overlays.md](../docs/architecture/network-overlays.md)
   for the common ARD network overlay model.
+- See [../docs/providers/kubevirt-prerequisites.md](../docs/providers/kubevirt-prerequisites.md)
+  before running KubeVirt examples or Molecule scenarios.

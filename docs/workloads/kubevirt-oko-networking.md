@@ -1,14 +1,16 @@
 # KubeVirt OKO networking quick reference
 
 The detailed ARD overlay model and KubeVirt OKO packet paths are documented in
-[../architecture/network-overlays.md](../architecture/network-overlays.md).
+[../architecture/network-overlays.md](../architecture/network-overlays.md). Generic
+OpenShift/KubeVirt provider prerequisites are documented in
+[../providers/kubevirt-prerequisites.md](../providers/kubevirt-prerequisites.md).
 
 This page is a short scenario-focused checklist for `molecule/kubevirt-oko`.
 
 ## Scenario layers
 
 ```text
-KubeVirt Multus datacenter underlay: 10.0.100.0/24
+KubeVirt OVN-K UserDefinedNetwork datacenter underlay: 10.0.100.0/24
         |
         v
 ARD ospbr/GRETAP overlay: 172.24.4.0/23 bridge mesh

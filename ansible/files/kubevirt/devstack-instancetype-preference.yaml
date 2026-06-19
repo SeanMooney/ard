@@ -24,6 +24,18 @@ spec:
     guest: 8Gi
 ---
 apiVersion: instancetype.kubevirt.io/v1beta1
+kind: VirtualMachineInstancetype
+metadata:
+  name: devstack-2c1g
+spec:
+  cpu:
+    guest: 2
+    model: host-passthrough
+  ioThreadsPolicy: auto
+  memory:
+    guest: 1Gi
+---
+apiVersion: instancetype.kubevirt.io/v1beta1
 kind: VirtualMachinePreference
 metadata:
   name: devstack

@@ -6,7 +6,8 @@
     ard_kubevirt_namespace: test-namespace
     ard_kubevirt_datacenter_network: false
     ard_stack_public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest molecule-test
-    ard_deployment_name: smooney-devstack-1
+    ard_kubevirt_ssh_key_secret: ard-test-pub-key
+    ard_deployment_name: ard-test-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
     ard_nodes:
       - name: controller

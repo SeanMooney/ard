@@ -11,6 +11,7 @@ Docs navigation was reorganized; see:
 - `docs/repo-navigation.md` for repo layout and entry points
 - `docs/README.md` for the documentation index
 - `docs/concepts/ard-render-model.md` for user-facing render model concepts and examples
+- `docs/providers/kubevirt-prerequisites.md` for OpenShift/KubeVirt setup requirements
 - `docs/architecture/render-contracts.md` for contributor render/provider contracts
 - `ansible/README.md` for Ansible structure and canonical playbook paths
 

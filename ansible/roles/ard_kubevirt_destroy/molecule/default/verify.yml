@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     ard_kubevirt_namespace: test-namespace
-    ard_deployment_name: smooney-devstack-1
+    ard_deployment_name: ard-test-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
   roles:
     - role: ard_provider_common

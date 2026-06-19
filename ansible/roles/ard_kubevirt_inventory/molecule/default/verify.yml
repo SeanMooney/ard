@@ -4,7 +4,7 @@
   gather_facts: true
   vars:
     ard_kubevirt_namespace: test-namespace
-    ard_deployment_name: smooney-devstack-1
+    ard_deployment_name: ard-test-devstack-1
     ard_deployment_dir: /tmp/ard-test-deployment
     ard_kubevirt_controller_service_ports:
       - name: ssh
@@ -75,7 +75,7 @@
     - name: Verify LB Service name and namespace
       ansible.builtin.assert:
         that:
-          - _lb_svc.metadata.name == 'smooney-devstack-1-controller-lb'
+          - _lb_svc.metadata.name == 'ard-test-devstack-1-controller-lb'
           - _lb_svc.metadata.namespace == 'test-namespace'
         fail_msg: "LB Service name or namespace incorrect"
 
@@ -84,8 +84,8 @@
         that:
           - _lb_svc.metadata.labels['app.kubernetes.io/part-of'] == 'ard'
           - _lb_svc.metadata.labels['app.kubernetes.io/managed-by'] == 'ard'
-          - _lb_svc.metadata.labels['app.kubernetes.io/instance'] == 'smooney-devstack-1'
-          - _lb_svc.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _lb_svc.metadata.labels['app.kubernetes.io/instance'] == 'ard-test-devstack-1'
+          - _lb_svc.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _lb_svc.metadata.labels['ard.teim.app/provider'] == 'kubevirt'
           - _lb_svc.metadata.labels['ard.teim.app/node'] == 'controller'
         fail_msg: "LB Service standard labels are incorrect"
@@ -114,7 +114,7 @@
     - name: Verify LB Service selector uses vm.kubevirt.io/name
       ansible.builtin.assert:
         that:
-          - _lb_svc.spec.selector['vm.kubevirt.io/name'] == 'smooney-devstack-1-controller'
+          - _lb_svc.spec.selector['vm.kubevirt.io/name'] == 'ard-test-devstack-1-controller'
           - _lb_svc.spec.selector | length == 1
         fail_msg: "LB Service selector incorrect"
 
@@ -158,6 +158,7 @@
         mode: "0644"
       vars:
         _controller_node: "{{ ard_nodes | selectattr('groups', 'contains', 'controller') | list | first }}"
+        _controller_node_resource_name: "{{ (ard_nodes | selectattr('groups', 'contains', 'controller') | list | first).provider_resource_name | default(ard_deployment_name ~ '-controller') }}"
         ard_kubevirt_extra_labels:
           my-policy.example.com/team: my-team
           my-policy.example.com/env: staging
@@ -181,7 +182,7 @@
     - name: Verify core labels still present with extra labels
       ansible.builtin.assert:
         that:
-          - _lb_with_labels.metadata.labels['ard.teim.app/deployment'] == 'smooney-devstack-1'
+          - _lb_with_labels.metadata.labels['ard.teim.app/deployment'] == 'ard-test-devstack-1'
           - _lb_with_labels.spec.type == 'LoadBalancer'
-          - _lb_with_labels.spec.selector['vm.kubevirt.io/name'] == 'smooney-devstack-1-controller'
+          - _lb_with_labels.spec.selector['vm.kubevirt.io/name'] == 'ard-test-devstack-1-controller'
         fail_msg: "Core manifest content corrupted when extra labels present"

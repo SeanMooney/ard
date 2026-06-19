@@ -32,6 +32,7 @@ The MicroShift node is in the `switch` group for the ARD multinode bridge.
 The EDPM nodes are bridge peers. The bridge can carry the OpenStack ctlplane
 and network-isolation VLANs.
 
-For KubeVirt-specific details, including the Multus datacenter underlay,
-GRETAP overlay, EDPM veth uplink, and LoadBalancer VIP path, see
+For KubeVirt-specific details, including the OVN-K UserDefinedNetwork
+datacenter underlay, GRETAP overlay, EDPM veth uplink, and LoadBalancer VIP
+path, see
 [../../../docs/architecture/network-overlays.md](../../../docs/architecture/network-overlays.md).
