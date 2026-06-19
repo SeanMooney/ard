@@ -91,22 +91,37 @@
     'datavolumes' not in _ard_kv_cdi_api.stdout
   tags: requires_cluster
 
-- name: Resolve default KubeVirt image source
-  ansible.builtin.set_fact:
-    _ard_kv_default_image_source_kind: "{{ ard_images[ard_default_image].provider.kubevirt.source_kind }}"
-    _ard_kv_default_image_name: "{{ ard_images[ard_default_image].provider.kubevirt.name }}"
-    _ard_kv_default_image_namespace: "{{ ard_images[ard_default_image].provider.kubevirt.namespace | default(ard_kubevirt_namespace) }}"
-    _ard_kv_default_preference_kind: "{{ ard_images[ard_default_image].provider.kubevirt.preference_kind | default('VirtualMachinePreference') }}"
-    _ard_kv_default_preference_name: "{{ ard_images[ard_default_image].provider.kubevirt.preference | default(ard_default_vm_preference) }}"
+- name: Load rendered KubeVirt nodes
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+    name: _ard_kv_nodes_doc
   tags: requires_cluster
 
-- name: Verify default image DataSource exists
+- name: Resolve KubeVirt image sources used by rendered nodes
+  ansible.builtin.set_fact:
+    _ard_kv_used_images: >-
+      {{ _ard_kv_nodes_doc.ard_nodes |
+         map(attribute='image', default=ard_default_image) |
+         unique | list }}
+  tags: requires_cluster
+
+- name: Validate rendered KubeVirt node images are known
+  ansible.builtin.assert:
+    that:
+      - _ard_kv_used_images | difference(ard_images.keys() | list) | length == 0
+    fail_msg: >-
+      Rendered nodes reference unknown image(s): {{ _ard_kv_used_images | difference(ard_images.keys() | list) | join(', ') }}.
+  tags: requires_cluster
+
+- name: Verify rendered KubeVirt image sources exist
   ansible.builtin.command: >-
-    oc get {{ _ard_kv_default_image_source_kind | lower }} {{ _ard_kv_default_image_name }}
-    -n {{ _ard_kv_default_image_namespace }}
+    oc get {{ ard_images[item].provider.kubevirt.source_kind | lower }}
+    {{ ard_images[item].provider.kubevirt.name }}
+    -n {{ ard_images[item].provider.kubevirt.namespace | default(ard_kubevirt_namespace) }}
   changed_when: false
-  register: _ard_kv_datasource_check
-  failed_when: _ard_kv_datasource_check.rc != 0
+  register: _ard_kv_datasource_checks
+  failed_when: _ard_kv_datasource_checks.rc != 0
+  loop: "{{ _ard_kv_used_images }}"
   tags: requires_cluster
 
 - name: Check VirtualMachineInstancetype resources exist
@@ -133,23 +148,33 @@
     - item.rc != 0
   tags: requires_cluster
 
-- name: Check default VirtualMachine preference exists
-  ansible.builtin.command: >-
-    oc get {{ _ard_kv_default_preference_kind | lower }} {{ _ard_kv_default_preference_name }}
-  changed_when: false
-  failed_when: false
-  register: _ard_kv_preference_check
+- name: Resolve rendered KubeVirt VM preferences
+  ansible.builtin.set_fact:
+    _ard_kv_used_preferences: >-
+      {{ _ard_kv_nodes_doc.ard_nodes |
+         map(attribute='preference', default=ard_default_vm_preference) |
+         unique | list }}
   tags: requires_cluster
 
-- name: Warn about missing default VirtualMachine preference
+- name: Check rendered KubeVirt VM preferences exist
+  ansible.builtin.command: >-
+    oc get virtualmachinepreference {{ item }}
+  changed_when: false
+  failed_when: false
+  register: _ard_kv_preference_checks
+  loop: "{{ _ard_kv_used_preferences }}"
+  tags: requires_cluster
+
+- name: Warn about missing rendered KubeVirt VM preferences
   ansible.builtin.debug:
     msg: >-
-      WARNING: {{ _ard_kv_default_preference_kind }} '{{ _ard_kv_default_preference_name }}'
-      not found. Run 'make kubevirt-resources' to create namespace-local
-      preferences, or use a cluster preference that already exists.
+      WARNING: VirtualMachinePreference '{{ item.item }}' not found. Run
+      'make kubevirt-resources' to create namespace-local preferences, or set
+      ard_default_vm_preference/node preference to one that exists.
+  loop: "{{ _ard_kv_preference_checks.results | default([]) }}"
   when:
-    - _ard_kv_preference_check.rc is defined
-    - _ard_kv_preference_check.rc != 0
+    - item.rc is defined
+    - item.rc != 0
   tags: requires_cluster
 
 - name: Check if SSH key Secret already exists

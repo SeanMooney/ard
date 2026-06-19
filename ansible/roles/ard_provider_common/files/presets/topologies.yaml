@@ -98,11 +98,11 @@ ard_render_workload_topologies:
               ip_start: 2
             - name: datacenter
               mac_start: 2
-        - name: edpm-compute
+        - name: edpm
           class: small
           count: 2
-          name_format: "edpm-compute-{index}"
-          hostname_format: "edpm-compute-{index}"
+          name_format: "edpm-{index}"
+          hostname_format: "edpm-{index}"
           workload_roles:
             - edpm_compute
           manage_etc_hosts: false
@@ -205,8 +205,8 @@ ard_render_topologies:
             mac_start: 2
       - type: compute
         count: 2
-        name_format: "edpm-compute-{index}"
-        hostname_format: "edpm-compute-{index}"
+        name_format: "edpm-{index}"
+        hostname_format: "edpm-{index}"
         manage_etc_hosts: false
         image_var: ard_edpm_image_effective
         flavor: oko-edpm-compute

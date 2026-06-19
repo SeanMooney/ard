@@ -262,6 +262,7 @@
     ard_render_controller_flavor: "{{ ard_render_controller_flavor | default(ard_render_provider_defaults.controller_flavor) }}"
     ard_render_compute_flavor: "{{ ard_render_compute_flavor | default(ard_render_provider_defaults.compute_flavor) }}"
     ard_render_vm_preference: "{{ ard_render_vm_preference | default(ard_render_provider_defaults.vm_preference) }}"
+    ard_render_workload_default_vm_preference: "{{ ard_render_workload_presets.get(ard_workload, {}).get('vm_preference', '') }}"
 
 - name: Derive local render defaults
   ansible.builtin.set_fact:
@@ -400,10 +401,10 @@
     that:
       - _kubevirt_node_resource_names | list | length == ard_render_nodes | length
       - _kubevirt_node_resource_names | select('match', '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') | list | length == _kubevirt_node_resource_names | length
-      - _kubevirt_node_resource_names | map('length') | max <= 63
+      - _kubevirt_node_resource_names | map('length') | max <= 32
       - _kubevirt_node_rootdisk_names | select('match', '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') | list | length == _kubevirt_node_rootdisk_names | length
       - _kubevirt_node_rootdisk_names | map('length') | max <= 63
-    fail_msg: "KubeVirt node provider resource names and rootdisk names must be valid Kubernetes resource names (<= 63 chars)."
+    fail_msg: "KubeVirt node provider resource names must be valid Kubernetes resource names (<= 32 chars); rootdisk names must be valid Kubernetes resource names."
   when: ard_provider == 'kubevirt'
 
 - name: Compose rendered DevStack variables
