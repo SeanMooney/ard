@@ -36,7 +36,17 @@ ard_nodes:
 {% set _generated_hostname_template = pool.hostname_format | default(pool.name_format | default(name_type ~ '-' ~ (index | string))) %}
 {% set generated_hostname = (_generated_hostname_template | replace('{type}', name_type) | replace('{index}', index | string)) %}
 {% endif %}
-{% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': ard_provider_resource_prefix + '-' + generated_name} %}
+{% set raw_provider_resource_name = ard_provider_resource_prefix + '-' + generated_name %}
+{% if _render_for_kubevirt and (raw_provider_resource_name | length > 32) %}
+{% set compact_deployment_hash = (ard_deployment_name | hash('sha1'))[:8] %}
+{% set compact_provider_prefix = ard_kubevirt_user_prefix_sanitized ~ '-' ~ compact_deployment_hash %}
+{% set compact_hostname_max = 32 - (compact_provider_prefix | length) - 1 %}
+{% set compact_hostname = generated_hostname[:compact_hostname_max] | regex_replace('-+$', '') %}
+{% set provider_resource_name = compact_provider_prefix ~ '-' ~ compact_hostname %}
+{% else %}
+{% set provider_resource_name = raw_provider_resource_name %}
+{% endif %}
+{% set generated_node = {'name': generated_name, 'hostname': generated_hostname, 'provider_resource_name': provider_resource_name} %}
 {% set node_override = node_overrides.get(generated_name, {}) %}
 {% set node = node_type | combine(workload_role_defaults, recursive=True, list_merge='append') | combine(pool, recursive=True, list_merge='append') | combine(generated_node, recursive=True) | combine(node_override, recursive=True, list_merge='append') %}
 {% set node_image_var_list = (([node.image_vars] if node.image_vars is string else node.image_vars | default([])) + ([node.image_var] if node.image_var is defined else [])) | unique | list %}
@@ -71,6 +81,16 @@ ard_nodes:
 {% set resolved_image = ard_render_provider_defaults.image | default(ard_render_default_image, true) %}
 {% endif %}
 {% endif %}
+{% set resolved_preference = node.preference | default('', true) %}
+{% if resolved_preference == '' %}
+{% if ard_render_workload_default_vm_preference | default('', true) != '' %}
+{% set resolved_preference = ard_render_workload_default_vm_preference %}
+{% elif selected_node_class_defaults.get('vm_preference', '') != '' %}
+{% set resolved_preference = selected_node_class_defaults.vm_preference %}
+{% else %}
+{% set resolved_preference = ard_render_vm_preference %}
+{% endif %}
+{% endif %}
   - name: {{ node.name }}
     hostname: {{ node.hostname }}
 {% if node.manage_etc_hosts is defined and not _render_for_kubevirt %}
@@ -89,7 +109,7 @@ ard_nodes:
 {% endif %}
     image: {{ resolved_image }}
     flavor: {{ resolved_flavor }}
-    preference: {{ node.preference | default(ard_render_vm_preference) }}
+    preference: {{ resolved_preference }}
     networks:
 {% set node_network_overrides = node_override.networks | default({}) if node_override.networks is mapping else {} %}
 {% if _render_for_kubevirt %}
