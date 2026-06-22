@@ -1,0 +1,6 @@
+---
+- name: Run OKO init run-once bootstrap
+  hosts: "{{ oko_target_hosts | default('microshift') }}"
+  gather_facts: true
+  roles:
+    - oko-init-run-once

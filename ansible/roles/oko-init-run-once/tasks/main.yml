@@ -1,0 +1,157 @@
+---
+- name: Skip OKO init run-once bootstrap when disabled
+  ansible.builtin.meta: end_host
+  when: not (oko_init_run_once_enabled | bool)
+
+- name: Ensure init run-once image directory exists on MicroShift node
+  ansible.builtin.file:
+    path: "{{ oko_init_run_once_image_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Download CirrOS image to MicroShift node
+  ansible.builtin.get_url:
+    url: "{{ oko_init_run_once_cirros_url }}"
+    dest: "{{ oko_init_run_once_cirros_local_path }}"
+    mode: "0644"
+    checksum: "{{ (oko_init_run_once_cirros_checksum | length > 0) | ternary(oko_init_run_once_cirros_checksum, omit) }}"
+  register: _oko_init_run_once_cirros_download
+
+- name: Render OpenStack test VM bootstrap script
+  ansible.builtin.template:
+    src: bootstrap-test-vm.sh.j2
+    dest: "{{ oko_init_run_once_script_path }}"
+    mode: "0755"
+
+- name: Locate openstackclient pod
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_init_run_once_kubeconfig }}"
+      - -n
+      - "{{ oko_init_run_once_namespace }}"
+      - get
+      - pod
+      - openstackclient
+      - -o
+      - name
+  register: _oko_init_run_once_openstackclient_pod
+  changed_when: false
+
+- name: Copy CirrOS image into openstackclient pod
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_init_run_once_kubeconfig }}"
+      - -n
+      - "{{ oko_init_run_once_namespace }}"
+      - cp
+      - "{{ oko_init_run_once_cirros_local_path }}"
+      - "openstackclient:{{ oko_init_run_once_pod_image_path }}"
+  changed_when: _oko_init_run_once_cirros_download.changed
+
+- name: Copy bootstrap script into openstackclient pod
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_init_run_once_kubeconfig }}"
+      - -n
+      - "{{ oko_init_run_once_namespace }}"
+      - cp
+      - "{{ oko_init_run_once_script_path }}"
+      - "openstackclient:{{ oko_init_run_once_pod_script_path }}"
+  changed_when: true
+
+- name: Run OpenStack test VM bootstrap script
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_init_run_once_kubeconfig }}"
+      - -n
+      - "{{ oko_init_run_once_namespace }}"
+      - rsh
+      - openstackclient
+      - bash
+      - -lc
+      - "chmod +x {{ oko_init_run_once_pod_script_path }} && {{ oko_init_run_once_pod_script_path }} {{ oko_init_run_once_instance_count }}"
+  register: _oko_init_run_once_bootstrap
+  changed_when: true
+
+- name: Show OpenStack test VM bootstrap summary
+  ansible.builtin.debug:
+    var: _oko_init_run_once_bootstrap.stdout_lines
+
+- name: Install sshpass on MicroShift node for VM SSH validation
+  ansible.builtin.package:
+    name: sshpass
+    state: present
+  become: true
+  when:
+    - oko_init_run_once_validate_ssh | bool
+    - oko_init_run_once_install_sshpass | bool
+
+- name: Collect test server floating IPs
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_init_run_once_kubeconfig }}"
+      - -n
+      - "{{ oko_init_run_once_namespace }}"
+      - rsh
+      - openstackclient
+      - bash
+      - -lc
+      - >-
+        for i in $(seq 0 $(({{ oko_init_run_once_instance_count }} - 1))); do
+          name='{{ oko_init_run_once_server_name_prefix }}_'${i};
+          openstack server show "$name" -f json -c addresses;
+        done
+  register: _oko_init_run_once_server_addresses
+  changed_when: false
+  when: oko_init_run_once_validate_ssh | bool
+
+- name: Derive floating IP addresses for SSH validation
+  ansible.builtin.set_fact:
+    _oko_init_run_once_floating_ips: >-
+      {{ _oko_init_run_once_server_addresses.stdout
+         | regex_findall(oko_init_run_once_public_ip_regex)
+         | unique
+         | list }}
+  when: oko_init_run_once_validate_ssh | bool
+
+- name: Validate SSH to CirrOS test VM floating IPs
+  ansible.builtin.command:
+    argv:
+      - sshpass
+      - -e
+      - ssh
+      - -o
+      - StrictHostKeyChecking=no
+      - -o
+      - UserKnownHostsFile=/tmp/ard-oko-cirros-known-hosts
+      - -o
+      - PreferredAuthentications=password
+      - -o
+      - PubkeyAuthentication=no
+      - -o
+      - ConnectTimeout=20
+      - -o
+      - NumberOfPasswordPrompts=1
+      - "{{ oko_init_run_once_cirros_username }}@{{ item }}"
+      - "echo SSH_OK; hostname; id; uname -a; ip addr show; ip route show"
+  loop: "{{ _oko_init_run_once_floating_ips | default([]) }}"
+  register: _oko_init_run_once_ssh_validation
+  changed_when: false
+  environment:
+    SSHPASS: "{{ oko_init_run_once_cirros_password }}"
+  when: oko_init_run_once_validate_ssh | bool
+
+- name: Show CirrOS SSH validation summary
+  ansible.builtin.debug:
+    var: _oko_init_run_once_ssh_validation.results
+  when: oko_init_run_once_validate_ssh | bool

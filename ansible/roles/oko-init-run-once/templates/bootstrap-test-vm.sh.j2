@@ -1,0 +1,89 @@
+#!/bin/bash
+set -euxo pipefail
+
+IMG={{ oko_init_run_once_cirros_image_file | quote }}
+IMAGE_PATH={{ oko_init_run_once_pod_image_path | quote }}
+IMAGE_NAME={{ oko_init_run_once_image_name | quote }}
+DISK_FORMAT=qcow2
+RAW="$IMAGE_PATH"
+NUMBER_OF_INSTANCES=${1:-{{ oko_init_run_once_instance_count }}}
+
+if [ ! -s "$IMAGE_PATH" ]; then
+    echo "Missing CirrOS image in openstackclient pod: $IMAGE_PATH" >&2
+    exit 1
+fi
+
+if type qemu-img >/dev/null 2>&1; then
+    RAW="/tmp/${IMG%.img}.raw"
+    qemu-img convert -f qcow2 -O raw "$IMAGE_PATH" "$RAW"
+    DISK_FORMAT=raw
+fi
+
+openstack image show "$IMAGE_NAME" || \
+    openstack image create --container-format bare --disk-format "$DISK_FORMAT" "$IMAGE_NAME" < "$RAW"
+
+openstack flavor show {{ oko_init_run_once_flavor_name | quote }} || \
+    openstack flavor create \
+        --ram {{ oko_init_run_once_flavor_ram }} \
+        --vcpus {{ oko_init_run_once_flavor_vcpus }} \
+        --disk {{ oko_init_run_once_flavor_disk }} \
+        --ephemeral {{ oko_init_run_once_flavor_ephemeral }} \
+        {{ oko_init_run_once_flavor_name | quote }}
+
+openstack network show {{ oko_init_run_once_private_network | quote }} || \
+    openstack network create {{ oko_init_run_once_private_network | quote }} --share
+openstack subnet show {{ oko_init_run_once_private_subnet | quote }} || \
+    openstack subnet create {{ oko_init_run_once_private_subnet | quote }} \
+        --subnet-range {{ oko_init_run_once_private_cidr | quote }} \
+        --network {{ oko_init_run_once_private_network | quote }}
+openstack network show {{ oko_init_run_once_public_network | quote }} || \
+    openstack network create {{ oko_init_run_once_public_network | quote }} \
+        --external \
+        --provider-network-type flat \
+        --provider-physical-network {{ oko_init_run_once_public_physnet | quote }}
+openstack subnet show {{ oko_init_run_once_public_subnet | quote }} || \
+    openstack subnet create {{ oko_init_run_once_public_subnet | quote }} \
+        --subnet-range {{ oko_init_run_once_public_cidr | quote }} \
+        --allocation-pool start={{ oko_init_run_once_public_allocation_start }},end={{ oko_init_run_once_public_allocation_end }} \
+        --gateway {{ oko_init_run_once_public_gateway | quote }} \
+        --dhcp \
+        --network {{ oko_init_run_once_public_network | quote }}
+
+openstack router show {{ oko_init_run_once_router | quote }} || {
+    openstack router create {{ oko_init_run_once_router | quote }}
+    openstack router add subnet {{ oko_init_run_once_router | quote }} {{ oko_init_run_once_private_subnet | quote }}
+    openstack router set {{ oko_init_run_once_router | quote }} --external-gateway {{ oko_init_run_once_public_network | quote }}
+}
+
+openstack security group show {{ oko_init_run_once_security_group | quote }} || {
+    openstack security group create {{ oko_init_run_once_security_group | quote }}
+    openstack security group rule create {{ oko_init_run_once_security_group | quote }} --protocol icmp --ingress --icmp-type -1
+    openstack security group rule create {{ oko_init_run_once_security_group | quote }} --protocol tcp --ingress --dst-port 22
+}
+
+openstack compute service list
+openstack network agent list
+
+for (( i=0; i<${NUMBER_OF_INSTANCES}; i++ )); do
+    NAME={{ oko_init_run_once_server_name_prefix | quote }}_${i}
+    if ! openstack server show "$NAME"; then
+        openstack server create \
+            --flavor {{ oko_init_run_once_flavor_name | quote }} \
+            --image "$IMAGE_NAME" \
+            --nic net-id={{ oko_init_run_once_private_network | quote }} \
+            "$NAME" \
+            --security-group {{ oko_init_run_once_security_group | quote }} \
+            --wait
+    fi
+
+    if ! fip=$(openstack server show "$NAME" -f json -c addresses | python3 -c 'import json,re,sys; data=json.load(sys.stdin); matches=re.findall({{ oko_init_run_once_public_ip_regex | to_json }}, str(data)); print(matches[0] if matches else "")') || [ -z "$fip" ]; then
+        fip=$(openstack floating ip create {{ oko_init_run_once_public_network | quote }} -f value -c floating_ip_address)
+        openstack server add floating ip "$NAME" "$fip"
+    fi
+
+    openstack server list --long
+
+{% if oko_init_run_once_validate_ping | bool %}
+    ping -c4 "$fip"
+{% endif %}
+done
