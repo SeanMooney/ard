@@ -315,14 +315,14 @@ spec:
         cell0:
           cellDatabaseAccount: nova-cell0
           conductorServiceTemplate:
-            replicas: 0
+            replicas: {{ oko_nova_cell0_conductor_replicas }}
           hasAPIAccess: true
         cell1:
           cellDatabaseAccount: nova-cell1
           cellDatabaseInstance: openstack-cell1
           cellMessageBusInstance: rabbitmq-cell1
           conductorServiceTemplate:
-            replicas: 1
+            replicas: {{ oko_nova_cell1_conductor_replicas }}
           hasAPIAccess: true
   telemetry:
     enabled: false

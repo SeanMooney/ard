@@ -70,7 +70,10 @@ ard_kubevirt_vm_network_cidr: "192.168.121.0/24"
 ard_kubevirt_ensure_instancetype_resources: false
 ard_kubevirt_extra_labels: {}
 ard_kubevirt_ssh_key_secret: "{{ ard_user }}-pub-key"
-ard_kubevirt_ssh_access: loadbalancer
+# KubeVirt SSH access mode. Use "virtctl" for direct per-VM access through
+# the Kubernetes API, or "loadbalancer" to expose the controller VM and use it
+# as a jump host for peers.
+ard_kubevirt_ssh_access: virtctl
 ard_kubevirt_headless_service: "{{ ard_provider_resource_prefix | default(ard_deployment_name | default(''), true) }}-headless"
 ard_kubevirt_datacenter_network: true
 ard_kubevirt_datacenter_network_name: "{{ ard_provider_resource_prefix | default(ard_deployment_name | default(''), true) }}-net-datacenter"

@@ -42,7 +42,7 @@
           - ard_kubevirt_network_mode == 'masquerade'
           - ard_kubevirt_vm_network_cidr == '192.168.121.0/24'
           - ard_kubevirt_ensure_instancetype_resources == false
-          - ard_kubevirt_ssh_access == 'loadbalancer'
+          - ard_kubevirt_ssh_access == 'virtctl'
           - ard_kubevirt_delete_namespace == false
         fail_msg: "One or more KubeVirt scalar defaults have unexpected values"
 
