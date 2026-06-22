@@ -9,6 +9,17 @@
     _controller_node_resource_name: >-
       {{ _controller_node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ _controller_node.name) }}
 
+- name: Validate KubeVirt SSH access mode
+  ansible.builtin.assert:
+    that:
+      - ard_kubevirt_ssh_access in ['virtctl', 'loadbalancer']
+    fail_msg: >-
+      ard_kubevirt_ssh_access must be one of: virtctl, loadbalancer.
+
+- name: Initialize KubeVirt access facts
+  ansible.builtin.set_fact:
+    _controller_lb_ip: ""
+
 - name: Ensure rendered kubevirt directory exists
   ansible.builtin.file:
     path: "{{ ard_deployment_dir }}/rendered/kubevirt"
@@ -20,6 +31,7 @@
     src: lb-service.yaml.j2
     dest: "{{ ard_deployment_dir }}/rendered/kubevirt/{{ _controller_node.name }}-lb-service.yaml"
     mode: "0644"
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
 
 - name: Apply LoadBalancer Service
   ansible.builtin.command:
@@ -31,6 +43,7 @@
       - -n
       - "{{ ard_kubevirt_namespace }}"
   changed_when: true
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
   tags: requires_cluster
 
 - name: Wait for LoadBalancer external IP
@@ -48,11 +61,13 @@
   retries: "{{ ((ard_apply_wait_timeout | int) / 5) | round(0, 'ceil') | int }}"
   delay: 5
   changed_when: false
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
   tags: requires_cluster
 
 - name: Set controller LB IP fact
   ansible.builtin.set_fact:
     _controller_lb_ip: "{{ _lb_ip_result.stdout | default('') }}"
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
   tags: requires_cluster
 
 - name: Wait for LoadBalancer Service endpoints
@@ -70,6 +85,7 @@
   retries: "{{ ((ard_apply_wait_timeout | int) / 5) | round(0, 'ceil') | int }}"
   delay: 5
   changed_when: false
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
   tags: requires_cluster
 
 - name: Wait for SSH TCP on controller LoadBalancer
@@ -79,6 +95,7 @@
     state: started
     timeout: "{{ ard_apply_wait_timeout | int }}"
     sleep: 5
+  when: ard_kubevirt_ssh_access == 'loadbalancer'
   tags: requires_cluster
 
 - name: Discover VMI pod IPs for all nodes
@@ -141,7 +158,8 @@
       ard_deployment_name: {{ ard_deployment_name }}
       ard_provider_resource_prefix: {{ ard_provider_resource_prefix | default(ard_deployment_name, true) }}
       ard_kubevirt_namespace: {{ ard_kubevirt_namespace }}
-      controller_lb_service: {{ _controller_node_resource_name }}-lb
+      access_mode: {{ ard_kubevirt_ssh_access }}
+      controller_lb_service: {{ (_controller_node_resource_name ~ '-lb') if ard_kubevirt_ssh_access == 'loadbalancer' else '' }}
       headless_service: {{ ard_kubevirt_headless_service }}
       datacenter_network: {{ ard_kubevirt_datacenter_network_name if (ard_kubevirt_datacenter_network | default(false) | bool) else '' }}
       controller_lb_ip: {{ _controller_lb_ip | default('') }}
@@ -158,20 +176,26 @@
     name: "{{ item.name }}"
     groups: "{{ ['ard_provider_nodes'] + item.groups }}"
     ansible_host: >-
-      {{ _controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default('')) }}
+      {{ (item.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ item.name)) if ard_kubevirt_ssh_access == 'virtctl'
+         else (_controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default(''))) }}
     ansible_user: stack
     ansible_private_key_file: "{{ ard_kubevirt_ssh_private_key_file }}"
     ansible_ssh_common_args: >-
-      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no' if item.name == _controller_node.name
-         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
-              ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
-              ~ ' -i ' ~ ard_kubevirt_ssh_private_key_file
-              ~ ' -W %h:%p stack@' ~ _controller_lb_ip ~ '"' }}
+      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
+         ~ ' -o ProxyCommand="virtctl port-forward --stdio vm/'
+         ~ (item.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ item.name))
+         ~ '/' ~ ard_kubevirt_namespace ~ ' 22"'
+         if ard_kubevirt_ssh_access == 'virtctl'
+         else ('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no' if item.name == _controller_node.name
+               else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
+                    ~ ' -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no'
+                    ~ ' -i ' ~ ard_kubevirt_ssh_private_key_file
+                    ~ ' -W %h:%p stack@' ~ _controller_lb_ip ~ '"') }}
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ item.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ item.name) }}"
     nodepool: >-
       {{ {'private_ipv4': _node_ips[item.name] | default(''),
-          'public_ipv4': _controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default('')),
+          'public_ipv4': (_node_ips[item.name] | default('')) if ard_kubevirt_ssh_access == 'virtctl' else (_controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default(''))),
           'public_ipv6': ''
          } | combine({'datacenter_ipv4': _datacenter_ips[item.name]} if _datacenter_ips is defined and item.name in _datacenter_ips else {})
            | combine({'bridge_ipv4': ard_inventory_bridge_ipv4} if ard_inventory_bridge_ipv4 | length > 0 else {})

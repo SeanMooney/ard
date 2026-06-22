@@ -49,7 +49,7 @@ spec:
   features:
     preferredKvm: {}
   firmware:
-    preferredEfi:
-      secureBoot: false
+    preferredUseBios: true
+    preferredUseBiosSerial: true
   machine:
     preferredMachineType: q35

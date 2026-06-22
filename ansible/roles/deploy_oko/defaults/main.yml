@@ -72,6 +72,11 @@ oko_apply_dataplane_resources: false
 oko_wait_for_openstack: true
 oko_wait_timeout: 1800
 
+# Nova conductor replicas. Nova requires a cell0 conductor for service startup;
+# do not collapse it to zero in small ARD OKO environments.
+oko_nova_cell0_conductor_replicas: 1
+oko_nova_cell1_conductor_replicas: 1
+
 # First-pass network input. The default profile renders OKO-compatible Network
 # and NAD resources but leaves apply disabled until validated on a live
 # MicroShift host. Interface names mirror install_yamls/oko-shared-nothing-ra

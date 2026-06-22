@@ -88,5 +88,10 @@
 
 - name: Build EDPM node list from inventory
   ansible.builtin.set_fact:
-    oko_edpm_nodes: "{{ (oko_edpm_nodes | default([])) + [ {'name': item, 'hostname': hostvars[item].ansible_hostname | default(item), 'ansible_host': hostvars[item].ansible_host | default(item)} ] }}"
+    oko_edpm_nodes: >-
+      {{ (oko_edpm_nodes | default([])) + [
+        {'name': item,
+         'hostname': hostvars[item].ansible_hostname | default(item),
+         'ansible_host': hostvars[item].nodepool.public_ipv4 | default(hostvars[item].ansible_host | default(item))}
+      ] }}
   loop: "{{ groups[oko_edpm_group] }}"

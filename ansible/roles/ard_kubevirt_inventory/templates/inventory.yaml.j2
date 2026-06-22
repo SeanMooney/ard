@@ -5,14 +5,21 @@ all:
 {% for node in ard_nodes %}
 {% set is_controller = node.name == _controller_node.name %}
 {% set node_ip = _node_ips[node.name] | default('') %}
-{% set ansible_host = _controller_lb_ip if is_controller else node_ip %}
+{% set node_resource_name = node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ node.name) %}
+{% set ansible_host = node_resource_name if ard_kubevirt_ssh_access == 'virtctl' else (_controller_lb_ip if is_controller else node_ip) %}
 {% set dc_offset = 1 if is_controller else 2 + peer_names.index(node.name) if 'peers' in node.groups else 0 %}
 {% set bridge_offset = bridge_address_offset | int if 'switch' in node.groups else (bridge_address_offset | int + 1 + peer_names.index(node.name)) if 'peers' in node.groups else none %}
     {{ node.name }}:
       ansible_host: {{ ansible_host }}
       ansible_user: stack
       ansible_private_key_file: {{ ard_kubevirt_ssh_private_key_file }}
-{% if is_controller %}
+{% if ard_kubevirt_ssh_access == 'virtctl' %}
+      ansible_ssh_common_args: >-
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+        -o ForwardX11=no
+        -o ProxyCommand="virtctl port-forward --stdio vm/{{ node_resource_name }}/{{ ard_kubevirt_namespace }} 22"
+{% elif is_controller %}
       ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no"
 {% else %}
       ansible_ssh_common_args: >-
@@ -22,10 +29,10 @@ all:
         -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ForwardX11=no -i {{ ard_kubevirt_ssh_private_key_file }} -W %h:%p stack@{{ _controller_lb_ip }}"
 {% endif %}
       ard_deployment_name: {{ ard_deployment_name }}
-      ard_provider_resource_name: {{ node.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ node.name) }}
+      ard_provider_resource_name: {{ node_resource_name }}
       nodepool:
         private_ipv4: {{ node_ip }}
-        public_ipv4: {{ ansible_host }}
+        public_ipv4: {{ node_ip if ard_kubevirt_ssh_access == 'virtctl' else ansible_host }}
         public_ipv6: ""
 {% if _datacenter_ips is defined and node.name in _datacenter_ips %}
         datacenter_ipv4: {{ _datacenter_ips[node.name] }}
