@@ -1,0 +1,53 @@
+---
+# Run-once initialization validation/bootstrap for an OKO deployment.
+oko_init_run_once_enabled: true
+
+# MicroShift/OpenStack access.
+oko_init_run_once_namespace: "{{ oko_namespace | default('openstack') }}"
+oko_init_run_once_kubeconfig: "{{ oko_kubeconfig | default('/home/stack/.kube/config') }}"
+oko_init_run_once_workdir: "{{ oko_manifest_workdir | default('/home/stack/ard-oko') }}"
+oko_init_run_once_image_dir: "{{ oko_init_run_once_workdir }}/images"
+oko_init_run_once_script_path: "{{ oko_init_run_once_workdir }}/bootstrap-test-vm.sh"
+oko_init_run_once_pod_script_path: /tmp/bootstrap-test-vm.sh
+oko_init_run_once_pod_image_path: "/tmp/{{ oko_init_run_once_cirros_image_file }}"
+
+# CirrOS image downloaded to the MicroShift node before upload to Glance.
+oko_init_run_once_cirros_version: 0.6.3
+oko_init_run_once_cirros_arch: x86_64
+oko_init_run_once_cirros_image_file: "cirros-{{ oko_init_run_once_cirros_version }}-{{ oko_init_run_once_cirros_arch }}-disk.img"
+oko_init_run_once_cirros_url: "https://download.cirros-cloud.net/{{ oko_init_run_once_cirros_version }}/{{ oko_init_run_once_cirros_image_file }}"
+oko_init_run_once_cirros_local_path: "{{ oko_init_run_once_image_dir }}/{{ oko_init_run_once_cirros_image_file }}"
+# Set to the published sha256:<digest> if strict image verification is needed.
+oko_init_run_once_cirros_checksum: ""
+oko_init_run_once_cirros_username: cirros
+oko_init_run_once_cirros_password: gocubsgo
+
+# OpenStack resources. Defaults mirror install_yamls' EDPM test-instance script,
+# with versioned image/server names so older local test resources can coexist.
+oko_init_run_once_image_name: "cirros-{{ oko_init_run_once_cirros_version }}"
+oko_init_run_once_flavor_name: m1.small
+oko_init_run_once_flavor_ram: 512
+oko_init_run_once_flavor_vcpus: 1
+oko_init_run_once_flavor_disk: 1
+oko_init_run_once_flavor_ephemeral: 1
+oko_init_run_once_private_network: private
+oko_init_run_once_private_subnet: priv_sub
+oko_init_run_once_private_cidr: 192.168.0.0/24
+oko_init_run_once_public_network: public
+oko_init_run_once_public_subnet: public_subnet
+oko_init_run_once_public_cidr: 192.168.122.0/24
+oko_init_run_once_public_allocation_start: 192.168.122.171
+oko_init_run_once_public_allocation_end: 192.168.122.250
+oko_init_run_once_public_gateway: 192.168.122.1
+oko_init_run_once_public_ip_regex: "192\\.168\\.122\\.\\d+"
+oko_init_run_once_public_physnet: datacentre
+oko_init_run_once_router: priv_router
+oko_init_run_once_security_group: basic
+oko_init_run_once_server_name_prefix: test063
+oko_init_run_once_instance_count: 1
+
+# Validation. sshpass is installed on the MicroShift node only when SSH
+# validation is enabled; OpenStack resource creation runs inside openstackclient.
+oko_init_run_once_validate_ping: true
+oko_init_run_once_validate_ssh: true
+oko_init_run_once_install_sshpass: true
