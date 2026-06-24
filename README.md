@@ -45,6 +45,28 @@ make ssh-print ARD_DEPLOYMENT=devstack-a ARD_NODE=compute-1
 make ssh ARD_DEPLOYMENT=devstack-a ARD_NODE=compute-1 ARD_SSH_PRINT=1
 ```
 
+For KubeVirt clusters where the Kubernetes API is reachable over VPN but VMs
+are not exposed with LoadBalancer services, OpenSSH can use `virtctl
+port-forward` as a proxy. Place this before any broad `Host *` block in
+`~/.ssh/config` so the VM-specific settings take precedence:
+
+```sshconfig
+Host vm/* vmi/*
+  ProxyCommand virtctl port-forward --stdio=true %h %p
+  StrictHostKeyChecking accept-new
+  LogLevel QUIET
+  ConnectTimeout 10
+  User stack
+  IdentityFile ~/.ssh/id_ed25519_stack
+  ForwardX11 no
+  ForwardAgent yes
+  ControlMaster no
+  ControlPath none
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  Compression yes
+```
+
 Deploy DevStack:
 
 ```bash
