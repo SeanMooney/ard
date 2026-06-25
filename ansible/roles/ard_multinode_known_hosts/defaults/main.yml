@@ -1,0 +1,10 @@
+---
+# Hosts to include in the generated global known_hosts file.
+ard_multinode_known_hosts_group: all
+
+# Destination for system-wide SSH known hosts on each node.
+ard_multinode_known_hosts_path: /etc/ssh/ssh_known_hosts
+
+# Include datacenter and bridge addresses from ARD provider inventories.
+ard_multinode_known_hosts_include_datacenter: true
+ard_multinode_known_hosts_include_bridge: true

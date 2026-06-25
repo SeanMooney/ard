@@ -9,7 +9,7 @@
   hosts: all
   gather_facts: true
   roles:
-    - multi-node-known-hosts
+    - ard_multinode_known_hosts
     - multi-node-hosts-file
     - multi-node-firewall
     - ard_configure_datacenter_iface

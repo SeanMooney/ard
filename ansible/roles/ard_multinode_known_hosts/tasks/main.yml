@@ -1,0 +1,24 @@
+---
+- name: Build optimized multinode known_hosts entries
+  ansible.builtin.set_fact:
+    ard_multinode_known_hosts_entries: "{{ lookup('template', 'known_hosts.j2') | split('\n') | reject('equalto', '') | unique | sort | list }}"
+  run_once: true
+
+- name: Install optimized multinode known_hosts block
+  become: true
+  ansible.builtin.blockinfile:
+    path: "{{ ard_multinode_known_hosts_path }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} ARD MULTINODE KNOWN HOSTS"
+    block: "{{ ard_multinode_known_hosts_entries | join('\n') }}"
+
+- name: Show optimized known_hosts summary
+  ansible.builtin.debug:
+    msg: >-
+      Installed {{ ard_multinode_known_hosts_entries | length }} known_hosts
+      entries for {{ groups[ard_multinode_known_hosts_group] | length }} hosts
+      at {{ ard_multinode_known_hosts_path }}.
+  run_once: true

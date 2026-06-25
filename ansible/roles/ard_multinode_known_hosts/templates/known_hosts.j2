@@ -1,0 +1,42 @@
+{% set key_suffixes = [
+  {'suffix': 'rsa_public', 'type': 'ssh-rsa'},
+  {'suffix': 'ecdsa_public', 'type': 'ecdsa-sha2-nistp256'},
+  {'suffix': 'ed25519_public', 'type': 'ssh-ed25519'},
+] %}
+{% for host in groups[ard_multinode_known_hosts_group] | sort %}
+{% set hv = hostvars[host] %}
+{% set ns = namespace(aliases=[host]) %}
+{% if hv.ansible_hostname is defined and hv.ansible_hostname %}
+{% set ns.aliases = ns.aliases + [hv.ansible_hostname] %}
+{% endif %}
+{% if hv.ansible_host is defined and hv.ansible_host %}
+{% set ns.aliases = ns.aliases + [hv.ansible_host] %}
+{% endif %}
+{% if hv.ard_provider_resource_name is defined and hv.ard_provider_resource_name %}
+{% set ns.aliases = ns.aliases + [hv.ard_provider_resource_name] %}
+{% endif %}
+{% set nodepool = hv.nodepool | default({}) %}
+{% for field in ['interface_ip', 'public_ipv4', 'private_ipv4', 'public_ipv6'] %}
+{% if nodepool.get(field) %}
+{% set ns.aliases = ns.aliases + [nodepool.get(field)] %}
+{% endif %}
+{% endfor %}
+{% if ard_multinode_known_hosts_include_datacenter | bool and nodepool.get('datacenter_ipv4') %}
+{% set ns.aliases = ns.aliases + [nodepool.get('datacenter_ipv4')] %}
+{% endif %}
+{% if ard_multinode_known_hosts_include_bridge | bool and nodepool.get('bridge_ipv4') %}
+{% set ns.aliases = ns.aliases + [nodepool.get('bridge_ipv4')] %}
+{% endif %}
+{% for key_spec in key_suffixes %}
+{% set key_name = 'ansible_ssh_host_key_' ~ key_spec.suffix %}
+{% if hv[key_name] is defined and hv[key_name] %}
+{% set key_type_name = key_name ~ '_type' %}
+{% set key_type = hv[key_type_name] | default(key_spec.type) %}
+{% for alias in ns.aliases | unique | sort %}
+{% if alias and not (alias | string).startswith('fe80:') and not (alias | string).startswith('127.') %}
+{{ alias }} {{ key_type }} {{ hv[key_name] }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
