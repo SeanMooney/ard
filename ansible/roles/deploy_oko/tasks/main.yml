@@ -6,8 +6,16 @@
   ansible.builtin.import_tasks: storage-nfs.yml
   when: oko_cinder_backend == 'nfs'
 
-- name: Render OKO manifests
-  ansible.builtin.import_tasks: render.yml
+- name: Render OKO manifests locally (deployment dir available)
+  # Local rendering stores inspectable artifacts in ard_deployment_dir and
+  # syncs them to the MicroShift host. Falls back to remote-only rendering
+  # when ard_deployment_dir is not set (e.g. standalone Molecule runs).
+  ansible.builtin.include_tasks: render-local.yml
+  when: oko_local_manifest_enabled | bool
+
+- name: Render OKO manifests remotely (standalone/Molecule mode)
+  ansible.builtin.include_tasks: render.yml
+  when: not (oko_local_manifest_enabled | bool)
 
 - name: Apply OKO bootstrap manifests
   ansible.builtin.import_tasks: apply.yml

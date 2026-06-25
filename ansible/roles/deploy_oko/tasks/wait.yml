@@ -24,7 +24,7 @@
       - wait
       - openstackcontrolplane/openstack
       - --for=condition=Ready
-      - "--timeout={{ oko_wait_timeout }}s"
+      - "--timeout={{ oko_controlplane_wait_timeout }}s"
   changed_when: false
   when: _oko_controlplane_exists.rc == 0
 
@@ -53,6 +53,6 @@
       - wait
       - "openstackdataplanedeployment/{{ oko_edpm_deployment_name }}"
       - --for=condition=Ready
-      - "--timeout={{ oko_wait_timeout }}s"
+      - "--timeout={{ oko_dataplane_wait_timeout }}s"
   changed_when: false
   when: _oko_dataplane_exists.rc == 0

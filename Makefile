@@ -34,7 +34,8 @@ ARD_PROVIDER_PROFILE ?= local-libvirt
 ARD_IMAGE ?= $(if $(filter microshift,$(ARD_WORKLOAD)),centos-stream-10,)
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
 ARD_RENDER_FILE ?=
-ARD_EFFECTIVE_RENDER_FILE = $(or $(ARD_RENDER_FILE),$(if $(wildcard $(ARD_DEPLOYMENT_DIR)/render.yaml),$(ARD_DEPLOYMENT_DIR)/render.yaml,))
+ARD_NORMALIZED_RENDER_FILE = $(if $(ARD_RENDER_FILE),$(if $(wildcard $(ARD_RENDER_FILE)/render.yaml),$(abspath $(ARD_RENDER_FILE)/render.yaml),$(abspath $(ARD_RENDER_FILE))),)
+ARD_EFFECTIVE_RENDER_FILE = $(or $(ARD_NORMALIZED_RENDER_FILE),$(if $(wildcard $(ARD_DEPLOYMENT_DIR)/render.yaml),$(ARD_DEPLOYMENT_DIR)/render.yaml,))
 ARD_EXTRA_VARS ?=
 ARD_NODE ?= controller
 ARD_SSH_PRINT ?= 0
@@ -48,6 +49,7 @@ ARD_RENDER_TOPOLOGY_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_topology
 ARD_RENDER_SERVICES_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_service_profiles=,$(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),))
 ARD_RENDER_IMAGE_VAR = $(if $(ARD_IMAGE),ard_render_image=$(ARD_IMAGE),)
 ARD_RENDER_NETWORK_VAR = $(if $(filter command line environment override,$(origin ARD_NETWORK_CIDR)),ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR),)
+ARD_RENDER_SOURCE_VAR = $(if $(ARD_EFFECTIVE_RENDER_FILE),ard_render_file=$(ARD_EFFECTIVE_RENDER_FILE),)
 
 ARD_KUBEVIRT_EXTRA_VARS = \
 	$(if $(ARD_KUBEVIRT_NAMESPACE),ard_kubevirt_namespace=$(ARD_KUBEVIRT_NAMESPACE),)
@@ -62,6 +64,7 @@ ARD_RENDER_EXTRA_VARS = \
 	$(ARD_RENDER_SERVICES_VAR) \
 	$(ARD_RENDER_IMAGE_VAR) \
 	$(ARD_RENDER_NETWORK_VAR) \
+	$(ARD_RENDER_SOURCE_VAR) \
 	$(if $(filter kubevirt,$(ARD_PROVIDER)),$(ARD_KUBEVIRT_EXTRA_VARS),) \
 	$(ARD_EXTRA_VARS)
 

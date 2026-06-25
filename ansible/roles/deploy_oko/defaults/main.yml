@@ -16,6 +16,19 @@ oko_controlplane_workdir: "{{ oko_manifest_workdir }}/controlplane"
 oko_dataplane_workdir: "{{ oko_manifest_workdir }}/dataplane"
 oko_generated_workdir: "{{ oko_manifest_workdir }}/generated"
 
+# Local manifest rendering support.
+# When ard_deployment_dir is set by the ARD provider render step (i.e. when
+# deploying via `make deploy`), OKO manifests are rendered on the Ansible
+# controller first and then synced to the MicroShift host.  The rendered
+# artifacts are inspectable under deployments/<name>/rendered/oko/base/ and
+# user overlays are read from deployments/<name>/overlays/oko/.
+# Molecule scenarios do not set ard_deployment_dir and fall back to the
+# existing remote-only rendering path via render.yml.
+oko_local_manifest_enabled: "{{ (ard_deployment_dir | default('', true) | string) | length > 0 }}"
+# Controller-side (local) paths.
+oko_local_manifest_basedir: "{{ (ard_deployment_dir | default('')) ~ '/rendered/oko/base' }}"
+oko_local_overlay_dir: "{{ (ard_deployment_dir | default('')) ~ '/overlays/oko' }}"
+
 # Kubernetes PV storage for operator/control-plane pods.
 oko_k8s_storage_class: local-path
 
@@ -72,7 +85,14 @@ oko_apply_network_resources: false
 oko_apply_controlplane_resources: false
 oko_apply_dataplane_resources: false
 oko_wait_for_openstack: true
+# Generic operator/CRD wait timeout.
 oko_wait_timeout: 1800
+# Successful clean OKO UAT observed the control plane becoming Ready in about
+# 4 minutes and the dataplane in about 16 minutes. Keep these limits
+# conservative so slow nodes are not failed prematurely while still bounding
+# truly stalled waits.
+oko_controlplane_wait_timeout: 600
+oko_dataplane_wait_timeout: 2100
 
 # Nova conductor replicas. Nova requires a cell0 conductor for service startup;
 # do not collapse it to zero in small ARD OKO environments.

@@ -1,0 +1,317 @@
+---
+# Local manifest rendering mode.
+#
+# Templates are rendered on the Ansible controller (delegate_to: localhost)
+# and stored under ard_deployment_dir/rendered/oko/base/.  User overlays
+# at deployments/<name>/overlays/oko/{controlplane,dataplane}/ are detected;
+# user-supplied patch files are synced to the remote MicroShift host and a
+# kustomization.yaml is generated there that references the base with the
+# correct relative path.
+#
+# On completion the oko_*_workdir facts are updated so the existing apply
+# tasks work without modification.  This task file is only invoked when
+# oko_local_manifest_enabled is true (set when ard_deployment_dir is defined).
+
+- name: Set local OKO rendering helper paths
+  ansible.builtin.set_fact:
+    _oko_local_basedir: "{{ oko_local_manifest_basedir }}"
+    _oko_local_secrets: "{{ ard_deployment_dir }}/rendered/oko/secrets"
+    _oko_local_cp_overlay: "{{ oko_local_overlay_dir }}/controlplane"
+    _oko_local_dp_overlay: "{{ oko_local_overlay_dir }}/dataplane"
+
+# ── Local directory creation ──────────────────────────────────────────────────
+
+- name: Create local OKO manifest base directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ _oko_local_basedir }}"
+    - "{{ _oko_local_basedir }}/bootstrap"
+    - "{{ _oko_local_basedir }}/operators"
+    - "{{ _oko_local_basedir }}/network"
+    - "{{ _oko_local_basedir }}/controlplane"
+    - "{{ _oko_local_basedir }}/dataplane"
+    - "{{ _oko_local_basedir }}/generated"
+    - "{{ _oko_local_secrets }}"
+  delegate_to: localhost
+
+# ── Template rendering (controller-side) ─────────────────────────────────────
+
+- name: Render OKO bootstrap kustomization locally
+  ansible.builtin.template:
+    src: "bootstrap/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/bootstrap/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - namespace.yaml
+    - ard-oko-config.yaml
+  delegate_to: localhost
+
+- name: Render OKO operator kustomization locally
+  ansible.builtin.template:
+    src: "operators/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/operators/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - namespace.yaml
+    - operatorgroup.yaml
+    - catalogsource.yaml
+    - subscription.yaml
+    - openstack.yaml
+    - openstack-kustomization.yaml
+  delegate_to: localhost
+
+- name: Render OKO network kustomization locally
+  ansible.builtin.template:
+    src: "network/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/network/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - netconfig.yaml
+    - metallb-ctlplane.yaml
+    - nad-datacentre.yaml
+    - nad-ctlplane.yaml
+    - nad-internalapi.yaml
+    - nad-storage.yaml
+    - nad-tenant.yaml
+  delegate_to: localhost
+
+- name: Render OKO control-plane kustomization locally
+  ansible.builtin.template:
+    src: "controlplane/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/controlplane/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - osp-secret.yaml
+    - controlplane.yaml
+    - cinder-nfs-secret.yaml
+  delegate_to: localhost
+
+# ── Nova migration SSH keypair (controller-side) ──────────────────────────────
+
+- name: Ensure local OKO secrets directory exists
+  ansible.builtin.file:
+    path: "{{ _oko_local_secrets }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Generate Nova migration SSH keypair locally
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -f
+      - "{{ _oko_local_secrets }}/nova-migration-ssh-key"
+      - -t
+      - ecdsa-sha2-nistp521
+      - -N
+      - ""
+    creates: "{{ _oko_local_secrets }}/nova-migration-ssh-key"
+  delegate_to: localhost
+
+- name: Read Nova migration private key (local)
+  ansible.builtin.slurp:
+    src: "{{ _oko_local_secrets }}/nova-migration-ssh-key"
+  register: _oko_nova_migration_ssh_private
+  delegate_to: localhost
+
+- name: Read Nova migration public key (local)
+  ansible.builtin.slurp:
+    src: "{{ _oko_local_secrets }}/nova-migration-ssh-key.pub"
+  register: _oko_nova_migration_ssh_public
+  delegate_to: localhost
+
+- name: Render OKO dataplane kustomization locally
+  ansible.builtin.template:
+    src: "dataplane/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/dataplane/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - repo-setup.yaml
+    - ovncontroller-config.yaml
+    - libvirt-secret.yaml
+    - nova-migration-ssh-key.yaml
+    - dataplane.yaml
+  delegate_to: localhost
+
+- name: Render OKO legacy generated input kustomization locally
+  ansible.builtin.template:
+    src: "generated/{{ item }}.j2"
+    dest: "{{ _oko_local_basedir }}/generated/{{ item }}"
+    mode: "0644"
+  loop:
+    - kustomization.yaml
+    - cinder-nfs-patch.yaml
+    - cinder-nfs-secret.yaml
+    - dataplane.yaml
+  delegate_to: localhost
+
+- name: Render OKO manifest README locally
+  ansible.builtin.template:
+    src: README.md.j2
+    dest: "{{ _oko_local_basedir }}/README.md"
+    mode: "0644"
+  delegate_to: localhost
+
+- name: Render dataplane job monitor helper locally
+  ansible.builtin.template:
+    src: monitor-dataplane-jobs.sh.j2
+    dest: "{{ ard_deployment_dir }}/rendered/oko/monitor-dataplane-jobs.sh"
+    mode: "0755"
+  delegate_to: localhost
+
+# ── Overlay detection ─────────────────────────────────────────────────────────
+
+- name: Find controlplane overlay patch files
+  ansible.builtin.find:
+    paths: "{{ _oko_local_cp_overlay }}"
+    patterns: "*.yaml"
+    excludes: kustomization.yaml
+  register: _oko_cp_patches
+  delegate_to: localhost
+  failed_when: false
+
+- name: Find dataplane overlay patch files
+  ansible.builtin.find:
+    paths: "{{ _oko_local_dp_overlay }}"
+    patterns: "*.yaml"
+    excludes: kustomization.yaml
+  register: _oko_dp_patches
+  delegate_to: localhost
+  failed_when: false
+
+- name: Record overlay presence
+  ansible.builtin.set_fact:
+    _oko_has_cp_overlay: "{{ (_oko_cp_patches.files | default([])) | length > 0 }}"
+    _oko_has_dp_overlay: "{{ (_oko_dp_patches.files | default([])) | length > 0 }}"
+
+# ── Remote directory setup ────────────────────────────────────────────────────
+
+- name: Create remote OKO base manifest directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ oko_manifest_workdir }}"
+    - "{{ oko_manifest_workdir }}/base"
+    - "{{ oko_manifest_workdir }}/base/bootstrap"
+    - "{{ oko_manifest_workdir }}/base/operators"
+    - "{{ oko_manifest_workdir }}/base/network"
+    - "{{ oko_manifest_workdir }}/base/controlplane"
+    - "{{ oko_manifest_workdir }}/base/dataplane"
+    - "{{ oko_manifest_workdir }}/base/generated"
+
+# ── Sync base manifests to remote ────────────────────────────────────────────
+
+- name: Sync OKO base manifests to MicroShift host
+  ansible.builtin.copy:
+    src: "{{ _oko_local_basedir }}/"
+    dest: "{{ oko_manifest_workdir }}/base/"
+    mode: "0644"
+    directory_mode: "0755"
+
+# ── Controlplane overlay ──────────────────────────────────────────────────────
+
+- name: Create remote OKO controlplane overlay directory
+  ansible.builtin.file:
+    path: "{{ oko_manifest_workdir }}/overlays/controlplane"
+    state: directory
+    mode: "0755"
+  when: _oko_has_cp_overlay | bool
+
+- name: Sync controlplane overlay patches to remote
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ oko_manifest_workdir }}/overlays/controlplane/{{ item.path | basename }}"
+    mode: "0644"
+  loop: "{{ _oko_cp_patches.files | default([]) }}"
+  when: _oko_has_cp_overlay | bool
+
+- name: Generate controlplane overlay kustomization on remote
+  # The kustomization.yaml is generated (not user-written) so the relative
+  # path to the base always matches the remote layout regardless of local
+  # deployment directory structure.
+  ansible.builtin.copy:
+    dest: "{{ oko_manifest_workdir }}/overlays/controlplane/kustomization.yaml"
+    mode: "0644"
+    content: |
+      # Auto-generated by deploy_oko render-local.yml — do not edit manually.
+      # User patch files from deployments/<name>/overlays/oko/controlplane/ are
+      # applied on top of the rendered base controlplane kustomization.
+      apiVersion: kustomize.config.k8s.io/v1beta1
+      kind: Kustomization
+      namespace: {{ oko_namespace }}
+      resources:
+        - ../../base/controlplane
+      patches:
+      {% for patch in _oko_cp_patches.files %}
+        - path: {{ patch.path | basename }}
+      {% endfor %}
+  when: _oko_has_cp_overlay | bool
+
+# ── Dataplane overlay ─────────────────────────────────────────────────────────
+
+- name: Create remote OKO dataplane overlay directory
+  ansible.builtin.file:
+    path: "{{ oko_manifest_workdir }}/overlays/dataplane"
+    state: directory
+    mode: "0755"
+  when: _oko_has_dp_overlay | bool
+
+- name: Sync dataplane overlay patches to remote
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ oko_manifest_workdir }}/overlays/dataplane/{{ item.path | basename }}"
+    mode: "0644"
+  loop: "{{ _oko_dp_patches.files | default([]) }}"
+  when: _oko_has_dp_overlay | bool
+
+- name: Generate dataplane overlay kustomization on remote
+  ansible.builtin.copy:
+    dest: "{{ oko_manifest_workdir }}/overlays/dataplane/kustomization.yaml"
+    mode: "0644"
+    content: |
+      # Auto-generated by deploy_oko render-local.yml — do not edit manually.
+      # User patch files from deployments/<name>/overlays/oko/dataplane/ are
+      # applied on top of the rendered base dataplane kustomization.
+      apiVersion: kustomize.config.k8s.io/v1beta1
+      kind: Kustomization
+      namespace: {{ oko_namespace }}
+      resources:
+        - ../../base/dataplane
+      patches:
+      {% for patch in _oko_dp_patches.files %}
+        - path: {{ patch.path | basename }}
+      {% endfor %}
+  when: _oko_has_dp_overlay | bool
+
+# ── Update workdir facts for apply tasks ─────────────────────────────────────
+#
+# After local rendering and sync, redirect the oko_*_workdir variables to
+# the synced remote base paths. Apply tasks use these facts unchanged.
+#
+# Controlplane: if an overlay exists, apply tasks use the overlay dir
+#   (which includes ../../base/controlplane via kustomization resources).
+# Dataplane: individual resource files are applied from the base dir;
+#   if an overlay exists, a separate overlay kustomize apply follows via
+#   _oko_dataplane_overlay_workdir (picked up by dataplane-apply.yml).
+
+- name: Set effective OKO workdir paths for apply tasks (local rendering mode)
+  ansible.builtin.set_fact:
+    oko_bootstrap_workdir: "{{ oko_manifest_workdir }}/base/bootstrap"
+    oko_operators_workdir: "{{ oko_manifest_workdir }}/base/operators"
+    oko_network_workdir: "{{ oko_manifest_workdir }}/base/network"
+    oko_controlplane_workdir: >-
+      {{ oko_manifest_workdir ~ ('/overlays/controlplane' if _oko_has_cp_overlay else '/base/controlplane') }}
+    oko_dataplane_workdir: "{{ oko_manifest_workdir }}/base/dataplane"
+    _oko_dataplane_overlay_workdir: >-
+      {{ (oko_manifest_workdir ~ '/overlays/dataplane') if _oko_has_dp_overlay else '' }}
+    oko_generated_workdir: "{{ oko_manifest_workdir }}/base/generated"

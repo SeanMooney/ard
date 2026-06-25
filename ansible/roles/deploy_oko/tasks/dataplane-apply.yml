@@ -21,3 +21,24 @@
   register: _oko_apply_dataplane
   changed_when: "'created' in _oko_apply_dataplane.stdout or 'configured' in _oko_apply_dataplane.stdout"
   when: oko_apply_dataplane_resources | bool
+
+- name: Apply OpenStack dataplane overlay manifests (user patches)
+  # When local rendering is active and the user has placed patch files under
+  # deployments/<name>/overlays/oko/dataplane/, an overlay kustomization was
+  # generated on the remote host during the render step. Apply it now so user
+  # patches take effect after the base dataplane resources are in place.
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - apply
+      - -k
+      - "{{ _oko_dataplane_overlay_workdir }}"
+  register: _oko_apply_dataplane_overlay
+  changed_when: >-
+    'created' in _oko_apply_dataplane_overlay.stdout or
+    'configured' in _oko_apply_dataplane_overlay.stdout
+  when:
+    - oko_apply_dataplane_resources | bool
+    - _oko_dataplane_overlay_workdir | default('') | length > 0

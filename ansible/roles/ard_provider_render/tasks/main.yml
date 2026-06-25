@@ -540,6 +540,59 @@
       {{ ard_render_generated_header }}
       {{ ard_render_devstack_compute | to_nice_yaml(indent=2, sort_keys=False) }}
 
+- name: Detect render source directory for scaffold copy
+  ansible.builtin.set_fact:
+    _ard_render_source_dir: "{{ ard_render_file | default('') | dirname }}"
+
+- name: Copy scaffold files from example to deployment directory (without overwriting)
+  # When ARD_RENDER_FILE points to an examples/ directory, scaffold files
+  # (local-vars.yaml, overlays/, etc.) are copied into the deployment workspace
+  # on first use. Existing user files are never overwritten.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src={{ _ard_render_source_dir | quote }}
+    dest={{ ard_deployment_dir | quote }}
+
+    [ -d "$src" ] || exit 0
+
+    # Resolve absolute paths to compare source vs destination.
+    src_abs=$(cd "$src" && pwd)
+    dest_abs=$(cd "$dest" 2>/dev/null && pwd || echo "$dest")
+
+    # Do not copy if the render file already lives inside the deployment dir.
+    [ "$src_abs" != "$dest_abs" ] || exit 0
+
+    # Walk the source directory. Copy files (no-clobber) and create dirs.
+    # Files ending in .example have the suffix stripped on copy so that
+    # e.g. local-vars.yaml.example -> local-vars.yaml in the deployment dir.
+    find "$src_abs" -mindepth 1 | while IFS= read -r item; do
+      relpath="${item#${src_abs}/}"
+      # Strip trailing .example suffix from destination name.
+      destrelpath="${relpath%.example}"
+      destpath="$dest_abs/$destrelpath"
+      if [ -d "$item" ]; then
+        mkdir -p "$destpath"
+      elif [ -f "$item" ] && [ ! -f "$destpath" ]; then
+        mkdir -p "$(dirname "$destpath")"
+        cp "$item" "$destpath"
+        echo "Copied scaffold: $relpath -> $destrelpath"
+      fi
+    done
+  args:
+    executable: /bin/bash
+  register: _ard_scaffold_copy_result
+  changed_when: "'Copied scaffold:' in _ard_scaffold_copy_result.stdout"
+  when:
+    - _ard_render_source_dir | length > 0
+
+- name: Show scaffold files copied to deployment
+  ansible.builtin.debug:
+    msg: "{{ _ard_scaffold_copy_result.stdout_lines }}"
+  when:
+    - _ard_scaffold_copy_result is defined
+    - not (_ard_scaffold_copy_result is skipped)
+    - _ard_scaffold_copy_result.stdout_lines | default([]) | length > 0
+
 - name: Render static provider workspace artifacts
   ansible.builtin.include_role:
     name: ard_static_inventory

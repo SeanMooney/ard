@@ -1,0 +1,45 @@
+---
+# OKO deployment local variables
+#
+# Copy this file to your deployment workspace (deployments/<name>/local-vars.yaml)
+# and uncomment/set values for your site. Variables defined here override
+# role defaults for the specific deployment.
+#
+# The render step copies this template automatically when using an examples/
+# render file; it will NOT overwrite an existing local-vars.yaml.
+
+# --- Apply gates ---
+# Uncomment each flag when ready to apply that layer. The converge playbook
+# enables all three by default; use individual flags for step-by-step bring-up.
+# oko_apply_network_resources: true
+# oko_apply_controlplane_resources: true
+# oko_apply_dataplane_resources: true
+
+# --- Network ---
+# Control-plane bridge and CIDR used for OpenStack APIs and EDPM ctlplane.
+# oko_ctlplane_cidr: 192.168.122.0/24
+# oko_ctlplane_gateway: 192.168.122.1
+# oko_microshift_ctlplane_ip: 192.168.122.2
+# oko_ctlplane_allocation_start: 192.168.122.100
+# oko_ctlplane_allocation_end: 192.168.122.200
+
+# --- Proxy ---
+# Set if your environment needs proxy access for pulling container images.
+# ard_http_proxy: ""
+# ard_https_proxy: ""
+# ard_no_proxy: ""
+
+# --- Cinder / NFS ---
+# NFS server address for Cinder block storage. Defaults to the MicroShift
+# datacenter address; override for a dedicated NFS server.
+# oko_nfs_server: 192.168.122.1
+
+# --- Dev repos ---
+# Inject development package repos prepared by prepare_operator_sources.
+# Each entry follows the oko_dev_repos schema (see deploy_oko defaults).
+# oko_dev_repos: []
+
+# --- Wait timeouts ---
+# Increase if your hardware is slow or the control plane takes longer to settle.
+# oko_controlplane_wait_timeout: 600
+# oko_dataplane_wait_timeout: 2100

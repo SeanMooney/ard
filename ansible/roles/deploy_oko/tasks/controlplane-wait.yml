@@ -24,6 +24,6 @@
       - wait
       - openstackcontrolplane/openstack
       - --for=condition=Ready
-      - "--timeout={{ oko_wait_timeout }}s"
+      - "--timeout={{ oko_controlplane_wait_timeout }}s"
   changed_when: false
   when: _oko_controlplane_exists.rc == 0
