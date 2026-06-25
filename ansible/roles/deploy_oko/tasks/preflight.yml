@@ -46,6 +46,42 @@
   register: _oko_nodes
   changed_when: false
 
+- name: Discover MicroShift node name
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - nodes
+      - -o
+      - "jsonpath={.items[0].metadata.name}"
+  register: _oko_microshift_node_name
+  changed_when: false
+
+- name: Discover MicroShift node InternalIP
+  ansible.builtin.command:
+    argv:
+      - "{{ oko_kube_client }}"
+      - --kubeconfig
+      - "{{ oko_kubeconfig }}"
+      - get
+      - "node/{{ _oko_microshift_node_name.stdout }}"
+      - -o
+      - "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"
+  register: _oko_microshift_node_internal_ip
+  changed_when: false
+
+- name: Prefer kubelet InternalIP for local MicroShift hostname lookups
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^\\S+\\s+.*\\b{{ _oko_microshift_node_name.stdout | regex_escape }}\\b.*$"
+    line: "{{ _oko_microshift_node_internal_ip.stdout }} {{ _oko_microshift_node_name.stdout }}"
+  when:
+    - _oko_microshift_node_name.stdout | length > 0
+    - _oko_microshift_node_internal_ip.stdout | length > 0
+
 - name: Discover MicroShift DNS service address
   ansible.builtin.command:
     argv:

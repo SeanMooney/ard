@@ -17,6 +17,15 @@
 - name: Load ARD deployment DevStack variables
   hosts: all
   gather_facts: false
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   roles:
     - ard_provider_common
     - ard_devstack_config
@@ -24,6 +33,15 @@
 - name: Wait for provider node bootstrap to finish
   hosts: all
   gather_facts: false
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - name: Wait for cloud-init completion
       become: true

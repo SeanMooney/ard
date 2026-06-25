@@ -1,0 +1,11 @@
+---
+# KubeVirt DevStack workload converge flow.
+#
+# KubeVirt inventory is finalized at provider apply time, so regenerate DevStack
+# config from inventory endpoint facts before running the normal DevStack deploy.
+
+- import_playbook: prepare-config.yaml
+
+- import_playbook: ../../provider/deploy-devstack.yaml
+  vars:
+    devstack_use_local_cache: "{{ (lookup('env', 'ARD_DEVSTACK_USE_LOCAL_CACHE') | default('false', true)) | bool }}"

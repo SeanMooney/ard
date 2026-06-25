@@ -2,5 +2,16 @@
 - name: Deploy OpenStack K8s Operators on MicroShift
   hosts: "{{ oko_target_hosts | default('microshift') }}"
   gather_facts: true
+  vars_files:
+    - "{{ lookup('ansible.builtin.first_found', {'files': [ard_local_vars_file | default(ard_deployment_dir | default('') ~ '/local-vars.yaml', true), '/dev/null'], 'skip': true}) }}"
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   roles:
     - deploy_oko

@@ -10,14 +10,22 @@ ARD_DEPLOYMENTS_DIR ?= $(CURDIR)/deployments
 ARD_USER ?= $(shell whoami)
 ARD_KUBEVIRT_NAMESPACE ?= $(shell oc project --short 2>/dev/null)
 
-# Deployment name incorporates user prefix for shared-tenancy providers
+# Deployment directories use the logical deployment name. Provider resources
+# may use provider-specific prefixes for shared-tenancy safety.
 ARD_DEPLOYMENT_NAME_kubevirt = $(ARD_USER)-$(ARD_DEPLOYMENT)
 ARD_DEPLOYMENT_NAME_libvirt = $(ARD_DEPLOYMENT)
 ARD_DEPLOYMENT_NAME_static = $(ARD_DEPLOYMENT)
 ARD_DEPLOYMENT_NAME = $(or $(ARD_DEPLOYMENT_NAME_$(ARD_PROVIDER)),$(ARD_DEPLOYMENT))
+ARD_DISCOVERED_DEPLOYMENT_FILE = $(firstword \
+	$(wildcard $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT)/deployment.yaml) \
+	$(wildcard $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT)/render.yaml))
+ARD_DISCOVERED_DEPLOYMENT_DIR = $(patsubst %/render.yaml,%,$(patsubst %/deployment.yaml,%,$(ARD_DISCOVERED_DEPLOYMENT_FILE)))
 
-ARD_DEPLOYMENT_DIR ?= $(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT_NAME)
-ARD_WORKLOAD ?= devstack
+ARD_DEPLOYMENT_DIR ?= $(or $(ARD_DISCOVERED_DEPLOYMENT_DIR),$(ARD_DEPLOYMENTS_DIR)/$(ARD_DEPLOYMENT))
+ARD_RENDERED_WORKLOAD = $(shell awk -F': *' '/^ard_workload:/ {print $$2; exit}' "$(ARD_DEPLOYMENT_DIR)/deployment.yaml" 2>/dev/null)
+ARD_RENDERED_PROVIDER = $(shell awk -F': *' '/^ard_provider:/ {print $$2; exit}' "$(ARD_DEPLOYMENT_DIR)/deployment.yaml" 2>/dev/null)
+ARD_WORKLOAD ?= $(or $(ARD_RENDERED_WORKLOAD),devstack)
+ARD_EFFECTIVE_PROVIDER = $(or $(ARD_RENDERED_PROVIDER),$(ARD_PROVIDER))
 ARD_DEVSTACK_SERVICES = devstack,ovn,tempest
 ARD_TOPOLOGY ?= $(if $(filter microshift,$(ARD_WORKLOAD)),microshift-single-node,one-controller-one-compute)
 ARD_TARGET_BRANCH ?= master
@@ -26,12 +34,13 @@ ARD_PROVIDER_PROFILE ?= local-libvirt
 ARD_IMAGE ?= $(if $(filter microshift,$(ARD_WORKLOAD)),centos-stream-10,)
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
 ARD_RENDER_FILE ?=
+ARD_EFFECTIVE_RENDER_FILE = $(or $(ARD_RENDER_FILE),$(if $(wildcard $(ARD_DEPLOYMENT_DIR)/render.yaml),$(ARD_DEPLOYMENT_DIR)/render.yaml,))
 ARD_EXTRA_VARS ?=
 ARD_NODE ?= controller
 ARD_SSH_PRINT ?= 0
 ARD_SSH_ARGS ?=
 
-ARD_RENDER_FILE_ARG = $(if $(ARD_RENDER_FILE),-e @$(ARD_RENDER_FILE),)
+ARD_RENDER_FILE_ARG = $(if $(ARD_EFFECTIVE_RENDER_FILE),-e @$(ARD_EFFECTIVE_RENDER_FILE),)
 ARD_RENDER_PROVIDER_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER)),ard_provider=$(ARD_PROVIDER),)
 ARD_RENDER_PROVIDER_PROFILE_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER_PROFILE)),ard_provider_profile=$(ARD_PROVIDER_PROFILE),)
 ARD_RENDER_TARGET_BRANCH_VAR = $(if $(filter command line environment override,$(origin ARD_TARGET_BRANCH)),ard_target_branch=$(ARD_TARGET_BRANCH),)
@@ -59,10 +68,17 @@ ARD_RENDER_EXTRA_VARS = \
 ARD_DEPLOYMENT_EXTRA_VARS = \
 	ard_deployment_dir=$(ARD_DEPLOYMENT_DIR) \
 	$(ARD_EXTRA_VARS)
+ARD_LOCAL_VARS_FILE ?= $(ARD_DEPLOYMENT_DIR)/local-vars.yaml
+ARD_LOCAL_VARS_ARG = $(if $(wildcard $(ARD_LOCAL_VARS_FILE)),-e @$(ARD_LOCAL_VARS_FILE),)
+ARD_DEPLOYMENT_EXTRA_ARGS = \
+	$(ARD_LOCAL_VARS_ARG) \
+	-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
 
-ARD_DEPLOY_PLAYBOOK_devstack = ansible/playbooks/provider/deploy-devstack.yaml
-ARD_DEPLOY_PLAYBOOK_microshift = ansible/playbooks/workloads/microshift/deploy.yaml
-ARD_DEPLOY_PLAYBOOK_oko = ansible/playbooks/workloads/oko/deploy.yaml
+ARD_DEPLOY_PLAYBOOK_devstack = $(or $(ARD_DEPLOY_PLAYBOOK_devstack_$(ARD_EFFECTIVE_PROVIDER)),ansible/playbooks/workloads/devstack/converge.yaml)
+ARD_DEPLOY_PLAYBOOK_devstack_kubevirt = ansible/playbooks/workloads/devstack/converge-kubevirt.yaml
+ARD_DEPLOY_PLAYBOOK_microshift = ansible/playbooks/workloads/microshift/converge.yaml
+ARD_DEPLOY_PLAYBOOK_oko = $(or $(ARD_DEPLOY_PLAYBOOK_oko_$(ARD_EFFECTIVE_PROVIDER)),ansible/playbooks/workloads/oko/converge.yaml)
+ARD_DEPLOY_PLAYBOOK_oko_kubevirt = ansible/playbooks/workloads/oko/converge-kubevirt.yaml
 ARD_DEPLOY_PLAYBOOK = $(ARD_DEPLOY_PLAYBOOK_$(ARD_WORKLOAD))
 
 default:
@@ -81,7 +97,7 @@ render:
 
 apply:
 	uv run ansible-playbook -i localhost, ansible/playbooks/provider/apply.yaml \
-		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
+		$(ARD_DEPLOYMENT_EXTRA_ARGS)
 
 ping:
 	uv run ansible -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml all \
@@ -101,18 +117,19 @@ deploy:
 	$(if $(ARD_DEPLOY_PLAYBOOK),,$(error Unsupported ARD_WORKLOAD '$(ARD_WORKLOAD)'))
 	uv run ansible-playbook -i $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
 		$(ARD_DEPLOY_PLAYBOOK) \
-		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
+		$(ARD_DEPLOYMENT_EXTRA_ARGS)
 
 verify:
 	uv run ansible-playbook -i localhost, ansible/playbooks/provider/verify.yaml \
-		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
+		$(ARD_DEPLOYMENT_EXTRA_ARGS)
 
 destroy:
 	uv run ansible-playbook -i localhost, ansible/playbooks/provider/destroy.yaml \
-		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
+		$(ARD_DEPLOYMENT_EXTRA_ARGS)
 
 destroy-clean-generated:
 	uv run ansible-playbook -i localhost, ansible/playbooks/provider/destroy.yaml \
+		$(ARD_LOCAL_VARS_ARG) \
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS) ard_destroy_cleanup_generated=true"
 
 clean-generated:
@@ -122,7 +139,7 @@ clean-generated:
 
 cleanup:
 	uv run ansible-playbook -i localhost, ansible/playbooks/provider/cleanup.yaml \
-		-e "$(ARD_DEPLOYMENT_EXTRA_VARS)"
+		$(ARD_DEPLOYMENT_EXTRA_ARGS)
 
 site: render apply deploy verify
 

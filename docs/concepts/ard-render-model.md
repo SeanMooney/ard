@@ -91,6 +91,68 @@ Compatibility aliases such as `ARD_DEPLOYMENT`, `ard_resource_name_prefix`, and
 provider-specific network-name variables are still accepted, but new render
 files should use the canonical names above.
 
+## Deployment-local intent and local vars
+
+A deployment workspace can carry both persistent render intent and local
+lifecycle variables:
+
+```text
+deployments/<deployment>/render.yaml      # provider, topology, image, naming intent
+deployments/<deployment>/local-vars.yaml  # site-local and workload deploy inputs
+```
+
+Use `render.yaml` for values that affect rendered provider/topology state, such
+as `ard_provider`, `ard_provider_profile`, `ard_topology`, image choices,
+namespace, and KubeVirt access mode. Use `local-vars.yaml` for variables consumed
+by apply/deploy lifecycle playbooks, such as local proxy configuration or
+workload-specific development inputs. Make automatically loads
+`local-vars.yaml` for lifecycle targets when it exists.
+
+For example, an OKO development deployment that tests pre-merge operator PRs can
+keep provider intent in `render.yaml` and put the PR source overrides in
+`local-vars.yaml`:
+
+```yaml
+# deployments/oko-cyborg/local-vars.yaml
+---
+oko_dev_tools_enabled: true
+oko_dev_repos:
+  - name: nova-operator
+    repo: https://github.com/openstack-k8s-operators/nova-operator
+    base_branch: main
+    ref: pull/1102/head
+    go_prep: true
+    nfs_export: false
+
+  - name: edpm-ansible
+    repo: https://github.com/openstack-k8s-operators/edpm-ansible
+    base_branch: main
+    ref: pull/1180/head
+    go_prep: false
+    nfs_export: true
+    nfs_mount_path: /usr/share/ansible/collections/ansible_collections/osp/edpm
+```
+
+`edpm-ansible` is exported so ansibleee runner pods can consume the development
+collection content without rebuilding the runner image. Site-specific proxy or
+DNS values can live in the same `local-vars.yaml`, but reusable examples should
+avoid embedding site-only proxy configuration.
+
+After render, subsequent Make commands can use just the logical deployment name.
+The workspace remains the logical deployment directory; provider resources may
+still be user-prefixed for shared-tenancy safety:
+
+```bash
+make render ARD_DEPLOYMENT=oko-cyborg
+make apply ARD_DEPLOYMENT=oko-cyborg
+make deploy ARD_DEPLOYMENT=oko-cyborg
+```
+
+For KubeVirt OKO, `make apply` creates the provider resources and generated
+inventory, matching Molecule create behavior. `make deploy` runs the KubeVirt OKO
+converge flow: MicroShift setup, ARD multinode bridge overlay setup, and full
+OKO network/control-plane/dataplane application.
+
 ## Workload families, workloads, and topologies
 
 A workload family owns defaults and vocabulary for one kind of environment:

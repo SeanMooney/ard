@@ -2,6 +2,15 @@
 # TODO: factor this out into a caching role
 - name: ensure local cache dirs
   hosts: localhost
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - name: Check generated DevStack vars
       ansible.builtin.stat:
@@ -78,6 +87,15 @@
   tags:
     - common
     - cache
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - block:
         - name: push apt cache
@@ -166,6 +184,15 @@
 
 - name: export facts
   hosts: all
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - name: set nodepool facts
       set_fact:
@@ -184,6 +211,15 @@
 
 - name: sync controller data to subnodes
   hosts: all
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - name: Sync DevStack data to subnodes
       ansible.builtin.include_role:
@@ -192,6 +228,15 @@
 
 - name: sync ceph configs to subnodes
   hosts: subnode
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   roles:
     - { role: sync-controller-ceph-conf-and-keys, when: "enable_ceph | default(false) | bool"}
 
@@ -201,6 +246,15 @@
 
 - name: Discover hosts
   hosts: controller
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - name: run discover hosts once on controller
       become: yes
@@ -214,6 +268,15 @@
 # TODO: factor this out into a caching role
 - name: pull remote cache dirs
   hosts: controller
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
   tasks:
     - block:
         - name: pull apt cache

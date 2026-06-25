@@ -1,0 +1,9 @@
+---
+# DevStack workload converge flow.
+#
+# This is the reusable Make/Molecule workload entry point for standard DevStack
+# deployments after provider resources and inventory have been created.
+
+- import_playbook: ../../provider/deploy-devstack.yaml
+  vars:
+    devstack_use_local_cache: "{{ (lookup('env', 'ARD_DEVSTACK_USE_LOCAL_CACHE') | default('false', true)) | bool }}"

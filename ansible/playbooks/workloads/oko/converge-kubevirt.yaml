@@ -1,0 +1,94 @@
+---
+# Full KubeVirt OKO converge flow.
+#
+# This is the reusable Make/Molecule equivalent of the intended
+# molecule/kubevirt-oko converge behavior: prepare MicroShift if needed,
+# configure the ARD multinode bridge overlay, then apply the full OKO network,
+# control-plane, and dataplane resources.  Keep this as normal Ansible
+# plays/imports so task progress is visible; do not shell out to nested
+# command wrappers.
+
+- name: Prepare MicroShift for KubeVirt OKO when needed
+  hosts: "{{ microshift_target_hosts | default('microshift') }}"
+  gather_facts: true
+  vars_files:
+    - "{{ lookup('ansible.builtin.first_found', {'files': [ard_local_vars_file | default(ard_deployment_dir | default('') ~ '/local-vars.yaml', true), '/dev/null'], 'skip': true}) }}"
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
+  pre_tasks:
+    - name: Check live MicroShift readiness
+      become: true
+      ansible.builtin.shell: >-
+        test -f /home/stack/.kube/config &&
+        systemctl is-active --quiet microshift &&
+        oc --kubeconfig /home/stack/.kube/config get node >/dev/null
+      register: _microshift_readiness
+      changed_when: false
+      failed_when: false
+  roles:
+    - role: microshift_defaults
+      when: _microshift_readiness.rc != 0
+    - role: ensure_stack_user
+      when: _microshift_readiness.rc != 0
+    - role: microshift_prereqs
+      when: _microshift_readiness.rc != 0
+    - role: microshift_repos
+      when: _microshift_readiness.rc != 0
+    - role: microshift_install_rpm
+      when: _microshift_readiness.rc != 0
+    - role: microshift_install_multus
+      when: _microshift_readiness.rc != 0
+    - role: microshift_install_local_path
+      when: _microshift_readiness.rc != 0
+    - role: microshift_install_metallb
+      when: _microshift_readiness.rc != 0
+    - role: microshift_install_cert_manager
+      when: _microshift_readiness.rc != 0
+    - role: microshift_validate
+      when: _microshift_readiness.rc != 0
+    - role: prepare_operator_dev_tools
+      when:
+        - _microshift_readiness.rc != 0
+        - oko_dev_tools_enabled | default(false) | bool
+    - role: prepare_operator_sources
+      when:
+        - _microshift_readiness.rc != 0
+        - oko_dev_repos | default([]) | length > 0
+
+- name: Print MicroShift debug connection details
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - "{{ lookup('ansible.builtin.first_found', {'files': [ard_local_vars_file | default(ard_deployment_dir | default('') ~ '/local-vars.yaml', true), '/dev/null'], 'skip': true}) }}"
+  environment: "{{ ard_proxy_env | default({}) }}"
+  vars:
+    ard_proxy_env: >-
+      {{
+        {}
+        | combine({'http_proxy': ard_http_proxy, 'HTTP_PROXY': ard_http_proxy} if (ard_http_proxy | default('', true) | length > 0) else {})
+        | combine({'https_proxy': ard_https_proxy, 'HTTPS_PROXY': ard_https_proxy} if (ard_https_proxy | default('', true) | length > 0) else {})
+        | combine({'no_proxy': ard_no_proxy, 'NO_PROXY': ard_no_proxy} if (ard_no_proxy | default('', true) | length > 0) else {})
+      }}
+  roles:
+    - print_debug_ip
+
+- import_playbook: ../../network/pre-multinode.yaml
+  vars:
+    bridge_name: ospbr
+    bridge_mtu_headroom: 100
+
+- import_playbook: deploy.yaml
+  vars:
+    oko_apply_network_resources: true
+    oko_apply_controlplane_resources: true
+    oko_apply_dataplane_resources: true
+    oko_manage_ctlplane_bridge_slave: false
+    oko_edpm_bridge_veth_enabled: true
+    oko_edpm_public_interface_name: oko-br-ex

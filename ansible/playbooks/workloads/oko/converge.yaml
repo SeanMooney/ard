@@ -1,0 +1,13 @@
+---
+# Generic OKO converge flow.
+#
+# This mirrors molecule/oko-microshift: prepare the MicroShift substrate, then
+# apply the OKO network, control-plane, and dataplane resources.
+
+- import_playbook: ../microshift/deploy.yaml
+
+- import_playbook: deploy.yaml
+  vars:
+    oko_apply_network_resources: true
+    oko_apply_controlplane_resources: true
+    oko_apply_dataplane_resources: true

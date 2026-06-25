@@ -1,0 +1,4 @@
+---
+# MicroShift workload converge flow.
+
+- import_playbook: deploy.yaml

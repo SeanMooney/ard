@@ -1,60 +1,12 @@
 ---
-# Thin molecule converge — delegates to reusable playbooks.
-# The same playbooks can be invoked via make or ansible-playbook.
-- name: Deploy DevStack AIO + 1 compute on KubeVirt
-  hosts: localhost
-  connection: local
-  gather_facts: false
+- import_playbook: ../../ansible/playbooks/workloads/devstack/converge-kubevirt.yaml
   vars:
     ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
-    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
-    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
-    _env:
-      ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-      ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-  tasks:
-    - name: Search for local-vars.yaml
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/local-vars.yaml"
-        - "{{ ard_deployment_dir }}/local-vars.yaml"
-        - "{{ ard_project_dir }}/local-vars.yaml"
-      register: _local_vars_search
-
-    - name: Resolve local-vars.yaml path
-      ansible.builtin.set_fact:
-        _local_vars_file: >-
-          {{ (_local_vars_search.results | selectattr('stat.exists') | map(attribute='item') | list | first | default('')) }}
-        _inv: "{{ ard_deployment_dir }}/inventory.yaml"
-
-    - name: Build common extra-vars list
-      ansible.builtin.set_fact:
-        _common_args: >-
-          {{ ['-e', 'ard_deployment_dir=' ~ ard_deployment_dir]
-             + (['-e', '@' ~ _local_vars_file] if _local_vars_file else []) }}
-
-    # Step 1: Generate DevStack config vars with bridge IP overrides.
-    # Network setup is part of the reusable DevStack deployment flow.
-    - name: Prepare DevStack configuration
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', _inv,
-              ard_project_dir ~ '/ansible/playbooks/workloads/devstack/prepare-config.yaml']
-             + _common_args }}
-      environment: "{{ _env }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
-
-    # Step 2: Deploy DevStack
-    - name: Deploy DevStack
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', _inv,
-              ard_project_dir ~ '/ansible/playbooks/provider/deploy-devstack.yaml']
-             + _common_args }}
-      environment: "{{ _env }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
+    ard_scenario_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
+    ard_deployment_dir: "{{ ard_scenario_dir }}/deployment"
+    ard_local_vars_file: >-
+      {{ lookup('ansible.builtin.first_found',
+          {'files': [ard_scenario_dir ~ '/local-vars.yaml',
+                     ard_deployment_dir ~ '/local-vars.yaml',
+                     ard_project_dir ~ '/local-vars.yaml'],
+           'skip': true}) }}

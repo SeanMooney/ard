@@ -30,7 +30,7 @@
     content: |
       #cloud-config
       hostname: {{ ard_node.hostname | default(ard_node.name) }}
-      manage_etc_hosts: {{ ard_node.manage_etc_hosts | default(true) | bool | lower }}
+      manage_etc_hosts: {{ ard_node.manage_etc_hosts | default(false) | bool | lower }}
       ssh_authorized_keys:
         - {{ ard_stack_public_key }}
       users:

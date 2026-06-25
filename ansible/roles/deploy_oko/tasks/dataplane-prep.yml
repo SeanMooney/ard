@@ -1,24 +1,21 @@
 ---
-- name: Ensure EDPM hostnames are FQDNs for dataplane validation
+- name: Set EDPM hostnames to rendered OKO short names
   become: true
   ansible.builtin.hostname:
-    name: "{{ hostvars[item].ansible_fqdn | default(item ~ '.' ~ oko_ctlplane_dns_domain, true) }}"
+    name: "{{ item }}"
   delegate_to: "{{ item }}"
   loop: "{{ groups[oko_edpm_group] | default([]) }}"
   when: oko_apply_dataplane_resources | bool
 
-- name: Ensure EDPM FQDNs resolve locally
+- name: Remove hosts-file aliases for EDPM names
   become: true
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    regexp: "^{{ hostvars[item].nodepool.private_ipv4 | default(hostvars[item].ansible_host) | regex_escape }}\\s+"
-    line: >-
-      {{ hostvars[item].nodepool.private_ipv4 | default(hostvars[item].ansible_host) }}
-      {{ item }}.{{ oko_ctlplane_dns_domain }} {{ item }}
+    regexp: "^\\S+\\s+.*\\b({{ item | regex_escape }}|{{ hostvars[item].ansible_host | regex_escape }})\\b.*$"
+    state: absent
   delegate_to: "{{ item }}"
   loop: "{{ groups[oko_edpm_group] | default([]) }}"
   when: oko_apply_dataplane_resources | bool
-
 
 - name: Install EDPM ctlplane-to-OVS uplink helper
   become: true
@@ -30,6 +27,7 @@
     content: |
       #!/bin/bash
       set -euo pipefail
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       linux_bridge={{ oko_ctlplane_bridge | quote }}
       ovs_bridge={{ oko_neutron_physical_bridge_name | quote }}
       ovs_end={{ oko_edpm_bridge_veth_ovs | quote }}

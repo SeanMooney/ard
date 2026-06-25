@@ -28,9 +28,11 @@ oko_nfs_export_mode: "0777"
 oko_nfs_export_options: rw,sync,no_root_squash,no_subtree_check
 oko_nfs_export_file: /etc/exports.d/ard-cinder.exports
 oko_nfs_export_network: "*"
-# Cinder volume pods and EDPM computes consume this share from the OKO
-# ctlplane/overlay network, not necessarily from the Ansible management network.
-oko_nfs_server: "{{ oko_microshift_ctlplane_ip }}"
+# Cinder volume pods and EDPM computes consume this share from an address that
+# must be reachable from both Kubernetes and EDPM nodes. Prefer the provider
+# datacenter address because KubeVirt masquerade makes provider VM names/IPs
+# unsuitable and the OKO ctlplane address may not be reachable by EDPM hosts.
+oko_nfs_server: "{{ nodepool.datacenter_ipv4 | default(oko_microshift_ctlplane_ip) }}"
 
 # EDPM dataplane settings. ARD's combined OKO topology renders compute hosts in
 # the compute inventory group.

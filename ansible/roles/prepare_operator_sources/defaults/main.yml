@@ -24,7 +24,11 @@ oko_dev_repos: []
 # Naming intentionally mirrors the oko_nfs_* conventions in deploy_oko.
 oko_dev_nfs_export_options: rw,sync,no_root_squash,no_subtree_check
 oko_dev_nfs_export_network: "*"
-oko_dev_nfs_server: "{{ ansible_host | default(ansible_default_ipv4.address | default(inventory_hostname)) }}"
+# Use the non-masqueraded datacenter address when the provider exposes one.
+# Otherwise discover the Kubernetes node InternalIP so kubelet mounts reach the
+# in-node NFS server even when Ansible connects through a provider/public name.
+# Set explicitly to a hostname/IP to override discovery.
+oko_dev_nfs_server: "{{ nodepool.datacenter_ipv4 | default('auto') }}"
 
 # Kubernetes namespace for PV/PVC resources.
 oko_dev_namespace: openstack

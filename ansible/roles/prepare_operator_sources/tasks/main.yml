@@ -40,6 +40,49 @@
     loop_var: _repo
     label: "{{ _repo.name }}"
 
+- name: Discover Kubernetes node name for dev NFS server
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_dev_kubeconfig }}"
+      - get
+      - nodes
+      - -o
+      - "jsonpath={.items[0].metadata.name}"
+  register: _oko_dev_nfs_node_name
+  changed_when: false
+  when:
+    - oko_dev_nfs_server == 'auto'
+    - oko_dev_repos | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list | length > 0
+  tags: [requires_host]
+
+- name: Discover Kubernetes node InternalIP for dev NFS server
+  ansible.builtin.command:
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ oko_dev_kubeconfig }}"
+      - get
+      - "node/{{ _oko_dev_nfs_node_name.stdout }}"
+      - -o
+      - "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"
+  register: _oko_dev_nfs_node_internal_ip
+  changed_when: false
+  when:
+    - oko_dev_nfs_server == 'auto'
+    - _oko_dev_nfs_node_name is defined
+    - _oko_dev_nfs_node_name.stdout | length > 0
+  tags: [requires_host]
+
+- name: Use Kubernetes node InternalIP for automatic dev NFS server
+  ansible.builtin.set_fact:
+    oko_dev_nfs_server: "{{ _oko_dev_nfs_node_internal_ip.stdout }}"
+  when:
+    - oko_dev_nfs_server == 'auto'
+    - _oko_dev_nfs_node_internal_ip is defined
+    - _oko_dev_nfs_node_internal_ip.stdout | length > 0
+
 - name: Render and apply PV/PVC manifests for exported repos
   ansible.builtin.include_tasks: render-pv.yml
   loop: "{{ oko_dev_repos | selectattr('nfs_export', 'defined') | selectattr('nfs_export') | list }}"

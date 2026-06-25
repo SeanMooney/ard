@@ -89,6 +89,10 @@ spec:
         edpm_nodes_validation_validate_gateway_icmp: false
         edpm_network_config_nonconfigured_cleanup: {{ (not (oko_edpm_bridge_veth_enabled | bool)) | lower }}
         ctlplane_host_routes: []
+        ctlplane_dns_nameservers:
+          - {{ oko_dns_loadbalancer_ip }}
+        dns_search_domains:
+          - {{ oko_ctlplane_dns_domain }}
         ctlplane_mtu: {{ oko_ctlplane_mtu }}
         internalapi_mtu: {{ oko_internalapi_mtu }}
         storage_mtu: {{ oko_storage_mtu }}

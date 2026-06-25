@@ -1,104 +1,12 @@
 ---
-- name: Deploy MicroShift and OKO into ARD KubeVirt deployment
-  hosts: localhost
-  connection: local
-  gather_facts: false
+- import_playbook: ../../ansible/playbooks/workloads/oko/converge-kubevirt.yaml
   vars:
     ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
     ard_scenario_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
     ard_deployment_dir: "{{ ard_scenario_dir }}/deployment"
-    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
-  tasks:
-    - name: Search for local-vars.yaml
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - "{{ ard_scenario_dir }}/local-vars.yaml"
-        - "{{ ard_deployment_dir }}/local-vars.yaml"
-        - "{{ ard_project_dir }}/local-vars.yaml"
-      register: _local_vars_search
-
-    - name: Resolve local-vars.yaml path
-      ansible.builtin.set_fact:
-        _local_vars_file: >-
-          {{ (_local_vars_search.results | selectattr('stat.exists') | map(attribute='item') | list | first | default('')) }}
-
-    - name: Check live MicroShift readiness
-      ansible.builtin.command:
-        argv:
-          - ansible
-          - -i
-          - "{{ ard_deployment_dir }}/inventory.yaml"
-          - microshift
-          - -b
-          - -m
-          - shell
-          - -a
-          - >-
-            test -f /home/stack/.kube/config &&
-            systemctl is-active --quiet microshift &&
-            oc --kubeconfig /home/stack/.kube/config get node >/dev/null
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      register: _microshift_readiness
-      changed_when: false
-      failed_when: false
-
-    - name: Run ARD MicroShift deployment playbook
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', ard_deployment_dir ~ '/inventory.yaml',
-              'ansible/playbooks/workloads/microshift/deploy.yaml',
-              '-e', 'ard_deployment_dir=' ~ ard_deployment_dir]
-             + (['-e', '@' ~ _local_vars_file]
-                if _local_vars_file else []) }}
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
-      when: _microshift_readiness.rc != 0
-
-    - name: Run ARD multinode bridge playbook
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', ard_deployment_dir ~ '/inventory.yaml',
-              'ansible/playbooks/network/pre-multinode.yaml',
-              '-e', 'bridge_name=ospbr',
-              '-e', 'bridge_mtu_headroom=100']
-             + (['-e', '@' ~ _local_vars_file]
-                if _local_vars_file else []) }}
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
-
-    - name: Run ARD OKO deployment playbook
-      # Workload variables are passed to the workload playbook here because
-      # provisioner.ard in molecule.yml is consumed only by molecule-create.yaml
-      # for render/provider inputs.
-      ansible.builtin.command:
-        argv: >-
-          {{ ['ansible-playbook', '-i', ard_deployment_dir ~ '/inventory.yaml',
-              'ansible/playbooks/workloads/oko/deploy.yaml',
-              '-e', 'ard_deployment_dir=' ~ ard_deployment_dir,
-              '-e', 'oko_apply_network_resources=true',
-              '-e', 'oko_apply_controlplane_resources=true',
-              '-e', 'oko_apply_dataplane_resources=true',
-              '-e', 'oko_manage_ctlplane_bridge_slave=false',
-              '-e', 'oko_edpm_bridge_veth_enabled=true',
-              '-e', 'oko_edpm_public_interface_name=oko-br-ex']
-             + (['-e', '@' ~ _local_vars_file]
-                if _local_vars_file else []) }}
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
+    ard_local_vars_file: >-
+      {{ lookup('ansible.builtin.first_found',
+          {'files': [ard_scenario_dir ~ '/local-vars.yaml',
+                     ard_deployment_dir ~ '/local-vars.yaml',
+                     ard_project_dir ~ '/local-vars.yaml'],
+           'skip': true}) }}

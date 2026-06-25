@@ -1,25 +1,12 @@
 ---
-- name: Deploy MicroShift into ARD libvirt deployment
-  hosts: localhost
-  connection: local
-  gather_facts: false
+- import_playbook: ../../ansible/playbooks/workloads/microshift/converge.yaml
   vars:
     ard_project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir ~ '/../..', true) }}"
-    ard_deployment_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}/deployment"
-    ard_ansible_roles_path: "{{ ard_project_dir }}/ansible/roles:{{ ard_project_dir }}/submodules/zuul-jobs/roles:{{ ard_project_dir }}/submodules/devstack/roles:{{ ard_project_dir }}/submodules/openstack-zuul-jobs/roles"
-  tasks:
-    - name: Run ARD MicroShift deployment playbook
-      ansible.builtin.command:
-        argv:
-          - ansible-playbook
-          - -i
-          - "{{ ard_deployment_dir }}/inventory.yaml"
-          - ansible/playbooks/workloads/microshift/deploy.yaml
-          - -e
-          - ard_deployment_dir={{ ard_deployment_dir }}
-      environment:
-        ANSIBLE_CONFIG: "{{ ard_project_dir }}/ansible.cfg"
-        ANSIBLE_ROLES_PATH: "{{ ard_ansible_roles_path }}"
-      args:
-        chdir: "{{ ard_project_dir }}"
-      changed_when: true
+    ard_scenario_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
+    ard_deployment_dir: "{{ ard_scenario_dir }}/deployment"
+    ard_local_vars_file: >-
+      {{ lookup('ansible.builtin.first_found',
+          {'files': [ard_scenario_dir ~ '/local-vars.yaml',
+                     ard_deployment_dir ~ '/local-vars.yaml',
+                     ard_project_dir ~ '/local-vars.yaml'],
+           'skip': true}) }}
