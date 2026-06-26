@@ -35,6 +35,8 @@
     - "{{ _oko_local_basedir }}/dataplane"
     - "{{ _oko_local_basedir }}/generated"
     - "{{ _oko_local_secrets }}"
+    - "{{ _oko_local_cp_overlay }}"
+    - "{{ _oko_local_dp_overlay }}"
   delegate_to: localhost
 
 # ── Template rendering (controller-side) ─────────────────────────────────────
@@ -192,6 +194,29 @@
     _oko_has_cp_overlay: "{{ (_oko_cp_patches.files | default([])) | length > 0 }}"
     _oko_has_dp_overlay: "{{ (_oko_dp_patches.files | default([])) | length > 0 }}"
 
+# ── Sync prerequisites ────────────────────────────────────────────────────────
+
+- name: Check local rsync availability for OKO manifest sync
+  ansible.builtin.shell: command -v rsync
+  register: _oko_local_rsync
+  changed_when: false
+  delegate_to: localhost
+
+- name: Check remote rsync availability for OKO manifest sync
+  ansible.builtin.shell: command -v rsync
+  register: _oko_remote_rsync
+  changed_when: false
+
+- name: Require rsync for OKO local manifest sync
+  ansible.builtin.assert:
+    that:
+      - _oko_local_rsync.rc == 0
+      - _oko_remote_rsync.rc == 0
+    fail_msg: >-
+      OKO local manifest sync requires rsync on both the Ansible controller
+      and the MicroShift host. Install rsync or disable local manifest
+      rendering before running deploy_oko.
+
 # ── Remote directory setup ────────────────────────────────────────────────────
 
 - name: Create remote OKO base manifest directories
@@ -212,11 +237,12 @@
 # ── Sync base manifests to remote ────────────────────────────────────────────
 
 - name: Sync OKO base manifests to MicroShift host
-  ansible.builtin.copy:
+  ansible.posix.synchronize:
     src: "{{ _oko_local_basedir }}/"
     dest: "{{ oko_manifest_workdir }}/base/"
-    mode: "0644"
-    directory_mode: "0755"
+    recursive: true
+    delete: true
+    use_ssh_args: true
 
 # ── Controlplane overlay ──────────────────────────────────────────────────────
 
@@ -228,11 +254,17 @@
   when: _oko_has_cp_overlay | bool
 
 - name: Sync controlplane overlay patches to remote
-  ansible.builtin.copy:
-    src: "{{ item.path }}"
-    dest: "{{ oko_manifest_workdir }}/overlays/controlplane/{{ item.path | basename }}"
-    mode: "0644"
-  loop: "{{ _oko_cp_patches.files | default([]) }}"
+  ansible.posix.synchronize:
+    src: "{{ _oko_local_cp_overlay }}/"
+    dest: "{{ oko_manifest_workdir }}/overlays/controlplane/"
+    recursive: true
+    delete: true
+    use_ssh_args: true
+    rsync_opts:
+      - "--include=*/"
+      - "--exclude=kustomization.yaml"
+      - "--include=*.yaml"
+      - "--exclude=*"
   when: _oko_has_cp_overlay | bool
 
 - name: Generate controlplane overlay kustomization on remote
@@ -267,11 +299,17 @@
   when: _oko_has_dp_overlay | bool
 
 - name: Sync dataplane overlay patches to remote
-  ansible.builtin.copy:
-    src: "{{ item.path }}"
-    dest: "{{ oko_manifest_workdir }}/overlays/dataplane/{{ item.path | basename }}"
-    mode: "0644"
-  loop: "{{ _oko_dp_patches.files | default([]) }}"
+  ansible.posix.synchronize:
+    src: "{{ _oko_local_dp_overlay }}/"
+    dest: "{{ oko_manifest_workdir }}/overlays/dataplane/"
+    recursive: true
+    delete: true
+    use_ssh_args: true
+    rsync_opts:
+      - "--include=*/"
+      - "--exclude=kustomization.yaml"
+      - "--include=*.yaml"
+      - "--exclude=*"
   when: _oko_has_dp_overlay | bool
 
 - name: Generate dataplane overlay kustomization on remote
