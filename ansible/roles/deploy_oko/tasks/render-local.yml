@@ -219,20 +219,20 @@
 
 # ── Remote directory setup ────────────────────────────────────────────────────
 
-- name: Create remote OKO base manifest directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "0755"
-  loop:
-    - "{{ oko_manifest_workdir }}"
-    - "{{ oko_manifest_workdir }}/base"
-    - "{{ oko_manifest_workdir }}/base/bootstrap"
-    - "{{ oko_manifest_workdir }}/base/operators"
-    - "{{ oko_manifest_workdir }}/base/network"
-    - "{{ oko_manifest_workdir }}/base/controlplane"
-    - "{{ oko_manifest_workdir }}/base/dataplane"
-    - "{{ oko_manifest_workdir }}/base/generated"
+- name: Create remote OKO manifest directories
+  ansible.builtin.command:
+    argv:
+      - mkdir
+      - -p
+      - "{{ oko_manifest_workdir }}/base/bootstrap"
+      - "{{ oko_manifest_workdir }}/base/operators"
+      - "{{ oko_manifest_workdir }}/base/network"
+      - "{{ oko_manifest_workdir }}/base/controlplane"
+      - "{{ oko_manifest_workdir }}/base/dataplane"
+      - "{{ oko_manifest_workdir }}/base/generated"
+      - "{{ oko_manifest_workdir }}/overlays/controlplane"
+      - "{{ oko_manifest_workdir }}/overlays/dataplane"
+  changed_when: false
 
 # ── Sync base manifests to remote ────────────────────────────────────────────
 
@@ -245,13 +245,6 @@
     use_ssh_args: true
 
 # ── Controlplane overlay ──────────────────────────────────────────────────────
-
-- name: Create remote OKO controlplane overlay directory
-  ansible.builtin.file:
-    path: "{{ oko_manifest_workdir }}/overlays/controlplane"
-    state: directory
-    mode: "0755"
-  when: _oko_has_cp_overlay | bool
 
 - name: Sync controlplane overlay patches to remote
   ansible.posix.synchronize:
@@ -290,13 +283,6 @@
   when: _oko_has_cp_overlay | bool
 
 # ── Dataplane overlay ─────────────────────────────────────────────────────────
-
-- name: Create remote OKO dataplane overlay directory
-  ansible.builtin.file:
-    path: "{{ oko_manifest_workdir }}/overlays/dataplane"
-    state: directory
-    mode: "0755"
-  when: _oko_has_dp_overlay | bool
 
 - name: Sync dataplane overlay patches to remote
   ansible.posix.synchronize:
