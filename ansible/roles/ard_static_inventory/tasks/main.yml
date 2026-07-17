@@ -3,6 +3,17 @@
   include_vars:
     file: "{{ ard_deployment_dir }}/deployment.yaml"
 
+- name: Check for existing static provider state
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/provider-state.yaml"
+  register: ard_static_provider_state_file
+
+- name: Load existing static provider state
+  ansible.builtin.include_vars:
+    file: "{{ ard_static_provider_state_file.stat.path }}"
+    name: ard_static_runtime_state
+  when: ard_static_provider_state_file.stat.exists
+
 - name: Initialize static defaults and node list
   ansible.builtin.set_fact:
     ard_static_nodes_source: "{{ ard_static_nodes | default([]) }}"
@@ -27,10 +38,23 @@
             'ansible_private_key_file': item.ansible_private_key_file | default(item.private_key_file | default(ard_static_default_private_key_file)),
             'ansible_become': item.ansible_become | default(ard_static_become | default(false)),
             'ansible_ssh_common_args': item.ansible_ssh_common_args | default('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'),
+            'private_ipv4': _ard_static_private_ipv4,
+            'public_ipv4': _ard_static_public_ipv4,
+            'public_ipv6': _ard_static_public_ipv6,
             'groups': (((item.groups | default([])) + (ard_static_workload_groups | default({})).get(item.name, [])) | unique)
           }
         ]
       }}
+  vars:
+    _ard_static_runtime_node: >-
+      {{ ((ard_static_runtime_state | default({})).get('ard_static_nodes', []) |
+          selectattr('name', 'equalto', item.name) | list | first) | default({}) }}
+    _ard_static_private_ipv4: >-
+      {{ item.private_ipv4 | default(_ard_static_runtime_node.private_ipv4 | default(item.ansible_host, true), true) }}
+    _ard_static_public_ipv4: >-
+      {{ item.public_ipv4 | default(_ard_static_runtime_node.public_ipv4 | default(_ard_static_private_ipv4, true), true) }}
+    _ard_static_public_ipv6: >-
+      {{ item.public_ipv6 | default(_ard_static_runtime_node.public_ipv6 | default('', true), true) }}
   loop: "{{ ard_static_nodes_source }}"
   when: ard_static_nodes_source | length > 0
 
@@ -54,10 +78,30 @@
             'ansible_private_key_file': item.value.ansible_key | default(item.value.ansible_private_key_file | default(ard_static_default_private_key_file)),
             'ansible_become': item.value.ansible_become | default(ard_static_become | default(false)),
             'ansible_ssh_common_args': item.value.ansible_ssh_common_args | default('-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'),
+            'private_ipv4': _ard_static_private_ipv4,
+            'public_ipv4': _ard_static_public_ipv4,
+            'public_ipv6': _ard_static_public_ipv6,
             'groups': (ard_static_workload_groups | default({})).get(item.key, item.value.groups | default([])) | default([])
           }
         ]
       }}
+  vars:
+    _ard_static_runtime_node: >-
+      {{ ((ard_static_runtime_state | default({})).get('ard_static_nodes', []) |
+          selectattr('name', 'equalto', item.key) | list | first) | default({}) }}
+    _ard_static_ansible_host: "{{ item.value.ansible_host | default(item.key) }}"
+    _ard_static_private_ipv4: >-
+      {{ item.value.get('nodepool', {}).get('private_ipv4',
+           item.value.private_ipv4 | default(
+             _ard_static_runtime_node.private_ipv4 | default(_ard_static_ansible_host, true), true)) }}
+    _ard_static_public_ipv4: >-
+      {{ item.value.get('nodepool', {}).get('public_ipv4',
+           item.value.public_ipv4 | default(
+             _ard_static_runtime_node.public_ipv4 | default(_ard_static_private_ipv4, true), true)) }}
+    _ard_static_public_ipv6: >-
+      {{ item.value.get('nodepool', {}).get('public_ipv6',
+           item.value.public_ipv6 | default(
+             _ard_static_runtime_node.public_ipv6 | default('', true), true)) }}
   loop: "{{ ard_static_inventory_data.get('all', {}).get('hosts', {}) | default({}) | dict2items }}"
   when:
     - ard_static_nodes_source | length == 0
@@ -99,8 +143,9 @@
             ansible_become: {{ node.ansible_become }}
             ard_deployment_name: {{ ard_deployment_name }}
             nodepool:
-              private_ipv4: {{ node.ansible_host }}
-              public_ipv4: {{ node.ansible_host }}
+              private_ipv4: {{ node.private_ipv4 }}
+              public_ipv4: {{ node.public_ipv4 }}
+              public_ipv6: {{ node.public_ipv6 | to_json }}
             zuul:
               executor:
                 log_root: /tmp/zuul_logs
@@ -148,8 +193,9 @@
     ansible_become: "{{ item.ansible_become }}"
     ard_deployment_name: "{{ ard_deployment_name }}"
     nodepool:
-      private_ipv4: "{{ item.ansible_host }}"
-      public_ipv4: "{{ item.ansible_host }}"
+      private_ipv4: "{{ item.private_ipv4 }}"
+      public_ipv4: "{{ item.public_ipv4 }}"
+      public_ipv6: "{{ item.public_ipv6 }}"
     zuul:
       executor:
         log_root: /tmp/zuul_logs
@@ -174,4 +220,7 @@
         - name: {{ node.name }}
           ansible_host: {{ node.ansible_host }}
           ansible_user: {{ node.ansible_user }}
+          private_ipv4: {{ node.private_ipv4 }}
+          public_ipv4: {{ node.public_ipv4 }}
+          public_ipv6: {{ node.public_ipv6 | to_json }}
       {% endfor %}

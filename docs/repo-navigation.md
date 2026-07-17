@@ -35,7 +35,7 @@
 ## First places to check
 
 - **Provider behavior:** `ansible/playbooks/provider/` and `ansible/roles/ard_provider_*`
-- **Static provider entry points:** `ansible/roles/ard_static_*`
+- **Static provider usage:** `docs/providers/static.md`; implementation entry points: `ansible/roles/ard_static_*`
 - **Render model concepts:** `docs/concepts/ard-render-model.md`
 - **Render/provider contracts:** `docs/architecture/render-contracts.md`
 - **KubeVirt provider behavior:** render/provider contracts plus `ansible/roles/ard_kubevirt_*`

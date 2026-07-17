@@ -132,6 +132,29 @@ make deploy ARD_DEPLOYMENT=oko-cyborg
 make destroy ARD_DEPLOYMENT=oko-cyborg
 ```
 
+## Static provider
+
+The `static` provider runs workloads on pre-provisioned SSH hosts. A static
+render intent supplies logical inventory nodes and their SSH transport details;
+`make apply` discovers the host addresses used by workload services.
+
+A complete CentOS Stream 10 AIO example with Cyborg and the pci-sim kernel
+module is available under
+[`examples/devstack/static-cyborg-pci-sim/`](examples/devstack/static-cyborg-pci-sim/):
+
+```bash
+make render \
+  ARD_DEPLOYMENT=static-cyborg-pci-sim \
+  ARD_RENDER_FILE=examples/devstack/static-cyborg-pci-sim/render.yaml
+make apply ARD_DEPLOYMENT=static-cyborg-pci-sim
+make ping ARD_DEPLOYMENT=static-cyborg-pci-sim
+make deploy ARD_DEPLOYMENT=static-cyborg-pci-sim
+```
+
+The host must already be reachable by SSH with passwordless sudo. See
+[`docs/providers/static.md`](docs/providers/static.md) for node declarations,
+address discovery, lifecycle behavior, and host reuse.
+
 ## Make targets
 
 The root `Makefile` wraps the provider playbooks. The default target is a full

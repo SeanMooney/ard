@@ -53,6 +53,40 @@
   roles:
     - ard_base_packages
 
+- name: Finalize discovered static provider addresses
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Load ARD deployment variables
+      ansible.builtin.include_vars:
+        file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+    - name: Persist discovered static node addresses
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: static
+          ard_deployment_name: {{ ard_deployment_name }}
+          ard_static_source: discovered
+          ard_static_nodes:
+          {% for node_name in groups['ard_provider_nodes'] %}
+            - name: {{ node_name }}
+              ansible_host: {{ hostvars[node_name].ansible_host }}
+              ansible_user: {{ hostvars[node_name].ansible_user | default('stack') }}
+              private_ipv4: {{ hostvars[node_name].ansible_facts.default_ipv4.address }}
+              public_ipv4: {{ hostvars[node_name].ansible_facts.default_ipv4.address }}
+              public_ipv6: {{ hostvars[node_name].ansible_facts.get('default_ipv6', {}).get('address', '') | to_json }}
+          {% endfor %}
+      when: ard_provider == 'static'
+
+    - name: Regenerate static inventory with discovered addresses
+      ansible.builtin.include_role:
+        name: ard_static_inventory
+      when: ard_provider == 'static'
+
 - name: Configure datacenter interface on ARD provider nodes
   hosts: ard_provider_nodes
   gather_facts: false

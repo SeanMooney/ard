@@ -7,12 +7,10 @@ service profiles to render.
 Typical flow:
 
 ```bash
-uv run ansible-playbook ansible/playbooks/provider/render.yaml \
-  -e @examples/<category>/<example>/render.yaml \
-  -e ard_deployment_dir=$PWD/deployments/<name>
-
-uv run ansible-playbook ansible/playbooks/provider/apply.yaml \
-  -e ard_deployment_dir=$PWD/deployments/<name>
+make render \
+  ARD_DEPLOYMENT=<name> \
+  ARD_RENDER_FILE=examples/<category>/<example>/render.yaml
+make apply ARD_DEPLOYMENT=<name>
 ```
 
 Some Molecule scenarios use these files through `provisioner.ard_render_file`.

@@ -141,6 +141,7 @@
       controller_localrc_extra: {{ _devstack_controller_localrc_extra | to_json }}
       controller_local_conf_extra: {{ controller_local_conf_extra | default({}) | to_json }}
       controller_services_extra: {{ controller_services_extra | default({}) | to_json }}
+      controller_devstack_plugins: {{ controller_devstack_plugins | default({}) | to_json }}
 
 - name: Write compute group DevStack vars
   ansible.builtin.copy:
@@ -150,6 +151,7 @@
       ---
       compute_local_conf_extra: {{ compute_local_conf_extra | default({}) | to_json }}
       compute_services_extra: {{ compute_services_extra | default({}) | to_json }}
+      compute_devstack_plugins: {{ compute_devstack_plugins | default({}) | to_json }}
 
 - name: Write per-compute DevStack endpoint vars
   ansible.builtin.copy:

@@ -9,6 +9,7 @@
         - git
         - sudo
         - wget
+        - which
         - rsync
       changed_when: false
 

@@ -11,11 +11,14 @@ debian_pkg_install:
   - nano
   - rsync
   - pciutils
+  - which
 redhat_pkg_install:
   - git-core
   - sudo
   - acl
   - wget
+  - which
+  - kernel-modules-extra
   - nano
   - rsync
   - pciutils
@@ -26,6 +29,7 @@ debian_pkg_remove:
   - git-core
 redhat_pkg_remove:
   - cloud-init
+  - firewalld
   - python3-pyyaml
   - python3-simplejson
   - git

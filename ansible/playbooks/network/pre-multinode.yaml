@@ -8,11 +8,18 @@
 - name: Prepare multinode host connectivity helpers
   hosts: all
   gather_facts: true
+  vars:
+    ard_multinode_active: >-
+      {{ groups['switch'] | default([]) | length > 0
+         and groups['peers'] | default([]) | length > 0 }}
   roles:
-    - ard_multinode_known_hosts
-    - multi-node-hosts-file
-    - multi-node-firewall
-    - ard_configure_datacenter_iface
+    - role: ard_multinode_known_hosts
+      when: ard_multinode_active | bool
+    - role: multi-node-hosts-file
+      when: ard_multinode_active | bool
+    - role: multi-node-firewall
+      when: ard_multinode_active | bool
+    - role: ard_configure_datacenter_iface
 
 - name: Configure ARD multinode bridge
   hosts:
@@ -20,14 +27,22 @@
     - peers
   gather_facts: true
   become: true
+  vars:
+    ard_multinode_active: >-
+      {{ groups['switch'] | default([]) | length > 0
+         and groups['peers'] | default([]) | length > 0 }}
   roles:
-    - ard_multinode_bridge
+    - role: ard_multinode_bridge
+      when: ard_multinode_active | bool
 
 - name: Copy build ssh key for multinode access
   hosts: all
   gather_facts: false
   become: true
   vars:
+    ard_multinode_active: >-
+      {{ groups['switch'] | default([]) | length > 0
+         and groups['peers'] | default([]) | length > 0 }}
     ard_build_ssh_key: "{{ ansible_private_key_file | default(lookup('env', 'HOME') ~ '/.ssh/id_ed25519_stack') }}"
     ard_build_ssh_key_dest: "{{ ard_build_ssh_key | basename }}"
     ard_build_ssh_target_user: "{{ ansible_user | default('stack') }}"
@@ -37,11 +52,13 @@
         user: "{{ ard_build_ssh_target_user }}"
         manage_dir: true
         key: "{{ lookup('file', ard_build_ssh_key ~ '.pub') }}"
+      when: ard_multinode_active | bool
 
     - name: Get target user home directory
       ansible.builtin.user:
         name: "{{ ard_build_ssh_target_user }}"
       register: ard_build_ssh_target_user_info
+      when: ard_multinode_active | bool
 
     - name: Install build private key
       ansible.builtin.copy:
@@ -50,6 +67,7 @@
         mode: "0600"
         owner: "{{ ard_build_ssh_target_user }}"
         force: false
+      when: ard_multinode_active | bool
 
     - name: Install build public key
       ansible.builtin.copy:
@@ -58,3 +76,4 @@
         mode: "0644"
         owner: "{{ ard_build_ssh_target_user }}"
         force: false
+      when: ard_multinode_active | bool
