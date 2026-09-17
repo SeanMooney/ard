@@ -5,3 +5,36 @@
   roles:
     - microshift_defaults
     - microshift_validate
+  tasks:
+    - name: Check CRI-O storage compatibility defaults
+      become: true
+      ansible.builtin.slurp:
+        src: /etc/containers/storage.conf
+      register: _microshift_storage_config
+
+    - name: Verify CRI-O storage configuration and service
+      ansible.builtin.assert:
+        that:
+          - "'runroot = \"/run/containers/storage\"' in (_microshift_storage_config.content | b64decode)"
+          - "'graphroot = \"/var/lib/containers/storage\"' in (_microshift_storage_config.content | b64decode)"
+
+    - name: Check CRI-O image policy compatibility file
+      become: true
+      ansible.builtin.stat:
+        path: /etc/containers/policy.json
+      register: _microshift_image_policy
+
+    - name: Verify CRI-O image policy compatibility file
+      ansible.builtin.assert:
+        that:
+          - _microshift_image_policy.stat.isreg
+
+    - name: Check CRI-O service state
+      become: true
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - --quiet
+          - crio.service
+      changed_when: false

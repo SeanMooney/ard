@@ -36,6 +36,26 @@
     - ansible_distribution == 'CentOS'
     - ansible_distribution_major_version == '10'
 
+- name: Provide CRI-O storage defaults for CentOS Stream 10 compatibility
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/containers/storage.conf
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+    content: |
+      [storage]
+      driver = "overlay"
+      runroot = "/run/containers/storage"
+      graphroot = "/var/lib/containers/storage"
+
+      [storage.options.overlay]
+      mountopt = "nodev"
+  when:
+    - ansible_distribution == 'CentOS'
+    - ansible_distribution_major_version == '10'
+
 - name: Ensure CRI-O systemd drop-in directory exists
   become: true
   ansible.builtin.file:

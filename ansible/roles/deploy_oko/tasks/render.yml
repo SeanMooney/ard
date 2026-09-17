@@ -36,6 +36,7 @@
     - subscription.yaml
     - openstack.yaml
     - openstack-kustomization.yaml
+    - registry-viewer.yaml
 
 - name: Render network kustomization
   ansible.builtin.template:
@@ -124,5 +125,5 @@
 - name: Render dataplane job monitor helper
   ansible.builtin.template:
     src: monitor-dataplane-jobs.sh.j2
-    dest: "{{ oko_manifest_workdir | dirname }}/monitor-dataplane-jobs.sh"
+    dest: "{{ oko_manifest_workdir }}/monitor-dataplane-jobs.sh"
     mode: "0755"

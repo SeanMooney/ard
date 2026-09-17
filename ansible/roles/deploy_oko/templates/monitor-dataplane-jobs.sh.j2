@@ -31,11 +31,11 @@ deployment_ready() {
 }
 
 current_running_job() {
-    k get jobs -l app=openstackansibleee \
+    k get jobs -l "openstackdataplanedeployment=$DEP" \
         --sort-by=.metadata.creationTimestamp \
         -o custom-columns=NAME:.metadata.name,ACTIVE:.status.active \
         --no-headers 2>/dev/null \
-        | awk -v dep="$DEP" '$1 ~ dep && ($2 == "1" || $2+0 > 0) { job=$1 } END { if (job != "") print job }'
+        | awk '$2 == "1" || $2+0 > 0 { job=$1 } END { if (job != "") print job }'
 }
 
 echo "Following currently running dataplane job for deployment '$DEP' in namespace '$NS'"
@@ -56,7 +56,7 @@ while true; do
     if [ -z "$job" ]; then
         echo "[$(date -Is)] No running dataplane AnsibleEE job found; waiting..."
         k get openstackdataplanedeployment "$DEP" -o wide 2>/dev/null || true
-        k get jobs -l app=openstackansibleee -o wide 2>/dev/null || true
+        k get jobs -l "openstackdataplanedeployment=$DEP" -o wide 2>/dev/null || true
         sleep "$INTERVAL"
         continue
     fi

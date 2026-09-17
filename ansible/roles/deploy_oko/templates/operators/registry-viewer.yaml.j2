@@ -1,0 +1,41 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: registry-viewer
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  # Match the OpenShift bootstrap role expected by the dataplane controller.
+  - apiGroups:
+      - image.openshift.io
+      - ""
+    resources:
+      - imagestreamimages
+      - imagestreammappings
+      - imagestreams
+      - imagestreamtags
+      - imagetags
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - image.openshift.io
+      - ""
+    resources:
+      - imagestreams/layers
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+  - apiGroups:
+      - project.openshift.io
+      - ""
+    resources:
+      - projects
+    verbs:
+      - get

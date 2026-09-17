@@ -123,8 +123,9 @@ oko_tenant_mtu: "{{ oko_vlan_network_mtu }}"
 oko_neutron_global_physnet_mtu: "{{ oko_network_mtu }}"
 oko_neutron_physical_bridge_name: br-ex
 # Used by EDPM Neutron services after os-net-config has built the dataplane
-# bridge. Keep this configurable instead of assuming the provider NIC is eth1.
-oko_edpm_public_interface_name: "{{ oko_ctlplane_bridge }}"
+# bridge. The direct-provider path maps os-net-config's nic2 alias to eth1;
+# overlay providers override this with their veth endpoint.
+oko_edpm_public_interface_name: eth1
 # When the ctlplane is an ARD Linux bridge/GRETAP mesh, os-net-config must not
 # treat that bridge as an Ethernet member of br-ex. A veth pair gives OVS a
 # normal interface while the peer remains attached to the Linux bridge mesh.

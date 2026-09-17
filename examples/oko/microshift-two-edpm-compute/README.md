@@ -32,6 +32,20 @@ The MicroShift node is in the `switch` group for the ARD multinode bridge.
 The EDPM nodes are bridge peers. The bridge can carry the OpenStack ctlplane
 and network-isolation VLANs.
 
+## Monitor dataplane deployment
+
+The deploy workflow installs the dataplane monitor on the MicroShift node,
+where the `stack` user has both `oc` and cluster-admin credentials:
+
+```bash
+make ssh ARD_DEPLOYMENT=<deployment> ARD_NODE=microshift
+~/ard-oko/monitor-dataplane-jobs.sh
+```
+
+The helper follows each active AnsibleEE job until the dataplane deployment is
+ready. It remains workload tooling on the MicroShift node rather than being
+installed on a remote libvirt execution host.
+
 For KubeVirt-specific details, including the OVN-K UserDefinedNetwork
 datacenter underlay, GRETAP overlay, EDPM veth uplink, and LoadBalancer VIP
 path, see

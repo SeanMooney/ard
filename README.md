@@ -169,6 +169,22 @@ make apply ARD_DEPLOYMENT=remote-libvirt-cyborg-pci-sim
 make deploy ARD_DEPLOYMENT=remote-libvirt-cyborg-pci-sim
 ```
 
+The remote-libvirt OKO example demonstrates that the same provider transport
+also composes with a MicroShift control plane and two pre-provisioned EDPM
+compute nodes. It reuses the existing OKO workload render intent unchanged:
+
+[`examples/oko/remote-libvirt-microshift-two-edpm-compute/`](examples/oko/remote-libvirt-microshift-two-edpm-compute/)
+
+```bash
+make render \
+  ARD_DEPLOYMENT=remote-libvirt-oko \
+  ARD_RENDER_FILE=examples/oko/microshift-two-edpm-compute/render.yaml
+# Add the execution host to deployment-local local-vars.yaml, then:
+make apply ARD_DEPLOYMENT=remote-libvirt-oko
+make deploy ARD_DEPLOYMENT=remote-libvirt-oko
+make verify ARD_DEPLOYMENT=remote-libvirt-oko
+```
+
 ## Make targets
 
 The root `Makefile` wraps the provider playbooks. The default target is a full

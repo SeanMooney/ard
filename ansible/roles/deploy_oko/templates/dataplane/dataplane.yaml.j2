@@ -41,7 +41,7 @@ data:
       members:
 {% endraw %}{% if not (oko_edpm_bridge_veth_enabled | bool) %}{% raw %}
       - type: interface
-        name: {{ neutron_public_interface_name }}
+        name: nic2
         mtu: {{ min_viable_mtu }}
         primary: true
 {% endraw %}{% endif %}{% raw %}

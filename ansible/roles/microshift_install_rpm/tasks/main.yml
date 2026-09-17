@@ -29,15 +29,40 @@
     name: "{{ microshift_rpm_packages }}"
     state: present
 
-- name: Restart CRI-O to apply proxy drop-ins
+- name: Provide CRI-O image policy for CentOS Stream 10 compatibility
+  become: true
+  ansible.builtin.copy:
+    src: /usr/share/containers/policy.json
+    dest: /etc/containers/policy.json
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+    force: false
+  register: microshift_crio_policy
+  when:
+    - ansible_distribution == 'CentOS'
+    - ansible_distribution_major_version == '10'
+
+- name: Validate effective CRI-O configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - crio
+      - config
+  changed_when: false
+
+- name: Ensure CRI-O is running
   become: true
   ansible.builtin.systemd:
     name: crio.service
-    state: restarted
+    state: >-
+      {{ 'restarted'
+         if ((ard_http_proxy | default('') | length > 0)
+             or (ard_https_proxy | default('') | length > 0)
+             or (microshift_crio_policy.changed | default(false)))
+         else 'started' }}
     daemon_reload: true
-  when: >-
-    (ard_http_proxy | default('') | length > 0)
-    or (ard_https_proxy | default('') | length > 0)
 
 - name: Prepare TopoLVM backing disk file
   become: true

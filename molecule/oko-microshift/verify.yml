@@ -10,10 +10,47 @@
   tasks:
     - name: Check rendered OKO README exists
       ansible.builtin.stat:
-        path: "{{ ard_deployment_dir }}/oko/README.md"
+        path: "{{ ard_deployment_dir }}/rendered/oko/base/README.md"
       register: _oko_readme
 
     - name: Require rendered OKO README
       ansible.builtin.assert:
         that:
           - _oko_readme.stat.exists
+
+    - name: Read rendered direct-libvirt dataplane manifest
+      ansible.builtin.slurp:
+        src: "{{ ard_deployment_dir }}/rendered/oko/base/dataplane/dataplane.yaml"
+      register: _oko_dataplane_manifest
+
+    - name: Require second NIC as the direct-libvirt OVS uplink
+      ansible.builtin.assert:
+        that:
+          - "'name: nic2' in (_oko_dataplane_manifest.content | b64decode)"
+          - "'public_interface_name: eth1' in (_oko_dataplane_manifest.content | b64decode)"
+
+    - name: Check locally rendered dataplane monitor
+      ansible.builtin.stat:
+        path: "{{ ard_deployment_dir }}/rendered/oko/monitor-dataplane-jobs.sh"
+      register: _oko_local_monitor
+
+    - name: Require executable local dataplane monitor
+      ansible.builtin.assert:
+        that:
+          - _oko_local_monitor.stat.exists
+          - _oko_local_monitor.stat.executable
+
+- name: Verify OKO workload helpers on MicroShift
+  hosts: microshift
+  gather_facts: false
+  tasks:
+    - name: Check installed dataplane monitor
+      ansible.builtin.stat:
+        path: /home/stack/ard-oko/monitor-dataplane-jobs.sh
+      register: _oko_remote_monitor
+
+    - name: Require executable dataplane monitor on MicroShift
+      ansible.builtin.assert:
+        that:
+          - _oko_remote_monitor.stat.exists
+          - _oko_remote_monitor.stat.executable

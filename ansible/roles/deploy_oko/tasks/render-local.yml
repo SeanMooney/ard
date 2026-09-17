@@ -65,6 +65,7 @@
     - subscription.yaml
     - openstack.yaml
     - openstack-kustomization.yaml
+    - registry-viewer.yaml
   delegate_to: localhost
 
 - name: Render OKO network kustomization locally
@@ -243,6 +244,12 @@
     recursive: true
     delete: true
     use_ssh_args: true
+
+- name: Copy dataplane job monitor to MicroShift host
+  ansible.builtin.copy:
+    src: "{{ ard_deployment_dir }}/rendered/oko/monitor-dataplane-jobs.sh"
+    dest: "{{ oko_manifest_workdir }}/monitor-dataplane-jobs.sh"
+    mode: "0755"
 
 # ── Controlplane overlay ──────────────────────────────────────────────────────
 
