@@ -3,6 +3,10 @@
   include_vars:
     file: "{{ ard_deployment_dir }}/deployment.yaml"
 
+- name: Load ARD node variables
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+
 - name: Run provider preflight
   include_role:
     name: "ard_{{ ard_provider }}_preflight"

@@ -15,17 +15,40 @@
     ard_libvirt_render_network: "{{ item.value }}"
   loop: "{{ ard_networks | dict2items }}"
 
+- name: Ensure remote libvirt network render directory exists
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_remote_render_dir }}/networks"
+    state: directory
+    mode: "0755"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Copy rendered libvirt network XML to execution host
+  ansible.builtin.copy:
+    src: "{{ ard_deployment_dir }}/rendered/libvirt/networks/{{ item.key }}.xml"
+    dest: "{{ ard_libvirt_remote_render_dir }}/networks/{{ item.key }}.xml"
+    mode: "0644"
+  loop: "{{ ard_networks | dict2items }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
 - name: Check whether libvirt networks exist
   command: "virsh --connect {{ ard_libvirt_uri }} net-info {{ item.value.provider.libvirt.name }}"
   register: ard_libvirt_network_info
   changed_when: false
   failed_when: false
   loop: "{{ ard_networks | dict2items }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Define libvirt networks
-  command: "virsh --connect {{ ard_libvirt_uri }} net-define {{ ard_deployment_dir }}/rendered/libvirt/networks/{{ item.item.key }}.xml"
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - net-define
+      - "{{ ard_libvirt_remote_render_dir }}/networks/{{ item.item.key }}.xml"
   when: item.rc != 0
   loop: "{{ ard_libvirt_network_info.results }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Start libvirt networks
   command: "virsh --connect {{ ard_libvirt_uri }} net-start {{ item.value.provider.libvirt.name }}"
@@ -33,8 +56,10 @@
   changed_when: ard_libvirt_net_start.rc == 0
   failed_when: ard_libvirt_net_start.rc != 0 and ('already active' not in (ard_libvirt_net_start.stderr | default('')))
   loop: "{{ ard_networks | dict2items }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Mark libvirt networks autostart
   command: "virsh --connect {{ ard_libvirt_uri }} net-autostart {{ item.value.provider.libvirt.name }}"
   changed_when: false
   loop: "{{ ard_networks | dict2items }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

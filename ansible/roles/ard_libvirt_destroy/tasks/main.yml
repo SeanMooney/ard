@@ -1,73 +1,116 @@
 ---
 - name: Check for provider state file
-  stat:
+  ansible.builtin.stat:
     path: "{{ ard_deployment_dir }}/provider-state.yaml"
   register: ard_provider_state_stat
 
+- name: Require provider state or an explicit execution host for destroy
+  ansible.builtin.assert:
+    that:
+      - ard_provider_state_stat.stat.exists or (ard_libvirt_execution_host | default({}) | length > 0)
+      - ard_libvirt_uri == 'qemu:///system'
+    fail_msg: >-
+      Refusing to guess a libvirt destroy target. Restore provider-state.yaml or
+      configure ard_libvirt_execution_host explicitly. Destroy requires the
+      host-local qemu:///system URI.
+
 - name: Load provider state
-  include_vars:
+  ansible.builtin.include_vars:
     file: "{{ ard_deployment_dir }}/provider-state.yaml"
     name: ard_state
   when: ard_provider_state_stat.stat.exists
 
-- name: Build destroy domain list from state
-  set_fact:
-    ard_destroy_domains: "{{ ard_state.domains | default([]) }}"
-  when: ard_provider_state_stat.stat.exists
+- name: Initialize exact destroy domain list
+  ansible.builtin.set_fact:
+    ard_destroy_domains: >-
+      {{ ard_state.domains | default([])
+         if ard_provider_state_stat.stat.exists else [] }}
+    ard_destroy_domains_from_state: >-
+      {{ ard_provider_state_stat.stat.exists and ard_state.domains | default([]) | length > 0 }}
 
-- name: Build destroy domain list from prefix fallback
-  shell: "virsh --connect {{ ard_libvirt_uri }} list --all --name | awk '/^ard-{{ ard_deployment_name }}-/ { print }'"
-  register: ard_destroy_domain_names
-  changed_when: false
-  when: not ard_provider_state_stat.stat.exists
+- name: Build exact destroy domain list for legacy state
+  ansible.builtin.set_fact:
+    ard_destroy_domains: >-
+      {{ ard_destroy_domains
+         + [{'name': item.provider_resource_name
+                     | default('ard-' + ard_deployment_name + '-' + item.name)}] }}
+  loop: "{{ ard_nodes | default([]) }}"
+  when: not ard_destroy_domains_from_state | bool
 
-- name: Initialize fallback destroy domain list
-  set_fact:
-    ard_destroy_domains: []
-  when: not ard_provider_state_stat.stat.exists
-
-- name: Convert prefix fallback domains to state-like objects
-  set_fact:
-    ard_destroy_domains: "{{ ard_destroy_domains + [{'name': item}] }}"
-  loop: "{{ ard_destroy_domain_names.stdout_lines | default([]) }}"
-  when: not ard_provider_state_stat.stat.exists
-
-- name: Destroy libvirt domains
-  command: "virsh --connect {{ ard_libvirt_uri }} destroy {{ item.name }}"
-  loop: "{{ ard_destroy_domains | default([]) }}"
+- name: Stop libvirt domains
+  ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} destroy {{ item.name }}"
+  loop: "{{ ard_destroy_domains }}"
   register: ard_destroy_domain
   changed_when: ard_destroy_domain.rc == 0
-  failed_when: false
+  failed_when: >-
+    ard_destroy_domain.rc != 0
+    and 'domain is not running' not in (ard_destroy_domain.stderr | lower)
+    and 'no domain with matching name' not in (ard_destroy_domain.stderr | lower)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Undefine libvirt domains and remove storage references
-  command: "virsh --connect {{ ard_libvirt_uri }} undefine {{ item.name }} --nvram --remove-all-storage"
-  loop: "{{ ard_destroy_domains | default([]) }}"
+- name: Undefine libvirt domains
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - undefine
+      - "{{ item.name }}"
+      - --nvram
+  loop: "{{ ard_destroy_domains }}"
   register: ard_undefine_domain
   changed_when: ard_undefine_domain.rc == 0
-  failed_when: false
+  failed_when: >-
+    ard_undefine_domain.rc != 0
+    and 'no domain with matching name' not in (ard_undefine_domain.stderr | lower)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Build destroy network list
-  set_fact:
+- name: Initialize exact destroy network list
+  ansible.builtin.set_fact:
     ard_destroy_networks: >-
-      {{ ard_state.networks | default([{'name': ard_management_network | default('ard-mgmt'), 'libvirt_name': ard_libvirt_network_name}])
-         if ard_provider_state_stat.stat.exists
-         else [{'name': ard_management_network | default('ard-mgmt'), 'libvirt_name': ard_libvirt_network_name}] }}
+      {{ ard_state.networks | default([])
+         if ard_provider_state_stat.stat.exists else [] }}
+    ard_destroy_networks_from_state: >-
+      {{ ard_provider_state_stat.stat.exists and ard_state.networks | default([]) | length > 0 }}
 
-- name: Destroy libvirt networks
-  command: "virsh --connect {{ ard_libvirt_uri }} net-destroy {{ item.libvirt_name }}"
-  loop: "{{ ard_destroy_networks | default([]) }}"
+- name: Build exact destroy network list for legacy state
+  ansible.builtin.set_fact:
+    ard_destroy_networks: >-
+      {{ ard_destroy_networks
+         + [{'name': item.key, 'libvirt_name': item.value.provider.libvirt.name}] }}
+  loop: "{{ ard_networks | default({}) | dict2items }}"
+  when: not ard_destroy_networks_from_state | bool
+
+- name: Fall back to legacy management network
+  ansible.builtin.set_fact:
+    ard_destroy_networks:
+      - name: "{{ ard_management_network | default('ard-mgmt') }}"
+        libvirt_name: "{{ ard_libvirt_network_name }}"
+  when: ard_destroy_networks | length == 0
+
+- name: Stop libvirt networks
+  ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} net-destroy {{ item.libvirt_name }}"
+  loop: "{{ ard_destroy_networks }}"
   register: ard_net_destroy
   changed_when: ard_net_destroy.rc == 0
-  failed_when: false
+  failed_when: >-
+    ard_net_destroy.rc != 0
+    and 'network is not active' not in (ard_net_destroy.stderr | lower)
+    and 'no network with matching name' not in (ard_net_destroy.stderr | lower)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Undefine libvirt networks
-  command: "virsh --connect {{ ard_libvirt_uri }} net-undefine {{ item.libvirt_name }}"
-  loop: "{{ ard_destroy_networks | default([]) }}"
+  ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} net-undefine {{ item.libvirt_name }}"
+  loop: "{{ ard_destroy_networks }}"
   register: ard_net_undefine
   changed_when: ard_net_undefine.rc == 0
-  failed_when: false
+  failed_when: >-
+    ard_net_undefine.rc != 0
+    and 'no network with matching name' not in (ard_net_undefine.stderr | lower)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Remove libvirt deployment image directory
-  file:
-    path: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}"
+- name: Remove libvirt deployment image directory from execution host
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_deployment_image_dir_resolved }}"
     state: absent
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

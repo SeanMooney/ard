@@ -52,8 +52,8 @@
         regexp: "^.*\\s{{ item }}(\\s|$).*$"
         state: absent
       loop: >-
-        {{ (groups['all']
-            + (groups['all'] | map('extract', hostvars, 'ansible_hostname') | list))
+        {{ (groups['ard_provider_nodes']
+            + (groups['ard_provider_nodes'] | map('extract', hostvars, 'ansible_hostname') | list))
            | unique | list }}
 
     - name: get short hostname
@@ -73,8 +73,8 @@
         regexp: "^\\S+\\s+.*\\b{{ item | regex_escape }}\\b.*$"
         state: absent
       loop: >-
-        {{ (groups['all']
-            + (groups['all'] | map('extract', hostvars, 'ansible_hostname') | select('defined') | list)
+        {{ (groups['ard_provider_nodes']
+            + (groups['ard_provider_nodes'] | map('extract', hostvars, 'ansible_hostname') | select('defined') | list)
             + [ansible_hostname, short_hostname.stdout])
            | reject('equalto', '')
            | unique | list }}
@@ -98,7 +98,7 @@
           {% set configured_host_endpoint_key = devstack_hosts_nodepool_key | default(devstack_endpoint_nodepool_key | default('auto')) %}
           {% set has_subnodes = (groups['compute'] | default(groups['subnode'] | default([]))) | length > 0 %}
           {% set host_endpoint_key = ('bridge_ipv4' if has_subnodes else 'private_ipv4') if configured_host_endpoint_key == 'auto' else configured_host_endpoint_key %}
-          {% for host in groups['all'] %}
+          {% for host in groups['ard_provider_nodes'] %}
           {% set aliases = ([hostvars[host]['ansible_hostname'], host, hostvars[host]['ansible_fqdn'] | default('')] | reject('equalto', '') | unique | list) %}
           {{ hostvars[host]['nodepool'][host_endpoint_key] | default(hostvars[host]['nodepool']['private_ipv4'] | default(hostvars[host]['ansible_facts']['default_ipv4']['address'])) }} {{ aliases | join(' ') }}
           {% endfor %}

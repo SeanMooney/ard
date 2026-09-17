@@ -1,0 +1,22 @@
+---
+ard_render_schema_version: 1
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_workload: devstack
+ard_target_branch: master
+ard_topology: all-in-one
+ard_render_image: centos-stream-10
+ard_service_profiles:
+  - devstack
+  - ovn
+  - tempest
+ard_render_overrides:
+  devstack:
+    controller:
+      controller_devstack_plugins:
+        cyborg: https://opendev.org/openstack/cyborg
+      controller_localrc_extra:
+        ENABLE_PCI_SIM: true
+        PCI_SIM_NUM_PFS: 2
+        PCI_SIM_NUM_VFS: 4
+        PCI_SIM_ALLOW_UNSAFE_INTERRUPTS: true

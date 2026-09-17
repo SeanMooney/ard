@@ -1,6 +1,6 @@
 ---
 - name: Apply role devstack_common
-  hosts: all
+  hosts: ard_provider_nodes
   tags: openstack
   environment: "{{ ard_proxy_env | default({}) }}"
   vars:

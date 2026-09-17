@@ -15,7 +15,7 @@
             ansible_host: {{ management_network.ip }}
             ansible_user: stack
             ansible_private_key_file: {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
-            ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            ansible_ssh_common_args: {{ ard_libvirt_guest_ssh_common_args | to_json }}
             ard_deployment_name: {{ ard_deployment_name }}
             ard_provider_resource_name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
             nodepool:
@@ -31,6 +31,11 @@
                 work_root: /tmp/work_root
       {% endfor %}
         children:
+          ard_provider_nodes:
+            hosts:
+      {% for node in ard_nodes %}
+              {{ node.name }}:
+      {% endfor %}
       {% set group_names = [] %}
       {% for node in ard_nodes %}
       {% for group in node.groups %}
@@ -54,7 +59,7 @@
     ansible_host: "{{ ard_inventory_management_network.ip }}"
     ansible_user: stack
     ansible_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    ansible_ssh_common_args: "{{ ard_libvirt_guest_ssh_common_args }}"
     ard_deployment_name: "{{ ard_deployment_name }}"
     ard_provider_resource_name: "{{ item.provider_resource_name | default('ard-' + ard_deployment_name + '-' + item.name) }}"
     nodepool: >-
@@ -83,11 +88,18 @@
       ard_provider: libvirt
       ard_deployment_name: {{ ard_deployment_name }}
       ard_libvirt_uri: {{ ard_libvirt_uri }}
+      ard_libvirt_execution_host: {{ ard_libvirt_execution_host_resolved | to_json }}
       ard_management_network: {{ ard_management_network }}
       ard_libvirt_network_name: {{ ard_libvirt_network_name }}
-      ard_libvirt_image_dir: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}
+      ard_libvirt_image_dir_root: {{ ard_libvirt_image_dir_resolved }}
+      ard_libvirt_image_dir: {{ ard_libvirt_deployment_image_dir_resolved }}
+      ard_libvirt_image_cache_dir: {{ ard_libvirt_cache_dir_resolved }}
+      ard_libvirt_phase: resources_created
       ard_cached_base_image: {{ ard_cached_base_image | default('') }}
       ard_libvirt_base_image: {{ ard_libvirt_base_image | default('') }}
+      {% if ard_networks | length == 0 %}
+      networks: []
+      {% else %}
       networks:
       {% for network_name, network in ard_networks.items() %}
         - name: {{ network_name }}
@@ -100,6 +112,10 @@
           gateway: {{ network.gateway }}
       {% endif %}
       {% endfor %}
+      {% endif %}
+      {% if ard_nodes | length == 0 %}
+      domains: []
+      {% else %}
       domains:
       {% for node in ard_nodes %}
       {% set management_network = (node.networks | selectattr('name', 'equalto', ard_management_network) | list | first) %}
@@ -115,7 +131,9 @@
       {% endif %}
               mac: {{ node_network.mac }}
       {% endfor %}
-          overlay: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}.qcow2
-          seed: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-seed.iso
-          console_log: {{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ node.name }}-console.log
+          overlay: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}.qcow2
+          seed: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-seed.iso
+          console_log: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-console.log
       {% endfor %}
+      {% endif %}
+  when: ard_provider_inventory_write_state | default(true) | bool

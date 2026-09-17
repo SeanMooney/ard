@@ -52,7 +52,10 @@ ard_libvirt_pool: ard
 ard_libvirt_network_cidr: 192.168.96.0/24
 ard_libvirt_network_gateway: "{{ ard_libvirt_network_cidr | regex_replace('\\.0/24$', '.1') }}"
 ard_libvirt_network_name: "ard-{{ ard_deployment_name | default('devstack-1') }}"
+ard_libvirt_execution_host: {}
 ard_libvirt_image_dir: "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}/ard/libvirt/images"
+ard_libvirt_execution_image_dir: ""
+ard_libvirt_execution_image_cache_dir: ""
 ard_libvirt_firmware: efi
 ard_libvirt_secure_boot: false
 

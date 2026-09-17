@@ -1,0 +1,617 @@
+---
+- name: Exercise libvirt execution host state and inventory
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - ard_provider_common
+  vars:
+    ard_deployment_dir: /tmp/ard-libvirt-execution-molecule/local-state
+    ard_deployment_name: local-state-test
+    ard_libvirt_execution_host:
+      name: localhost
+      ansible_connection: local
+    ard_nodes:
+      - name: controller
+        groups:
+          - controller
+        networks:
+          - name: ard-mgmt
+            ip: 192.168.96.10
+            mac: "52:54:00:00:00:10"
+    ard_networks:
+      ard-mgmt:
+        mode: nat
+        cidr: 192.168.96.0/24
+        gateway: 192.168.96.1
+        provider:
+          libvirt:
+            name: ard-local-state-test
+  tasks:
+    - name: Reset execution-host test workspace
+      ansible.builtin.file:
+        path: /tmp/ard-libvirt-execution-molecule
+        state: absent
+
+    - name: Create execution-host test deployment directory
+      ansible.builtin.file:
+        path: "{{ ard_deployment_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write execution-host restore deployment fixture
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/deployment.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: local-state-test
+          ard_management_network: ard-mgmt
+          ard_libvirt_network_name: ard-local-state-test
+          ard_networks:
+            ard-mgmt:
+              mode: nat
+              cidr: 192.168.96.0/24
+              gateway: 192.168.96.1
+              provider:
+                libvirt:
+                  name: ard-local-state-test
+
+    - name: Write execution-host restore node fixture
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/nodes.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_nodes:
+            - name: controller
+              groups:
+                - controller
+              networks:
+                - name: ard-mgmt
+                  ip: 192.168.96.10
+                  mac: "52:54:00:00:00:10"
+
+    - name: Resolve execution host
+      ansible.builtin.include_role:
+        name: ard_libvirt_execution
+
+    - name: Render workload inventory
+      ansible.builtin.include_role:
+        name: ard_libvirt_inventory
+
+- name: Exercise default localhost execution host resolution
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - ard_provider_common
+  vars:
+    ard_deployment_dir: /tmp/ard-libvirt-execution-molecule/local
+    ard_deployment_name: local-test
+    ard_nodes: []
+    ard_networks: {}
+  tasks:
+    - name: Create local execution-host test deployment directory
+      ansible.builtin.file:
+        path: "{{ ard_deployment_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Resolve default local execution host
+      ansible.builtin.include_role:
+        name: ard_libvirt_execution
+
+- name: Exercise execution target mismatch refusal
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - ard_provider_common
+  vars:
+    ard_deployment_dir: /tmp/ard-libvirt-execution-molecule/mismatch
+    ard_deployment_name: mismatch-test
+    ard_libvirt_execution_host:
+      name: changed-host
+      ansible_host: changed.example.test
+  tasks:
+    - name: Create mismatch fixture directory
+      ansible.builtin.file:
+        path: "{{ ard_deployment_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write recorded execution target
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: mismatch-test
+          ard_libvirt_uri: qemu:///system
+          ard_libvirt_execution_host:
+            name: original-host
+            ansible_host: original.example.test
+            ansible_connection: ssh
+          ard_libvirt_image_dir_root: /var/lib/ard/images
+          ard_libvirt_image_dir: /var/lib/ard/images/mismatch-test
+          ard_libvirt_image_cache_dir: /var/cache/ard/images
+
+    - name: Attempt execution target mismatch
+      block:
+        - name: Resolve mismatched execution target
+          ansible.builtin.include_role:
+            name: ard_libvirt_execution
+
+        - name: Fail when target mismatch was accepted
+          ansible.builtin.fail:
+            msg: Execution target mismatch was accepted
+      rescue:
+        - name: Verify target mismatch failure reason
+          ansible.builtin.assert:
+            that:
+              - "'differs from provider-state.yaml' in (ansible_failed_result.msg | default(''))"
+
+        - name: Record expected target mismatch rejection
+          ansible.builtin.copy:
+            dest: /tmp/ard-libvirt-execution-molecule/mismatch.expected
+            mode: "0644"
+            content: expected target mismatch rejection\n
+- name: Exercise generated SSH proxy argument handling
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _proxy_config:
+      name: jump-alias
+      ansible_host: hypervisor.example.test
+      ansible_user: virt-user
+      ansible_port: 2222
+      ansible_private_key_file: /tmp/key with space
+      ansible_ssh_common_args: "-o ProxyCommand=\"helper --label ''' --target %h:%p\""
+  tasks:
+    - name: Generate proxy fixture
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/proxy-fixture
+        mode: "0755"
+        content: >-
+          {{ lookup('ansible.builtin.file',
+                    lookup('env', 'MOLECULE_PROJECT_DIRECTORY') + '/files/ard-libvirt-proxy')
+             | replace('__ARD_LIBVIRT_PROXY_CONFIG_B64__',
+                       (_proxy_config | to_json | b64encode)) }}
+
+    - name: Print proxy fixture command
+      ansible.builtin.command:
+        argv:
+          - /tmp/ard-libvirt-execution-molecule/proxy-fixture
+          - 192.168.96.10
+          - "22"
+          - --print
+      register: _proxy_fixture_command
+      changed_when: false
+
+    - name: Save proxy fixture command
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/proxy-command.txt
+        mode: "0644"
+        content: "{{ _proxy_fixture_command.stdout }}\n"
+
+- name: Exercise both cloud-init seed tools
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    PATH: "/tmp/ard-libvirt-execution-molecule/seed-bin:{{ lookup('env', 'PATH') }}"
+  vars:
+    ard_libvirt_execution_host_name: localhost
+    ard_node_render_dir: /tmp/ard-libvirt-execution-molecule/seed-input
+    ard_node_remote_render_dir: /tmp/ard-libvirt-execution-molecule/seed-remote
+  tasks:
+    - name: Create seed test directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /tmp/ard-libvirt-execution-molecule/seed-bin
+        - "{{ ard_node_render_dir }}"
+        - "{{ ard_node_remote_render_dir }}"
+
+    - name: Render minimal libvirt cloud-init user-data
+      ansible.builtin.template:
+        src: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/../ard_libvirt_node/templates/user-data.yml.j2"
+        dest: "{{ ard_node_render_dir }}/user-data"
+        mode: "0644"
+      vars:
+        ard_node:
+          name: controller
+        ard_stack_public_key: ssh-ed25519 test-key
+
+    - name: Create remaining seed test inputs
+      ansible.builtin.copy:
+        dest: "{{ ard_node_render_dir }}/{{ item }}"
+        mode: "0644"
+        content: "{{ item }}\n"
+      loop:
+        - meta-data
+        - network-config
+
+    - name: Install fake cloud-localds
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/seed-bin/cloud-localds
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          for arg in "$@"; do
+            case "$arg" in
+              *.tmp) printf '%s\n' cloud-localds > "$arg"; exit 0 ;;
+            esac
+          done
+          exit 2
+
+    - name: Install fake genisoimage
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/seed-bin/genisoimage
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          while [ "$#" -gt 1 ]; do
+            if [ "$1" = -output ]; then
+              printf '%s\n' genisoimage > "$2"
+              exit 0
+            fi
+            shift
+          done
+          exit 2
+
+    - name: Generate seed with each supported tool
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/seed.yml
+      vars:
+        ard_libvirt_seed_tool: "{{ seed_tool }}"
+        ard_node_seed: "/tmp/ard-libvirt-execution-molecule/{{ seed_tool }}.iso"
+      loop:
+        - cloud-localds
+        - genisoimage
+      loop_control:
+        loop_var: seed_tool
+
+- name: Exercise libvirt disk lifecycle safeguards
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    PATH: "/tmp/ard-libvirt-execution-molecule/disk-bin:{{ lookup('env', 'PATH') }}"
+  vars:
+    ard_libvirt_execution_host_name: localhost
+    ard_libvirt_uri: qemu:///system
+    ard_node_resource_name: ard-disk-test
+    ard_node_cached_base_image: /tmp/ard-libvirt-execution-molecule/base.qcow2
+    ard_node_overlay: /tmp/ard-libvirt-execution-molecule/disk.qcow2
+    ard_node_root_disk_gb: 2
+  tasks:
+    - name: Create disk lifecycle test directories
+      ansible.builtin.file:
+        path: /tmp/ard-libvirt-execution-molecule/disk-bin
+        state: directory
+        mode: "0755"
+
+    - name: Create interrupted-resize recovery fixture
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        mode: "0644"
+        content: fixture
+      loop:
+        - "{{ ard_node_cached_base_image }}"
+        - "{{ ard_node_overlay }}"
+
+    - name: Install fake qemu-img command
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/disk-bin/qemu-img
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          case "$1" in
+            convert)
+              for arg in "$@"; do output=$arg; done
+              printf converted > "$output"
+              ;;
+            info)
+              printf '%s\n' '{"virtual-size": 1073741824}'
+              ;;
+            resize)
+              printf '%s\n' "$*" >> /tmp/ard-libvirt-execution-molecule/qemu-img.log
+              ;;
+            *) exit 2 ;;
+          esac
+
+    - name: Install fake virsh command for disk lifecycle tests
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/disk-bin/virsh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          mode=$(cat /tmp/ard-libvirt-execution-molecule/disk-mode)
+          case "$*" in
+            *dominfo*)
+              case "$mode" in
+                missing)
+                  echo "error: failed to get domain 'ard-disk-test'" >&2
+                  exit 1
+                  ;;
+                connection)
+                  echo 'error: failed to connect to the hypervisor' >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+            *domblkinfo*)
+              if [ "$mode" = malformed ]; then
+                echo 'Capacity: unknown'
+              else
+                echo 'Capacity:       1073741824'
+                echo 'Allocation:     1048576'
+                echo 'Physical:       1048576'
+              fi
+              ;;
+            *domstate*) printf '%s\n' "$mode" ;;
+          esac
+
+    - name: Select missing-domain recovery scenario
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/disk-mode
+        mode: "0644"
+        content: "missing\n"
+
+    - name: Recover resize after an interrupted apply
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/disk.yml
+
+    - name: Read recovery qemu-img calls
+      ansible.builtin.slurp:
+        src: /tmp/ard-libvirt-execution-molecule/qemu-img.log
+      register: _disk_recovery_log
+
+    - name: Verify interrupted resize was recovered
+      ansible.builtin.assert:
+        that:
+          - "'resize /tmp/ard-libvirt-execution-molecule/disk.qcow2 2G' in (_disk_recovery_log.content | b64decode)"
+
+    - name: Remove disk to exercise atomic conversion
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ ard_node_overlay }}"
+        - "{{ ard_node_overlay }}.tmp"
+
+    - name: Create and resize disk atomically
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/disk.yml
+
+    - name: Check atomic disk conversion outputs
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ ard_node_overlay }}"
+        - "{{ ard_node_overlay }}.tmp"
+      register: _atomic_disk_outputs
+
+    - name: Verify atomic disk conversion outputs
+      ansible.builtin.assert:
+        that:
+          - _atomic_disk_outputs.results[0].stat.exists
+          - not _atomic_disk_outputs.results[1].stat.exists
+
+    - name: Select running-domain reapply scenario
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/disk-mode
+        mode: "0644"
+        content: "running\n"
+
+    - name: Reapply unchanged capacity to a running domain
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/disk.yml
+      vars:
+        ard_node_root_disk_gb: 1
+
+    - name: Read qemu-img calls after running-domain reapply
+      ansible.builtin.slurp:
+        src: /tmp/ard-libvirt-execution-molecule/qemu-img.log
+      register: _running_reapply_log
+
+    - name: Verify running-domain reapply did not resize
+      ansible.builtin.assert:
+        that:
+          - (_running_reapply_log.content | b64decode).splitlines() | length == 2
+
+    - name: Exercise rejected disk lifecycle scenarios
+      ansible.builtin.include_tasks: disk-failure.yml
+      loop:
+        - mode: running
+          expected: Shut off ard-disk-test
+        - mode: paused
+          expected: Shut off ard-disk-test
+        - mode: malformed
+          expected: Could not parse the disk capacity
+        - mode: connection
+          expected: Could not determine whether domain ard-disk-test exists
+      loop_control:
+        loop_var: disk_failure
+        label: "{{ disk_failure.mode }}"
+
+- name: Exercise destroy recovery after partial apply
+  hosts: localhost
+  gather_facts: false
+  environment:
+    PATH: "/tmp/ard-libvirt-execution-molecule/fake-bin:{{ lookup('env', 'PATH') }}"
+  roles:
+    - ard_provider_common
+  vars:
+    ard_deployment_dir: /tmp/ard-libvirt-execution-molecule/partial
+  tasks:
+    - name: Create partial-apply fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ ard_deployment_dir }}"
+        - /tmp/ard-libvirt-execution-molecule/fake-bin
+        - /tmp/ard-libvirt-execution-molecule/partial-runtime/partial-test
+
+    - name: Install fake virsh command
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/fake-bin/virsh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          echo "$*" >> /tmp/ard-libvirt-execution-molecule/virsh.log
+          case "$*" in
+            *"list --all --name"*)
+              printf '%s\n' ard-partial-test-controller ard-partial-test-compute-1
+              ;;
+          esac
+
+    - name: Write partial deployment configuration
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/deployment.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: partial-test
+          ard_libvirt_network_name: ard-partial-test
+          ard_networks:
+            ard-mgmt:
+              provider:
+                libvirt:
+                  name: ard-partial-test
+            datacenter:
+              provider:
+                libvirt:
+                  name: ard-partial-test-datacenter
+
+    - name: Write partial provider state
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: partial-test
+          ard_libvirt_uri: qemu:///system
+          ard_libvirt_execution_host:
+            name: localhost
+            ansible_host: localhost
+            ansible_connection: local
+          ard_libvirt_image_dir_root: /tmp/ard-libvirt-execution-molecule/partial-runtime
+          ard_libvirt_image_dir: /tmp/ard-libvirt-execution-molecule/partial-runtime/partial-test
+          ard_libvirt_image_cache_dir: /tmp/ard-libvirt-execution-molecule/cache
+          ard_libvirt_phase: planned
+          domains:
+            - name: custom-prefix-controller
+            - name: custom-prefix-compute-1
+          networks:
+            - name: ard-mgmt
+              libvirt_name: custom-network
+            - name: datacenter
+              libvirt_name: custom-network-datacenter
+
+    - name: Destroy resources recorded after partial apply
+      ansible.builtin.include_role:
+        name: ard_provider_destroy
+
+- name: Exercise fail-closed destroy behavior
+  hosts: localhost
+  gather_facts: false
+  environment:
+    PATH: "/tmp/ard-libvirt-execution-molecule/fail-bin:{{ lookup('env', 'PATH') }}"
+  roles:
+    - ard_provider_common
+  vars:
+    ard_deployment_dir: /tmp/ard-libvirt-execution-molecule/fail-destroy
+  tasks:
+    - name: Create failed-destroy fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ ard_deployment_dir }}"
+        - /tmp/ard-libvirt-execution-molecule/fail-bin
+        - /tmp/ard-libvirt-execution-molecule/fail-runtime/fail-test
+
+    - name: Install failing virsh command
+      ansible.builtin.copy:
+        dest: /tmp/ard-libvirt-execution-molecule/fail-bin/virsh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          case "$*" in
+            *"undefine fail-prefix-controller"*)
+              echo "simulated storage teardown failure" >&2
+              exit 9
+              ;;
+          esac
+          exit 0
+
+    - name: Write failed-destroy deployment configuration
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/deployment.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: fail-test
+          ard_libvirt_network_name: fail-network
+          ard_networks: {}
+
+    - name: Write failed-destroy provider state
+      ansible.builtin.copy:
+        dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+        mode: "0644"
+        content: |
+          ---
+          ard_provider: libvirt
+          ard_deployment_name: fail-test
+          ard_libvirt_uri: qemu:///system
+          ard_libvirt_execution_host:
+            name: localhost
+            ansible_host: localhost
+            ansible_connection: local
+          ard_libvirt_image_dir_root: /tmp/ard-libvirt-execution-molecule/fail-runtime
+          ard_libvirt_image_dir: /tmp/ard-libvirt-execution-molecule/fail-runtime/fail-test
+          ard_libvirt_image_cache_dir: /tmp/ard-libvirt-execution-molecule/cache
+          ard_libvirt_phase: planned
+          domains:
+            - name: fail-prefix-controller
+          networks: []
+
+    - name: Attempt failed destroy
+      block:
+        - name: Run destroy expected to fail
+          ansible.builtin.include_role:
+            name: ard_provider_destroy
+
+        - name: Fail when destructive error was ignored
+          ansible.builtin.fail:
+            msg: Destroy unexpectedly ignored a virsh undefine failure
+      rescue:
+        - name: Verify destructive failure reason
+          ansible.builtin.assert:
+            that:
+              - >-
+                'simulated storage teardown failure'
+                in (ansible_failed_result.results | default([]) | to_json)
+
+        - name: Record expected destroy failure
+          ansible.builtin.copy:
+            dest: /tmp/ard-libvirt-execution-molecule/fail-destroy.expected
+            mode: "0644"
+            content: expected destroy failure\n
+    - name: Check runtime data remains after destroy failure
+      ansible.builtin.stat:
+        path: /tmp/ard-libvirt-execution-molecule/fail-runtime/fail-test
+      register: _failed_destroy_runtime
+
+    - name: Require failed destroy to preserve runtime data
+      ansible.builtin.assert:
+        that:
+          - _failed_destroy_runtime.stat.exists

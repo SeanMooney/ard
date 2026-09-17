@@ -7,6 +7,15 @@
   include_vars:
     file: "{{ ard_deployment_dir }}/nodes.yaml"
 
+- name: Restore libvirt execution host for inventory generation
+  ansible.builtin.include_role:
+    name: ard_libvirt_execution
+  vars:
+    ard_libvirt_execution_persist_state: false
+  when:
+    - ard_provider == 'libvirt'
+    - ard_libvirt_guest_ssh_common_args is not defined
+
 - name: Run provider inventory handling
   include_role:
     name: "ard_{{ ard_provider }}_inventory"

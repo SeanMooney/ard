@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Proxy an SSH stream through an ARD libvirt execution host."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shlex
+
+
+CONFIG = json.loads(base64.b64decode("__ARD_LIBVIRT_PROXY_CONFIG_B64__"))
+
+
+def build_command(host: str, port: str) -> list[str]:
+    command = ["ssh"]
+    common_args = CONFIG.get("ansible_ssh_common_args")
+    if common_args:
+        command.extend(shlex.split(str(common_args)))
+
+    key_file = CONFIG.get("ansible_private_key_file")
+    if key_file:
+        command.extend(["-i", os.path.expanduser(str(key_file))])
+
+    execution_port = CONFIG.get("ansible_port")
+    if execution_port:
+        command.extend(["-p", str(execution_port)])
+
+    command.extend(["-W", f"{host}:{port}"])
+    endpoint = str(CONFIG.get("ansible_host") or CONFIG["name"])
+    user = CONFIG.get("ansible_user")
+    command.append(f"{user}@{endpoint}" if user else endpoint)
+    return command
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("host")
+    parser.add_argument("port")
+    parser.add_argument("--print", action="store_true")
+    args = parser.parse_args()
+    command = build_command(args.host, args.port)
+    if args.print:
+        print(shlex.join(command))
+        return
+    os.execvp(command[0], command)
+
+
+if __name__ == "__main__":
+    main()

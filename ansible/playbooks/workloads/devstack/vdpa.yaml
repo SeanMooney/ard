@@ -1,5 +1,5 @@
 ---
 - name: Apply role configure_vdpa
-  hosts: all
+  hosts: ard_provider_nodes
   roles:
     - configure_vdpa

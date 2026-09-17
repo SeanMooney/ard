@@ -1,0 +1,169 @@
+---
+- name: Check whether libvirt domain exists
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - dominfo
+      - "{{ ard_node_resource_name }}"
+  environment:
+    LC_ALL: C
+  register: ard_libvirt_domain_info
+  changed_when: false
+  failed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Reject unexpected libvirt domain lookup failures
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_libvirt_domain_info.rc == 0 or
+        'failed to get domain' in (ard_libvirt_domain_info.stderr | lower) or
+        'domain not found' in (ard_libvirt_domain_info.stderr | lower)
+    fail_msg: >-
+      Could not determine whether domain {{ ard_node_resource_name }} exists:
+      {{ ard_libvirt_domain_info.stderr | default('unknown virsh error') }}
+
+- name: Check node qcow2 disk
+  ansible.builtin.stat:
+    path: "{{ ard_node_overlay }}"
+  register: ard_node_overlay_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require recorded storage for an existing domain
+  ansible.builtin.assert:
+    that:
+      - ard_libvirt_domain_info.rc != 0 or ard_node_overlay_stat.stat.exists
+    fail_msg: >-
+      Domain {{ ard_node_resource_name }} exists but its recorded disk
+      {{ ard_node_overlay }} is missing. Refusing to replace attached storage.
+
+- name: Create node qcow2 disk atomically from cached base image
+  ansible.builtin.shell: |
+    set -eu
+    disk_tmp={{ (ard_node_overlay + '.tmp') | quote }}
+    rm -f "$disk_tmp"
+    qemu-img convert -O qcow2 {{ ard_node_cached_base_image | quote }} "$disk_tmp"
+    mv "$disk_tmp" {{ ard_node_overlay | quote }}
+  args:
+    executable: /bin/sh
+    creates: "{{ ard_node_overlay }}"
+  register: ard_node_disk_create
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Ensure new node qcow2 disk is writable before resize
+  ansible.builtin.file:
+    path: "{{ ard_node_overlay }}"
+    mode: "0644"
+  when: ard_node_disk_create.changed
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read undefined node disk capacity
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - info
+      - --output=json
+      - "{{ ard_node_overlay }}"
+  register: ard_node_qemu_img_info
+  changed_when: false
+  when: ard_libvirt_domain_info.rc != 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read defined node disk capacity
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - domblkinfo
+      - "{{ ard_node_resource_name }}"
+      - "{{ ard_node_overlay }}"
+  environment:
+    LC_ALL: C
+  register: ard_node_domblkinfo
+  changed_when: false
+  when: ard_libvirt_domain_info.rc == 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read defined node domain state
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - domstate
+      - "{{ ard_node_resource_name }}"
+  environment:
+    LC_ALL: C
+  register: ard_node_domain_state
+  changed_when: false
+  when: ard_libvirt_domain_info.rc == 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Parse defined node disk capacity
+  ansible.builtin.set_fact:
+    ard_node_domblk_capacity_matches: >-
+      {{ ard_node_domblkinfo.stdout | regex_findall('(?m)^Capacity:\s*([0-9]+)\s*$') }}
+  when: ard_libvirt_domain_info.rc == 0
+
+- name: Require a parseable defined node disk capacity
+  ansible.builtin.assert:
+    that:
+      - ard_node_domblk_capacity_matches | length == 1
+    fail_msg: >-
+      Could not parse the disk capacity for {{ ard_node_resource_name }} from:
+      {{ ard_node_domblkinfo.stdout | default('') }}
+  when: ard_libvirt_domain_info.rc == 0
+
+- name: Resolve node disk capacities
+  ansible.builtin.set_fact:
+    ard_node_disk_capacity_bytes: >-
+      {{
+        ((ard_node_qemu_img_info.stdout | from_json)['virtual-size'] | int)
+        if ard_libvirt_domain_info.rc != 0
+        else (ard_node_domblk_capacity_matches[0] | int)
+      }}
+    ard_node_requested_capacity_bytes: "{{ (ard_node_root_disk_gb | int) * 1024 * 1024 * 1024 }}"
+
+- name: Require positive node disk capacities
+  ansible.builtin.assert:
+    that:
+      - ard_node_disk_capacity_bytes | int > 0
+      - ard_node_requested_capacity_bytes | int > 0
+    fail_msg: >-
+      Invalid node disk capacity: current={{ ard_node_disk_capacity_bytes }},
+      requested={{ ard_node_requested_capacity_bytes }}.
+
+- name: Reject unsafe node disk shrink
+  ansible.builtin.assert:
+    that:
+      - ard_node_disk_capacity_bytes | int <= ard_node_requested_capacity_bytes | int
+    fail_msg: >-
+      Refusing to shrink {{ ard_node_overlay }} from
+      {{ ard_node_disk_capacity_bytes }} bytes to
+      {{ ard_node_requested_capacity_bytes }} bytes.
+
+- name: Require a shut-off domain before node disk growth
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_libvirt_domain_info.rc != 0 or
+        (ard_node_disk_capacity_bytes | int) >= (ard_node_requested_capacity_bytes | int) or
+        (ard_node_domain_state.stdout | trim) == 'shut off'
+    fail_msg: >-
+      Shut off {{ ard_node_resource_name }} before growing {{ ard_node_overlay }}
+      from {{ ard_node_disk_capacity_bytes }} bytes to
+      {{ ard_node_requested_capacity_bytes }} bytes. Current domain state:
+      {{ ard_node_domain_state.stdout | default('unknown') | trim }}.
+
+- name: Grow node qcow2 disk
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - resize
+      - "{{ ard_node_overlay }}"
+      - "{{ ard_node_root_disk_gb }}G"
+  when: ard_node_disk_capacity_bytes | int < ard_node_requested_capacity_bytes | int
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

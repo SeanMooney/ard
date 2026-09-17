@@ -99,20 +99,9 @@ spec:
               users:
                 - default
                 - name: stack
-                  gecos: ARD Stack User
                   shell: /bin/bash
                   sudo: ALL=(ALL) NOPASSWD:ALL
-                  groups: sudo
-                  lock_passwd: false
+                  lock_passwd: true
                   ssh_authorized_keys:
                     - {{ ard_stack_public_key }}
-              chpasswd:
-                expire: false
-                users:
-                  - name: stack
-                    password: {{ stack_user_password | default('tester') }}
-                    type: text
-              ssh_pwauth: true
-              runcmd:
-                - [hostnamectl, set-hostname, {{ _node_hostname }}]
           name: cloudinitdisk

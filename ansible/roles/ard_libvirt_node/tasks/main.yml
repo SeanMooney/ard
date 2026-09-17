@@ -1,9 +1,10 @@
 ---
-- name: Ensure libvirt deployment directory exists
-  file:
-    path: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}"
+- name: Ensure libvirt deployment directory exists on execution host
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_deployment_image_dir_resolved }}"
     state: directory
     mode: "0755"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Create libvirt node resources
   include_tasks: node.yml

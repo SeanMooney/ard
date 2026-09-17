@@ -1,0 +1,20 @@
+---
+- name: Set fake libvirt disk scenario
+  ansible.builtin.copy:
+    dest: /tmp/ard-libvirt-execution-molecule/disk-mode
+    mode: "0644"
+    content: "{{ disk_failure.mode }}\n"
+
+- name: Exercise rejected libvirt disk scenario
+  block:
+    - name: Run disk preparation expected to fail
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/disk.yml
+
+    - name: Fail when unsafe disk scenario was accepted
+      ansible.builtin.fail:
+        msg: "Disk scenario {{ disk_failure.mode }} was unexpectedly accepted"
+  rescue:
+    - name: Verify disk failure reason
+      ansible.builtin.assert:
+        that:
+          - disk_failure.expected in (ansible_failed_result.msg | default(''))

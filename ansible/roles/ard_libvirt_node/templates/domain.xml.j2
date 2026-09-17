@@ -39,7 +39,7 @@
   <on_reboot>restart</on_reboot>
   <on_crash>destroy</on_crash>
   <devices>
-    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <emulator>{{ ard_libvirt_emulator }}</emulator>
 {% if ard_node_root_disk_bus == 'scsi' %}
     <controller type='scsi' index='0' model='virtio-scsi'>
 {% if ard_node_flavor.iothreads is defined %}

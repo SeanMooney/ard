@@ -12,10 +12,10 @@
     ard_node_ip: "{{ (ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first).ip }}"
     ard_node_mac: "{{ (ard_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first).mac }}"
     ard_node_render_dir: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}"
-    ard_node_overlay: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}.qcow2"
-    ard_node_seed_local: "{{ ard_deployment_dir }}/rendered/libvirt/{{ ard_node.name }}/{{ ard_node.name }}-seed.iso"
-    ard_node_seed: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-seed.iso"
-    ard_node_console_log: "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}/{{ ard_node.name }}-console.log"
+    ard_node_remote_render_dir: "{{ ard_libvirt_remote_render_dir }}/{{ ard_node.name }}"
+    ard_node_overlay: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}.qcow2"
+    ard_node_seed: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}-seed.iso"
+    ard_node_console_log: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}-console.log"
 
 - name: Ensure rendered node directory exists
   file:
@@ -23,88 +23,18 @@
     state: directory
     mode: "0755"
 
+- name: Ensure remote rendered node directory exists
+  ansible.builtin.file:
+    path: "{{ ard_node_remote_render_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
 - name: Render cloud-init user-data
-  copy:
+  ansible.builtin.template:
+    src: user-data.yml.j2
     dest: "{{ ard_node_render_dir }}/user-data"
     mode: "0644"
-    content: |
-      #cloud-config
-      hostname: {{ ard_node.hostname | default(ard_node.name) }}
-      manage_etc_hosts: {{ ard_node.manage_etc_hosts | default(false) | bool | lower }}
-      ssh_authorized_keys:
-        - {{ ard_stack_public_key }}
-      users:
-        - default
-        - name: stack
-          gecos: ARD Stack User
-          shell: /bin/bash
-          sudo: ALL=(ALL) NOPASSWD:ALL
-          groups: sudo
-          lock_passwd: false
-          ssh_authorized_keys:
-            - {{ ard_stack_public_key }}
-      chpasswd:
-        expire: false
-        users:
-          - name: stack
-            password: {{ stack_user_password | default('tester') }}
-            type: text
-      write_files:
-        - path: /etc/default/grub.d/99-ard-serial-console.cfg
-          owner: root:root
-          permissions: '0644'
-          content: |
-            GRUB_TERMINAL="serial console"
-            GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
-            GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT console=tty0 console=ttyS0,115200n8"
-        - path: /etc/systemd/system/serial-getty@ttyS0.service.d/ard-autolog.conf
-          owner: root:root
-          permissions: '0644'
-          content: |
-            [Service]
-            TTYVTDisallocate=no
-        - path: /etc/ssh/sshd_config.d/90-ard-password-auth.conf
-          owner: root:root
-          permissions: '0644'
-          content: |
-            PasswordAuthentication yes
-            KbdInteractiveAuthentication yes
-            Banner /etc/issue.net
-        - path: /etc/issue
-          owner: root:root
-          permissions: '0644'
-          content: |
-            ARD DevStack VM
-            Login user: stack
-            Password fallback: tester
-            SSH key auth is preferred; the ARD stack key is installed for the default cloud user and stack.
-
-        - path: /etc/issue.net
-          owner: root:root
-          permissions: '0644'
-          content: |
-            ARD DevStack VM
-            Login user: stack
-            Password fallback: tester
-            SSH key auth is preferred.
-
-        - path: /etc/motd
-          owner: root:root
-          permissions: '0644'
-          content: |
-            ARD DevStack VM
-            Login user: stack
-            Password fallback: tester
-            SSH key auth is preferred; the ARD stack key is installed for the default cloud user and stack.
-      bootcmd:
-        - [ sh, -c, 'echo "ARD cloud-init bootcmd on $(hostname)" > /dev/ttyS0 || true' ]
-      runcmd:
-        - [ systemctl, daemon-reload ]
-        - [ systemctl, enable, --now, serial-getty@ttyS0.service ]
-        - [ sh, -c, 'systemctl restart ssh.service || systemctl restart sshd.service || true' ]
-        - [ sh, -c, 'update-grub || grub2-mkconfig -o /boot/grub2/grub.cfg || true' ]
-        - [ sh, -c, 'echo "ARD cloud-init runcmd complete on $(hostname)" > /dev/ttyS0 || true' ]
-      ssh_pwauth: true
 
 - name: Render cloud-init meta-data
   copy:
@@ -145,16 +75,8 @@
       {% endif %}
       {% endfor %}
 
-- name: Create cloud-init seed ISO locally
-  command: "cloud-localds --network-config={{ ard_node_render_dir }}/network-config {{ ard_node_seed_local }} {{ ard_node_render_dir }}/user-data {{ ard_node_render_dir }}/meta-data"
-  changed_when: true
-
-- name: Copy cloud-init seed ISO into libvirt image directory
-  copy:
-    src: "{{ ard_node_seed_local }}"
-    dest: "{{ ard_node_seed }}"
-    mode: "0644"
-    remote_src: true
+- name: Create cloud-init seed media
+  ansible.builtin.include_tasks: seed.yml
 
 - name: Set per-node cached base image path
   set_fact:
@@ -164,6 +86,7 @@
   ansible.builtin.stat:
     path: "{{ ard_node_cached_base_image }}"
   register: ard_node_cached_base_image_pre_download_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Download per-node base cloud image when missing
   ansible.builtin.get_url:
@@ -174,11 +97,13 @@
   when:
     - ard_image_download | default(true) | bool
     - not ard_node_cached_base_image_pre_download_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Ensure per-node cached base image exists
   ansible.builtin.stat:
     path: "{{ ard_node_cached_base_image }}"
   register: ard_node_cached_base_image_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Fail when per-node cached base image is unavailable
   assert:
@@ -186,64 +111,76 @@
       - ard_node_cached_base_image_stat.stat.exists
     fail_msg: "Cached image {{ ard_node_cached_base_image }} for node {{ ard_node_name }} is missing and ard_image_download is disabled or failed."
 
-- name: Create node qcow2 disk from per-node cached base image
-  command: >-
-    qemu-img convert -O qcow2
-    {{ ard_node_cached_base_image }}
-    {{ ard_node_overlay }}
-  args:
-    creates: "{{ ard_node_overlay }}"
-
-- name: Ensure node qcow2 disk is writable before resize
-  file:
-    path: "{{ ard_node_overlay }}"
-    mode: "0644"
-
-- name: Resize node qcow2 disk
-  command: "qemu-img resize {{ ard_node_overlay }} {{ ard_node_root_disk_gb }}G"
-  register: ard_node_disk_resize
-  changed_when: ard_node_disk_resize.rc == 0
-  failed_when: ard_node_disk_resize.rc != 0 and ('Image is already larger' not in (ard_node_disk_resize.stderr | default('')))
+- name: Prepare node qcow2 disk
+  ansible.builtin.include_tasks: disk.yml
 
 - name: Ensure node console log exists
-  file:
+  ansible.builtin.file:
     path: "{{ ard_node_console_log }}"
     state: touch
     mode: "0664"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Grant libvirt-qemu access to node storage
-  command: "setfacl -m u:libvirt-qemu:rx {{ item }}"
-  register: ard_node_storage_acl
+- name: Grant libvirt-qemu write access to node disk
+  ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:rw {{ ard_node_overlay }}"
+  register: ard_node_disk_acl
   changed_when: false
   failed_when: false
-  loop:
-    - "{{ ard_node_overlay }}"
-    - "{{ ard_node_seed }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Fall back to world-readable node storage when file ACLs are unsupported
-  file:
-    path: "{{ item.item }}"
-    mode: "0644"
-  when: item.rc != 0
-  loop: "{{ ard_node_storage_acl.results }}"
-
-- name: Grant libvirt-qemu write access to node console log
-  command: "setfacl -m u:libvirt-qemu:rw {{ ard_node_console_log }}"
-  register: ard_node_console_acl
+- name: Grant libvirt-qemu read access to node seed
+  ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:r {{ ard_node_seed }}"
+  register: ard_node_seed_acl
   changed_when: false
   failed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Fall back to world-writable node console log when file ACLs are unsupported
-  file:
-    path: "{{ ard_node_console_log }}"
-    mode: "0666"
-  when: ard_node_console_acl.rc != 0
+- name: Fall back to QEMU-owned node disk when file ACLs are unsupported
+  ansible.builtin.file:
+    path: "{{ ard_node_overlay }}"
+    owner: "{{ ard_libvirt_qemu_user }}"
+    mode: "0600"
+  when: ard_node_disk_acl.rc != 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Check whether libvirt domain exists
-  command: "virsh --connect {{ ard_libvirt_uri }} dominfo {{ ard_node_resource_name }}"
-  register: ard_libvirt_domain_info
+- name: Fall back to QEMU-owned node seed when file ACLs are unsupported
+  ansible.builtin.file:
+    path: "{{ ard_node_seed }}"
+    owner: "{{ ard_libvirt_qemu_user }}"
+    mode: "0400"
+  when: ard_node_seed_acl.rc != 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Check whether SELinux is enabled on execution host
+  ansible.builtin.command: selinuxenabled
+  register: ard_node_selinux_enabled
   changed_when: false
   failed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read node console log SELinux context
+  ansible.builtin.command:
+    argv:
+      - stat
+      - -c
+      - '%C'
+      - "{{ ard_node_console_log }}"
+  register: ard_node_console_selinux_context
+  changed_when: false
+  when: ard_node_selinux_enabled.rc == 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Label node console log for virtlogd
+  ansible.builtin.command:
+    argv:
+      - chcon
+      - -t
+      - virt_log_t
+      - "{{ ard_node_console_log }}"
+  when:
+    - ard_node_selinux_enabled.rc == 0
+    - "'virt_log_t' not in ard_node_console_selinux_context.stdout"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Render libvirt domain XML
   template:
@@ -251,12 +188,27 @@
     dest: "{{ ard_node_render_dir }}/domain.xml"
     mode: "0644"
 
+- name: Copy rendered domain XML to libvirt execution host
+  ansible.builtin.copy:
+    src: "{{ ard_node_render_dir }}/domain.xml"
+    dest: "{{ ard_node_remote_render_dir }}/domain.xml"
+    mode: "0644"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
 - name: Define libvirt domain from rendered XML
-  command: "virsh --connect {{ ard_libvirt_uri }} define {{ ard_node_render_dir }}/domain.xml"
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - define
+      - "{{ ard_node_remote_render_dir }}/domain.xml"
   when: ard_libvirt_domain_info.rc != 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Start libvirt domain
   command: "virsh --connect {{ ard_libvirt_uri }} start {{ ard_node_resource_name }}"
   register: ard_libvirt_domain_start
   changed_when: ard_libvirt_domain_start.rc == 0
   failed_when: ard_libvirt_domain_start.rc != 0 and ('already active' not in (ard_libvirt_domain_start.stderr | default('')))
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

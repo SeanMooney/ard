@@ -6,7 +6,7 @@
 # It is provider/network infrastructure, not DevStack-specific logic.
 
 - name: Prepare multinode host connectivity helpers
-  hosts: all
+  hosts: ard_provider_nodes
   gather_facts: true
   vars:
     ard_multinode_active: >-
@@ -36,7 +36,7 @@
       when: ard_multinode_active | bool
 
 - name: Copy build ssh key for multinode access
-  hosts: all
+  hosts: ard_provider_nodes
   gather_facts: false
   become: true
   vars:

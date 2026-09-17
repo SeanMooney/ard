@@ -41,6 +41,32 @@
     # ------------------------------------------------------------------
     # Filesystem artifacts
     # ------------------------------------------------------------------
+    - name: Render workload inventory fixture
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../templates/inventory.yaml.j2"
+        dest: /tmp/ard-kubevirt-inventory-test.yaml
+        mode: "0644"
+      vars:
+        _controller_node: "{{ ard_nodes | selectattr('groups', 'contains', 'controller') | list | first }}"
+        _controller_lb_ip: 192.0.2.10
+        _node_ips:
+          controller: 10.0.0.10
+          compute-1: 10.0.0.11
+        _datacenter_ips: {}
+
+    - name: Read generated workload inventory
+      ansible.builtin.slurp:
+        src: /tmp/ard-kubevirt-inventory-test.yaml
+      register: _inventory_raw
+
+    - name: Verify generated workload inventory group
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_inventory_raw.content | b64decode | from_yaml)
+            .all.children.ard_provider_nodes.hosts.keys() | sort
+            == ['compute-1', 'controller']
+
     - name: Check rendered kubevirt directory exists
       ansible.builtin.stat:
         path: "{{ ard_deployment_dir }}/rendered/kubevirt"

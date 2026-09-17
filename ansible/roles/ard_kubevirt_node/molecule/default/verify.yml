@@ -217,11 +217,15 @@
           - "'ssh_authorized_keys' in _controller_cloudinit"
         fail_msg: "Controller cloud-init userData missing stack user config"
 
-    - name: Verify controller cloud-init contains ssh_pwauth
+    - name: Verify controller cloud-init is limited to Ansible bootstrap
       ansible.builtin.assert:
         that:
-          - "'ssh_pwauth' in _controller_cloudinit"
-        fail_msg: "Controller cloud-init userData missing ssh_pwauth"
+          - "'lock_passwd: true' in _controller_cloudinit"
+          - "'chpasswd:' not in _controller_cloudinit"
+          - "'ssh_pwauth:' not in _controller_cloudinit"
+          - "'runcmd:' not in _controller_cloudinit"
+          - "'write_files:' not in _controller_cloudinit"
+        fail_msg: "Controller cloud-init exceeds the minimal Ansible bootstrap contract"
 
     # ------------------------------------------------------------------
     # compute-1: spot-check key differences (instancetype, node label)

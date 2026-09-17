@@ -1,0 +1,80 @@
+---
+- name: Bootstrap an ARD libvirt execution host
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ard_libvirt_bootstrap_user: ""
+    ard_libvirt_bootstrap_packages_by_os_family:
+      Debian:
+        - acl
+        - cloud-image-utils
+        - libvirt-clients
+        - libvirt-daemon-system
+        - ovmf
+        - qemu-system-x86
+        - qemu-utils
+      RedHat:
+        - acl
+        - edk2-ovmf
+        - genisoimage
+        - libvirt-client
+        - libvirt-daemon-driver-network
+        - libvirt-daemon-kvm
+        - qemu-img
+        - qemu-kvm
+  tasks:
+    - name: Require a supported execution-host operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family in ard_libvirt_bootstrap_packages_by_os_family
+        fail_msg: >-
+          No libvirt bootstrap package mapping exists for
+          {{ ansible_distribution }} {{ ansible_distribution_version }}.
+
+    - name: Enable EPEL for CentOS genisoimage
+      ansible.builtin.package:
+        name: epel-release
+        state: present
+      when: ansible_distribution == 'CentOS'
+
+    - name: Install libvirt execution-host packages
+      ansible.builtin.package:
+        name: "{{ ard_libvirt_bootstrap_packages_by_os_family[ansible_os_family] }}"
+        state: present
+
+    - name: Enable modular libvirt sockets
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - virtqemud.socket
+        - virtnetworkd.socket
+        - virtstoraged.socket
+        - virtlogd.socket
+        - virtlockd.socket
+      when: ansible_os_family == 'RedHat'
+
+    - name: Enable monolithic libvirt service
+      ansible.builtin.systemd_service:
+        name: libvirtd.service
+        enabled: true
+        state: started
+      when: ansible_os_family == 'Debian'
+
+    - name: Add requested login user to the libvirt group
+      ansible.builtin.user:
+        name: "{{ ard_libvirt_bootstrap_user }}"
+        groups: libvirt
+        append: true
+      when: ard_libvirt_bootstrap_user | length > 0
+
+    - name: Verify host-local system libvirt access
+      ansible.builtin.command:
+        argv:
+          - virsh
+          - --connect
+          - qemu:///system
+          - uri
+      changed_when: false

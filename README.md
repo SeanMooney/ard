@@ -155,6 +155,20 @@ The host must already be reachable by SSH with passwordless sudo. See
 [`docs/providers/static.md`](docs/providers/static.md) for node declarations,
 address discovery, lifecycle behavior, and host reuse.
 
+The equivalent managed-VM example uses the same Cyborg configuration with a
+CentOS Stream 10 guest on a remote libvirt execution host:
+
+[`examples/devstack/remote-libvirt-cyborg-pci-sim/`](examples/devstack/remote-libvirt-cyborg-pci-sim/)
+
+```bash
+make render \
+  ARD_DEPLOYMENT=remote-libvirt-cyborg-pci-sim \
+  ARD_RENDER_FILE=examples/devstack/remote-libvirt-cyborg-pci-sim/render.yaml
+# Add the execution host to deployment-local local-vars.yaml, then:
+make apply ARD_DEPLOYMENT=remote-libvirt-cyborg-pci-sim
+make deploy ARD_DEPLOYMENT=remote-libvirt-cyborg-pci-sim
+```
+
 ## Make targets
 
 The root `Makefile` wraps the provider playbooks. The default target is a full
@@ -476,13 +490,86 @@ make molecule-test
 make molecule-role-ensure_kustomize
 ```
 
+## Remote libvirt execution host
+
+The libvirt provider can execute through Ansible on a remote virtualization
+host while keeping `deployment.yaml`, generated inventory, rendered artifacts,
+and `provider-state.yaml` in the local deployment directory. Configure the host
+in deployment-local `local-vars.yaml`:
+
+```yaml
+ard_libvirt_execution_host:
+  name: virt-host
+  ansible_host: hypervisor.example.com
+  ansible_user: virt-admin
+  ansible_port: 22
+  ansible_private_key_file: ~/.ssh/id_ed25519
+  ansible_ssh_common_args: ""
+  ansible_become: false
+```
+
+The execution host defaults to `localhost`. In both modes ARD runs host-local
+`virsh` with `qemu:///system`; remote libvirt transport URIs are not used.
+Libvirt cloud-init only makes guests reachable by Ansible. The shared provider
+apply and workload roles perform subsequent configuration, preserving the same
+flow used by static and KubeVirt providers.
+Images, VM disks, seed media, and console logs live on the execution host. Their
+resolved paths and the non-secret SSH connection metadata are recorded in
+`provider-state.yaml` before resources are created, so later `apply`, `destroy`,
+`deploy`, `verify`, and `make ssh` commands use the same target. Private key
+contents and passwords are never copied into deployment state.
+
+When VM management addresses are not routed to the controller, the generated
+workload inventory automatically proxies guest SSH through the execution host.
+The same inventory drives apply readiness, workload deployment, verification,
+and `make ssh`, including distinct hypervisor and guest keys or a nonstandard
+hypervisor SSH port.
+
+Override execution-host storage locations when needed:
+
+```yaml
+ard_libvirt_execution_image_dir: /var/lib/ard/libvirt/images
+ard_libvirt_execution_image_cache_dir: /var/cache/ard/images
+```
+
+The remote account still needs the permissions required for `qemu:///system`,
+plus `virsh`, `qemu-img`, `setfacl`, compatible QEMU/KVM firmware, and access to
+the configured storage paths and either `cloud-localds` or `genisoimage` for
+NoCloud seed media. CentOS Stream 10 uses the EPEL `genisoimage` package. The
+controller needs `ssh-keygen`.
+
+Host package installation is deliberately separate from normal provider
+`apply`. To opt in to bootstrapping a virtualization host, run the dedicated
+playbook against an explicit inventory target:
+
+```bash
+uv run ansible-playbook \
+  -i virt-host, \
+  ansible/playbooks/provider/bootstrap-libvirt-host.yaml \
+  -e ard_libvirt_bootstrap_user=stack
+```
+
+The playbook contains Debian-family and Red Hat-family package mappings,
+installs the libvirt/QEMU, firmware, ACL, and NoCloud seed tooling, enables the
+appropriate libvirt service sockets, and verifies `qemu:///system`. The CentOS
+Stream 10 path has been exercised against a live execution host. Validate or
+override package choices for other distributions. On CentOS it enables EPEL to install
+`genisoimage`. Omit `ard_libvirt_bootstrap_user` if group
+membership should not be changed. Reconnect after adding a user to `libvirt`.
+
 ## Troubleshooting
 
 ### Libvirt access
 
-The local provider uses `qemu:///system`. Your user normally needs libvirt/qemu
-group access. If bootstrap reports missing group membership, log out and back
-in or use `newgrp libvirt` before running provider commands.
+The provider uses host-local `qemu:///system` on the selected execution host.
+That account normally needs libvirt/qemu group access. If bootstrap reports
+missing group membership, log out and back in or use `newgrp libvirt` before
+running provider commands.
+
+On SELinux hosts, `apply` labels each generated console log for `virtlogd`.
+This per-file `chcon` label is not a persistent file-context policy; if an
+administrator runs `restorecon` over the image tree, rerun `apply` before
+restarting affected guests.
 
 ### UEFI firmware
 

@@ -6,7 +6,14 @@
 - name: Load ARD node variables if present
   include_vars:
     file: "{{ ard_deployment_dir }}/nodes.yaml"
-  when: lookup('ansible.builtin.file', ard_deployment_dir + '/nodes.yaml', errors='ignore') | length > 0
+  when: lookup('ansible.builtin.file', ard_deployment_dir + '/nodes.yaml', errors='ignore') | default('', true) | length > 0
+
+- name: Resolve libvirt execution host for destroy
+  ansible.builtin.include_role:
+    name: ard_libvirt_execution
+  vars:
+    ard_libvirt_execution_persist_state: false
+  when: ard_provider == 'libvirt'
 
 - name: Run provider destroy handling
   include_role:

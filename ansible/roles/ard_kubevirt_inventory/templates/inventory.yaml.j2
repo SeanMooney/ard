@@ -46,6 +46,11 @@ all:
           work_root: /tmp/work_root
 {% endfor %}
   children:
+    ard_provider_nodes:
+      hosts:
+{% for node in ard_nodes %}
+        {{ node.name }}:
+{% endfor %}
 {% set group_names = [] %}
 {% for node in ard_nodes %}
 {% for group in node.groups %}

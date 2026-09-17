@@ -1,0 +1,48 @@
+---
+- name: Copy cloud-init inputs to libvirt execution host
+  ansible.builtin.copy:
+    src: "{{ ard_node_render_dir }}/{{ item }}"
+    dest: "{{ ard_node_remote_render_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - user-data
+    - meta-data
+    - network-config
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Create cloud-init seed ISO with cloud-localds
+  ansible.builtin.shell: |
+    set -eu
+    seed_tmp={{ (ard_node_seed + '.tmp') | quote }}
+    rm -f "$seed_tmp"
+    cloud-localds \
+      --network-config={{ (ard_node_remote_render_dir + '/network-config') | quote }} \
+      "$seed_tmp" \
+      {{ (ard_node_remote_render_dir + '/user-data') | quote }} \
+      {{ (ard_node_remote_render_dir + '/meta-data') | quote }}
+    mv "$seed_tmp" {{ ard_node_seed | quote }}
+  args:
+    executable: /bin/sh
+    creates: "{{ ard_node_seed }}"
+  when: ard_libvirt_seed_tool == 'cloud-localds'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Create cloud-init seed ISO with genisoimage
+  ansible.builtin.shell: |
+    set -eu
+    seed_tmp={{ (ard_node_seed + '.tmp') | quote }}
+    rm -f "$seed_tmp"
+    genisoimage \
+      -output "$seed_tmp" \
+      -volid cidata \
+      -joliet \
+      -rock \
+      {{ (ard_node_remote_render_dir + '/user-data') | quote }} \
+      {{ (ard_node_remote_render_dir + '/meta-data') | quote }} \
+      {{ (ard_node_remote_render_dir + '/network-config') | quote }}
+    mv "$seed_tmp" {{ ard_node_seed | quote }}
+  args:
+    executable: /bin/sh
+    creates: "{{ ard_node_seed }}"
+  when: ard_libvirt_seed_tool == 'genisoimage'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

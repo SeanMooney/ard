@@ -16,6 +16,9 @@ service profiles unless an example says otherwise.
   one controller VM and two compute VMs using the CentOS Stream 10 image.
 - [static-cyborg-pci-sim/](static-cyborg-pci-sim/) - one pre-provisioned
   CentOS Stream 10 AIO host with Cyborg and the pci-sim kernel module.
+- [remote-libvirt-cyborg-pci-sim/](remote-libvirt-cyborg-pci-sim/) - the same
+  Cyborg workload in an 8-vCPU, 16-GiB CentOS Stream 10 VM on a remote libvirt
+  execution host.
 
 ## Usage
 

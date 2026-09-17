@@ -1,0 +1,148 @@
+---
+- name: Verify libvirt execution host behavior
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - ard_provider_common
+  vars:
+    _test_root: /tmp/ard-libvirt-execution-molecule
+    _repo_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/../../.."
+  tasks:
+    - name: Load explicit-local provider state
+      ansible.builtin.include_vars:
+        file: "{{ _test_root }}/local-state/provider-state.yaml"
+        name: _local_state
+
+    - name: Load explicit-local workload inventory
+      ansible.builtin.include_vars:
+        file: "{{ _test_root }}/local-state/inventory.yaml"
+        name: _local_inventory
+
+    - name: Load default-local provider state
+      ansible.builtin.include_vars:
+        file: "{{ _test_root }}/local/provider-state.yaml"
+        name: _default_local_state
+
+    - name: Restore inventory transport in a fresh playbook process
+      ansible.builtin.include_role:
+        name: ard_provider_inventory
+      vars:
+        ard_deployment_dir: "{{ _test_root }}/local-state"
+        ard_provider_inventory_write_state: false
+
+    - name: Print generated local guest SSH command
+      ansible.builtin.command:
+        argv:
+          - "{{ _repo_root }}/scripts/ard-ssh"
+          - --inventory
+          - "{{ _test_root }}/local-state/inventory.yaml"
+          - --node
+          - controller
+          - --print
+      register: _local_ssh_command
+      changed_when: false
+
+    - name: Read generated proxy fixture command
+      ansible.builtin.slurp:
+        src: "{{ _test_root }}/proxy-command.txt"
+      register: _proxy_fixture_command
+
+    - name: Check target mismatch rejection marker
+      ansible.builtin.stat:
+        path: "{{ _test_root }}/mismatch.expected"
+      register: _mismatch_rejected
+
+    - name: Check partial-apply runtime directory cleanup
+      ansible.builtin.stat:
+        path: "{{ _test_root }}/partial-runtime/partial-test"
+      register: _partial_runtime_dir
+
+    - name: Read partial-apply virsh calls
+      ansible.builtin.slurp:
+        src: "{{ _test_root }}/virsh.log"
+      register: _partial_virsh_log
+
+    - name: Read rendered libvirt cloud-init user-data
+      ansible.builtin.slurp:
+        src: "{{ _test_root }}/seed-input/user-data"
+      register: _libvirt_user_data
+
+    - name: Check generated seed fixtures
+      ansible.builtin.stat:
+        path: "{{ _test_root }}/{{ item }}"
+      loop:
+        - cloud-localds.iso
+        - genisoimage.iso
+        - cloud-localds.iso.tmp
+        - genisoimage.iso.tmp
+      register: _seed_fixtures
+
+    - name: Read workload-host targeting sources
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - "{{ _repo_root }}/ansible/playbooks/provider/deploy-devstack.yaml"
+        - "{{ _repo_root }}/ansible/playbooks/network/pre-multinode.yaml"
+        - "{{ _repo_root }}/ansible/playbooks/workloads/devstack/common.yaml"
+        - "{{ _repo_root }}/ansible/playbooks/workloads/devstack/vdpa.yaml"
+        - "{{ _repo_root }}/ansible/playbooks/workloads/devstack/deploy-multinode.yaml"
+        - "{{ _repo_root }}/ansible/roles/devstack_common/tasks/main.yml"
+      register: _workload_target_sources
+
+    - name: Verify execution host is excluded from workload targeting
+      ansible.builtin.assert:
+        that:
+          - "'hosts: all' not in (item.content | b64decode)"
+          - "\"groups['all']\" not in (item.content | b64decode)"
+      loop: "{{ _workload_target_sources.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Verify local compatibility and SSH command parity
+      ansible.builtin.assert:
+        that:
+          - _local_state.ard_libvirt_phase == 'resources_created'
+          - _local_state.ard_libvirt_execution_host.name == 'localhost'
+          - _local_state.ard_libvirt_execution_host.ansible_connection == 'local'
+          - _local_state.ard_libvirt_image_dir is search('/local-state-test$')
+          - _local_inventory.all.hosts.controller.ansible_host == '192.168.96.10'
+          - _local_inventory.all.children.ard_provider_nodes.hosts.controller is defined
+          - "'ProxyCommand' not in _local_inventory.all.hosts.controller.ansible_ssh_common_args"
+          - "'stack@192.168.96.10' in _local_ssh_command.stdout"
+          - _default_local_state.ard_libvirt_execution_host.name == 'localhost'
+          - _default_local_state.ard_libvirt_image_dir is search('/local-test$')
+          - ard_libvirt_guest_ssh_common_args is defined
+          - ard_libvirt_execution_host_name not in groups['ard_provider_nodes']
+        fail_msg: Local libvirt execution behavior or make ssh parity changed
+
+    - name: Verify proxy quoting and exact partial-apply teardown
+      ansible.builtin.assert:
+        that:
+          - "'ProxyCommand=helper --label' in (_proxy_fixture_command.content | b64decode)"
+          - "'--target %h:%p' in (_proxy_fixture_command.content | b64decode)"
+          - "'''/tmp/key with space''' in (_proxy_fixture_command.content | b64decode)"
+          - "'virt-user@hypervisor.example.test' in (_proxy_fixture_command.content | b64decode)"
+          - _mismatch_rejected.stat.exists
+          - not _partial_runtime_dir.stat.exists
+          - "'destroy custom-prefix-controller' in (_partial_virsh_log.content | b64decode)"
+          - "'destroy custom-prefix-compute-1' in (_partial_virsh_log.content | b64decode)"
+          - "'net-destroy custom-network' in (_partial_virsh_log.content | b64decode)"
+          - "'net-destroy custom-network-datacenter' in (_partial_virsh_log.content | b64decode)"
+          - "'list --all --name' not in (_partial_virsh_log.content | b64decode)"
+          - "'--remove-all-storage' not in (_partial_virsh_log.content | b64decode)"
+          - _seed_fixtures.results[0].stat.exists
+          - _seed_fixtures.results[1].stat.exists
+          - not _seed_fixtures.results[2].stat.exists
+          - not _seed_fixtures.results[3].stat.exists
+          - "'name: stack' in (_libvirt_user_data.content | b64decode)"
+          - "'ssh_authorized_keys' in (_libvirt_user_data.content | b64decode)"
+          - "'write_files:' not in (_libvirt_user_data.content | b64decode)"
+          - "'runcmd:' not in (_libvirt_user_data.content | b64decode)"
+          - "'bootcmd:' not in (_libvirt_user_data.content | b64decode)"
+          - "'PasswordAuthentication' not in (_libvirt_user_data.content | b64decode)"
+          - "'serial-getty' not in (_libvirt_user_data.content | b64decode)"
+          - "'chpasswd:' not in (_libvirt_user_data.content | b64decode)"
+          - "'ssh_pwauth:' not in (_libvirt_user_data.content | b64decode)"
+          - "'lock_passwd: true' in (_libvirt_user_data.content | b64decode)"
+        fail_msg: SSH proxy quoting, minimal cloud-init, seed generation, or exact partial-apply teardown failed

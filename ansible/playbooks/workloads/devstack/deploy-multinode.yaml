@@ -83,7 +83,7 @@
 # when the cacheing is refarctored into push cache and pull cache roles
 # we can relax this requriement by having the cache roles ensure its installed.
 - name: push remote cache dirs
-  hosts: all
+  hosts: ard_provider_nodes
   tags:
     - common
     - cache
@@ -183,7 +183,7 @@
   import_playbook: controller.yaml
 
 - name: export facts
-  hosts: all
+  hosts: ard_provider_nodes
   environment: "{{ ard_proxy_env | default({}) }}"
   vars:
     ard_proxy_env: >-
@@ -210,7 +210,7 @@
             work_root: /tmp/work_root
 
 - name: sync controller data to subnodes
-  hosts: all
+  hosts: ard_provider_nodes
   environment: "{{ ard_proxy_env | default({}) }}"
   vars:
     ard_proxy_env: >-
@@ -224,7 +224,9 @@
     - name: Sync DevStack data to subnodes
       ansible.builtin.include_role:
         name: "{{ ard_devstack_sync_data_role | default('sync-devstack-data') }}"
-      when: run_devstack | default(true) | bool
+      when:
+        - run_devstack | default(true) | bool
+        - groups['subnode'] | default([]) | length > 0
 
 - name: sync ceph configs to subnodes
   hosts: subnode

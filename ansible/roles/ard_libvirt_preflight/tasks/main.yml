@@ -1,24 +1,105 @@
 ---
-- name: Check required libvirt provider commands
+- name: Resolve libvirt execution host
+  ansible.builtin.include_role:
+    name: ard_libvirt_execution
+
+- name: Require host-local libvirt URI
+  ansible.builtin.assert:
+    that:
+      - ard_libvirt_uri == 'qemu:///system'
+    fail_msg: >-
+      The libvirt provider executes on ard_libvirt_execution_host and requires
+      ard_libvirt_uri=qemu:///system; remote libvirt transport URIs are unsupported.
+
+- name: Check required libvirt execution host commands
   ansible.builtin.shell: "command -v {{ item }}"
   changed_when: false
   loop:
     - virsh
     - qemu-img
-    - cloud-localds
     - setfacl
-    - ssh-keygen
   register: ard_libvirt_command_checks
   failed_when: ard_libvirt_command_checks.rc != 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Select libvirt QEMU service account
+  ansible.builtin.shell: |
+    if getent passwd libvirt-qemu >/dev/null 2>&1; then
+      printf '%s\n' libvirt-qemu
+    elif getent passwd qemu >/dev/null 2>&1; then
+      printf '%s\n' qemu
+    else
+      printf '%s\n' 'No libvirt QEMU service account was found' >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/sh
+  register: ard_libvirt_qemu_user_check
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record libvirt QEMU service account
+  ansible.builtin.set_fact:
+    ard_libvirt_qemu_user: "{{ ard_libvirt_qemu_user_check.stdout | trim }}"
+
+- name: Select QEMU emulator on execution host
+  ansible.builtin.shell: |
+    if command -v qemu-system-x86_64 >/dev/null 2>&1; then
+      command -v qemu-system-x86_64
+    elif [ -x /usr/libexec/qemu-kvm ]; then
+      printf '%s\n' /usr/libexec/qemu-kvm
+    else
+      printf '%s\n' 'No supported QEMU emulator was found' >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/sh
+  register: ard_libvirt_emulator_check
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record QEMU emulator path
+  ansible.builtin.set_fact:
+    ard_libvirt_emulator: "{{ ard_libvirt_emulator_check.stdout | trim }}"
+
+- name: Select cloud-init seed image tool on execution host
+  ansible.builtin.shell: |
+    if command -v cloud-localds >/dev/null 2>&1; then
+      printf '%s\n' cloud-localds
+    elif command -v genisoimage >/dev/null 2>&1; then
+      printf '%s\n' genisoimage
+    else
+      printf '%s\n' 'Neither cloud-localds nor genisoimage is installed' >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/sh
+  register: ard_libvirt_seed_tool_check
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record cloud-init seed image tool
+  ansible.builtin.set_fact:
+    ard_libvirt_seed_tool: "{{ ard_libvirt_seed_tool_check.stdout | trim }}"
+
+- name: Check required controller commands
+  ansible.builtin.shell: "command -v {{ item }}"
+  changed_when: false
+  loop:
+    - ssh-keygen
+  register: ard_libvirt_controller_command_checks
+  failed_when: ard_libvirt_controller_command_checks.rc != 0
 
 - name: Check libvirt connection
   ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} uri"
   changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Check libvirt version for firmware auto-selection
   ansible.builtin.command: "virsh --connect {{ ard_libvirt_uri }} version"
   changed_when: false
   register: ard_libvirt_version
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Ensure stack SSH key exists
   ansible.builtin.command: ssh-keygen -t ed25519 -N '' -f {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack

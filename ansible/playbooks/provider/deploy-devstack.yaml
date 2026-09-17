@@ -5,7 +5,8 @@
   gather_facts: false
   roles:
     - ard_provider_common
-    - ard_provider_inventory
+    - role: ard_provider_inventory
+      ard_provider_inventory_write_state: false
 
 - name: Generate ARD deployment DevStack variables
   hosts: localhost
@@ -15,7 +16,7 @@
     - devstack_config
 
 - name: Load ARD deployment DevStack variables
-  hosts: all
+  hosts: ard_provider_nodes
   gather_facts: false
   environment: "{{ ard_proxy_env | default({}) }}"
   vars:
@@ -31,7 +32,7 @@
     - ard_devstack_config
 
 - name: Wait for provider node bootstrap to finish
-  hosts: all
+  hosts: ard_provider_nodes
   gather_facts: false
   environment: "{{ ard_proxy_env | default({}) }}"
   vars:

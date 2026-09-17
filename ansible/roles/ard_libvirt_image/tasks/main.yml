@@ -13,15 +13,16 @@
       - ard_selected_libvirt_image.url != None
     fail_msg: "No libvirt image URL configured for {{ ard_selected_image_name }}"
 
-- name: Resolve ARD image cache directory
-  set_fact:
-    ard_image_cache_dir_resolved: "{{ ard_image_cache_dir | regex_replace('^~', lookup('env', 'HOME')) }}"
+- name: Set libvirt image cache directory
+  ansible.builtin.set_fact:
+    ard_image_cache_dir_resolved: "{{ ard_libvirt_cache_dir_resolved }}"
 
-- name: Ensure ARD image cache exists
-  file:
+- name: Ensure ARD image cache exists on execution host
+  ansible.builtin.file:
     path: "{{ ard_image_cache_dir_resolved }}"
     state: directory
     mode: "0755"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Set cached base image path
   set_fact:
@@ -31,6 +32,7 @@
   ansible.builtin.stat:
     path: "{{ ard_cached_base_image }}"
   register: ard_cached_base_image_pre_download_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Download base cloud image when missing
   ansible.builtin.get_url:
@@ -41,11 +43,13 @@
   when:
     - ard_image_download | default(true) | bool
     - not ard_cached_base_image_pre_download_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Ensure cached base image exists
   ansible.builtin.stat:
     path: "{{ ard_cached_base_image }}"
   register: ard_cached_base_image_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Fail when cached base image is unavailable
   assert:
@@ -53,25 +57,23 @@
       - ard_cached_base_image_stat.stat.exists
     fail_msg: "Cached image {{ ard_cached_base_image }} is missing and ard_image_download is disabled or failed."
 
-- name: Ensure libvirt image directories exist
-  file:
+- name: Ensure libvirt image directories exist on execution host
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
   loop:
-    - "{{ ard_libvirt_image_dir }}/{{ ard_deployment_name }}"
+    - "{{ ard_libvirt_deployment_image_dir_resolved }}"
+    - "{{ ard_libvirt_remote_render_dir }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Grant libvirt-qemu traverse access to XDG state parents
-  command: "setfacl -m u:libvirt-qemu:x {{ item }}"
+- name: Grant libvirt-qemu traverse access to execution host state parents
+  ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:x {{ item }}"
   changed_when: false
   failed_when: false
   loop:
-    - "{{ lookup('env', 'HOME') }}"
-    - "{{ lookup('env', 'HOME') }}/.local"
-    - "{{ lookup('env', 'XDG_STATE_HOME') | default(lookup('env', 'HOME') + '/.local/state', true) }}"
-  when: ard_libvirt_image_dir is search(lookup('env', 'HOME'))
-
-- name: Grant libvirt-qemu access to ARD libvirt image tree
-  command: "setfacl -R -m u:libvirt-qemu:rx {{ ard_libvirt_image_dir }}"
-  changed_when: false
-  failed_when: false
+    - "{{ ard_libvirt_execution_home }}"
+    - "{{ ard_libvirt_execution_home }}/.local"
+    - "{{ ard_libvirt_execution_home }}/.local/state"
+  when: ard_libvirt_image_dir_resolved is search(ard_libvirt_execution_home)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

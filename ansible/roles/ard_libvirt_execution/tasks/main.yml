@@ -1,0 +1,328 @@
+---
+- name: Reset loaded libvirt provider state
+  ansible.builtin.set_fact:
+    ard_libvirt_existing_state: {}
+
+- name: Check for existing libvirt provider state
+  ansible.builtin.stat:
+    path: "{{ ard_deployment_dir }}/provider-state.yaml"
+  register: ard_libvirt_execution_state_file
+
+- name: Load existing libvirt provider state
+  ansible.builtin.set_fact:
+    ard_libvirt_existing_state: >-
+      {{ lookup('ansible.builtin.file', ard_deployment_dir + '/provider-state.yaml') | from_yaml }}
+  when: ard_libvirt_execution_state_file.stat.exists
+
+- name: Validate recorded deployment identity
+  ansible.builtin.assert:
+    that:
+      - ard_libvirt_existing_state is mapping
+      - ard_libvirt_existing_state.ard_provider | default('libvirt') == 'libvirt'
+      - ard_libvirt_existing_state.ard_deployment_name | default(ard_deployment_name) == ard_deployment_name
+      - ard_libvirt_existing_state.ard_libvirt_uri | default('qemu:///system') == 'qemu:///system'
+      - ard_libvirt_existing_state.domains is not defined or ard_libvirt_existing_state.domains is sequence
+      - ard_libvirt_existing_state.networks is not defined or ard_libvirt_existing_state.networks is sequence
+      - >-
+        ard_libvirt_existing_state.ard_libvirt_execution_host is defined
+        or ard_libvirt_execution_host | default({}) | length == 0
+        or ard_libvirt_execution_host.name | default('localhost') == 'localhost'
+    fail_msg: >-
+      provider-state.yaml does not belong to this libvirt deployment.
+  when: ard_libvirt_execution_state_file.stat.exists
+
+- name: Require host-local libvirt URI
+  ansible.builtin.assert:
+    that:
+      - ard_libvirt_uri == 'qemu:///system'
+    fail_msg: >-
+      The libvirt execution host requires ard_libvirt_uri=qemu:///system;
+      remote libvirt transport URIs are unsupported.
+
+- name: Select configured or recorded execution host
+  ansible.builtin.set_fact:
+    _ard_libvirt_execution_host_input: >-
+      {{ ard_libvirt_execution_host
+         if (ard_libvirt_execution_host | default({}) | length > 0)
+         else (ard_libvirt_existing_state.ard_libvirt_execution_host
+               | default({'name': 'localhost', 'ansible_connection': 'local'})) }}
+
+- name: Validate execution host input and recorded target
+  ansible.builtin.assert:
+    that:
+      - _ard_libvirt_execution_host_input is mapping
+      - _ard_libvirt_execution_host_input.name is defined
+      - _ard_libvirt_execution_host_input.name | string | length > 0
+      - >-
+        _ard_libvirt_execution_host_input.name != 'localhost'
+        or (_ard_libvirt_execution_host_input.ansible_host | default('localhost'))
+           in ['localhost', '127.0.0.1', '::1']
+      - >-
+        _ard_libvirt_execution_host_input.ansible_connection is not defined
+        or (_ard_libvirt_execution_host_input.name == 'localhost'
+            and _ard_libvirt_execution_host_input.ansible_connection == 'local')
+        or (_ard_libvirt_execution_host_input.name != 'localhost'
+            and _ard_libvirt_execution_host_input.ansible_connection == 'ssh')
+      - >-
+        not ard_libvirt_execution_state_file.stat.exists
+        or ard_libvirt_existing_state.ard_libvirt_execution_host is not defined
+        or (ard_libvirt_execution_host | default({}) | length == 0)
+        or (_ard_libvirt_execution_host_input.ansible_host | default(_ard_libvirt_execution_host_input.name))
+           == (ard_libvirt_existing_state.ard_libvirt_execution_host.ansible_host
+               | default(ard_libvirt_existing_state.ard_libvirt_execution_host.name))
+      - >-
+        not ard_libvirt_execution_state_file.stat.exists
+        or ard_libvirt_existing_state.ard_libvirt_execution_host is not defined
+        or (ard_libvirt_execution_host | default({}) | length == 0)
+        or (_ard_libvirt_execution_host_input.ansible_port | default(22) | int)
+           == (ard_libvirt_existing_state.ard_libvirt_execution_host.ansible_port | default(22) | int)
+      - >-
+        not ard_libvirt_execution_state_file.stat.exists
+        or ard_libvirt_existing_state.ard_libvirt_execution_host is not defined
+        or (ard_libvirt_execution_host | default({}) | length == 0)
+        or ('local' if _ard_libvirt_execution_host_input.name == 'localhost' else 'ssh')
+           == ard_libvirt_existing_state.ard_libvirt_execution_host.ansible_connection
+    fail_msg: >-
+      The configured libvirt execution endpoint differs from provider-state.yaml.
+      Use the recorded endpoint to destroy this deployment before changing hosts.
+
+- name: Build allowlisted execution host connection
+  ansible.builtin.set_fact:
+    ard_libvirt_execution_host_resolved: >-
+      {{ {'name': _ard_libvirt_execution_host_input.name,
+          'ansible_host': _ard_libvirt_execution_host_input.ansible_host | default(_ard_libvirt_execution_host_input.name),
+          'ansible_connection': ('local' if _ard_libvirt_execution_host_input.name == 'localhost' else 'ssh')}
+         | combine({'ansible_user': _ard_libvirt_execution_host_input.ansible_user}
+                   if _ard_libvirt_execution_host_input.ansible_user is defined else {})
+         | combine({'ansible_port': _ard_libvirt_execution_host_input.ansible_port}
+                   if _ard_libvirt_execution_host_input.ansible_port is defined else {})
+         | combine({'ansible_private_key_file': _ard_libvirt_execution_host_input.ansible_private_key_file}
+                   if _ard_libvirt_execution_host_input.ansible_private_key_file is defined else {})
+         | combine({'ansible_ssh_common_args': _ard_libvirt_execution_host_input.ansible_ssh_common_args}
+                   if _ard_libvirt_execution_host_input.ansible_ssh_common_args is defined else {})
+         | combine({'ansible_become': _ard_libvirt_execution_host_input.ansible_become | bool}
+                   if _ard_libvirt_execution_host_input.ansible_become is defined else {}) }}
+
+- name: Reject unsupported execution host connection fields
+  ansible.builtin.assert:
+    that:
+      - >-
+        _ard_libvirt_execution_host_input.keys()
+        | difference(['name', 'ansible_host', 'ansible_user', 'ansible_port',
+                      'ansible_private_key_file', 'ansible_ssh_common_args',
+                      'ansible_become', 'ansible_connection'])
+        | length == 0
+    fail_msg: >-
+      ard_libvirt_execution_host contains unsupported or secret-bearing fields.
+      Use SSH keys or agent authentication; passwords are not persisted.
+
+- name: Resolve internal execution inventory hostname
+  ansible.builtin.set_fact:
+    ard_libvirt_execution_host_name: >-
+      {{ 'ard-libvirt-execution-'
+         + (((ard_deployment_dir | realpath) + (ard_libvirt_execution_host_resolved | to_json))
+            | hash('sha1'))[:12] }}
+
+- name: Reject execution hostname collision with workload nodes
+  ansible.builtin.assert:
+    that:
+      - ard_libvirt_execution_host_name not in (ard_nodes | default([]) | map(attribute='name') | list)
+    fail_msg: "A workload node uses reserved name {{ ard_libvirt_execution_host_name }}."
+
+- name: Register internal libvirt execution inventory host
+  ansible.builtin.add_host:
+    name: "{{ ard_libvirt_execution_host_name }}"
+    groups: ard_libvirt_execution_hosts
+    ansible_host: "{{ ard_libvirt_execution_host_resolved.ansible_host }}"
+    ansible_user: "{{ ard_libvirt_execution_host_resolved.ansible_user | default(omit) }}"
+    ansible_port: "{{ ard_libvirt_execution_host_resolved.ansible_port | default(omit) }}"
+    ansible_private_key_file: "{{ ard_libvirt_execution_host_resolved.ansible_private_key_file | default(omit) }}"
+    ansible_ssh_common_args: "{{ ard_libvirt_execution_host_resolved.ansible_ssh_common_args | default(omit) }}"
+    ansible_connection: "{{ ard_libvirt_execution_host_resolved.ansible_connection }}"
+    ansible_become: "{{ ard_libvirt_execution_host_resolved.ansible_become | default(omit) }}"
+  changed_when: false
+
+- name: Gather libvirt execution host environment
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - env
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  register: ard_libvirt_execution_setup
+
+- name: Resolve proposed execution host paths
+  ansible.builtin.set_fact:
+    _ard_libvirt_execution_home: "{{ ard_libvirt_execution_setup.ansible_facts.ansible_env.HOME }}"
+    _ard_libvirt_proposed_image_dir: >-
+      {{ ard_libvirt_image_dir
+         if ard_libvirt_execution_host_resolved.ansible_connection == 'local'
+         else (ard_libvirt_execution_image_dir | default('', true)
+               | default((ard_libvirt_execution_setup.ansible_facts.ansible_env.XDG_STATE_HOME
+                          | default(ard_libvirt_execution_setup.ansible_facts.ansible_env.HOME + '/.local/state', true))
+                         + '/ard/libvirt/images', true)) }}
+    _ard_libvirt_proposed_cache_dir: >-
+      {{ ard_image_cache_dir
+         if ard_libvirt_execution_host_resolved.ansible_connection == 'local'
+         else (ard_libvirt_execution_image_cache_dir | default('', true)
+               | default((ard_libvirt_execution_setup.ansible_facts.ansible_env.XDG_CACHE_HOME
+                          | default(ard_libvirt_execution_setup.ansible_facts.ansible_env.HOME + '/.cache', true))
+                         + '/ard/images', true)) }}
+
+- name: Resolve recorded or proposed execution paths
+  ansible.builtin.set_fact:
+    ard_libvirt_execution_home: "{{ _ard_libvirt_execution_home }}"
+    ard_libvirt_image_dir_resolved: >-
+      {{ (ard_libvirt_existing_state.ard_libvirt_image_dir_root
+          | default((ard_libvirt_existing_state.ard_libvirt_image_dir | dirname)
+                    if ard_libvirt_existing_state.ard_libvirt_image_dir is defined
+                    else _ard_libvirt_proposed_image_dir))
+         | regex_replace('^~', _ard_libvirt_execution_home)
+         | normpath }}
+    ard_libvirt_cache_dir_resolved: >-
+      {{ (ard_libvirt_existing_state.ard_libvirt_image_cache_dir
+          | default(_ard_libvirt_proposed_cache_dir))
+         | regex_replace('^~', _ard_libvirt_execution_home)
+         | normpath }}
+
+- name: Resolve exact deployment image directory
+  ansible.builtin.set_fact:
+    ard_libvirt_deployment_image_dir_resolved: >-
+      {{ (ard_libvirt_existing_state.ard_libvirt_image_dir
+          | default(ard_libvirt_image_dir_resolved + '/' + ard_deployment_name))
+         | regex_replace('^~', _ard_libvirt_execution_home)
+         | normpath }}
+
+- name: Validate execution storage paths
+  ansible.builtin.assert:
+    that:
+      - ard_deployment_name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - ard_libvirt_image_dir_resolved is match('^/')
+      - ard_libvirt_image_dir_resolved != '/'
+      - ard_libvirt_cache_dir_resolved is match('^/')
+      - ard_libvirt_cache_dir_resolved != '/'
+      - ard_libvirt_deployment_image_dir_resolved is match('^/')
+      - ard_libvirt_deployment_image_dir_resolved == ard_libvirt_image_dir_resolved + '/' + ard_deployment_name
+    fail_msg: provider-state.yaml contains unsafe or non-absolute libvirt storage paths.
+
+- name: Reject execution path changes for existing deployment
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_libvirt_existing_state.ard_libvirt_image_dir_root is not defined
+        or ard_libvirt_execution_image_dir | default('', true) | length == 0
+        or (ard_libvirt_execution_image_dir | regex_replace('^~', _ard_libvirt_execution_home))
+           == ard_libvirt_existing_state.ard_libvirt_image_dir_root
+      - >-
+        ard_libvirt_existing_state.ard_libvirt_image_cache_dir is not defined
+        or ard_libvirt_execution_image_cache_dir | default('', true) | length == 0
+        or (ard_libvirt_execution_image_cache_dir | regex_replace('^~', _ard_libvirt_execution_home))
+           == ard_libvirt_existing_state.ard_libvirt_image_cache_dir
+    fail_msg: >-
+      Refusing to redirect an existing deployment to different execution-host
+      storage paths. Destroy it using the recorded paths first.
+
+- name: Set execution render and proxy paths
+  ansible.builtin.set_fact:
+    ard_libvirt_remote_render_dir: "{{ ard_libvirt_deployment_image_dir_resolved }}/rendered"
+    ard_libvirt_proxy_path: "{{ (ard_deployment_dir | realpath) }}/rendered/libvirt/ard-libvirt-proxy"
+
+- name: Ensure local rendered libvirt directory exists
+  ansible.builtin.file:
+    path: "{{ ard_deployment_dir }}/rendered/libvirt"
+    state: directory
+    mode: "0755"
+
+- name: Generate deployment-local libvirt SSH proxy
+  ansible.builtin.copy:
+    dest: "{{ ard_libvirt_proxy_path }}"
+    mode: "0755"
+    content: >-
+      {{ lookup('ansible.builtin.file', role_path + '/files/ard-libvirt-proxy')
+         | replace('__ARD_LIBVIRT_PROXY_CONFIG_B64__',
+                   (ard_libvirt_execution_host_resolved | to_json | b64encode)) }}
+  when: ard_libvirt_execution_host_resolved.ansible_connection != 'local'
+
+- name: Resolve guest SSH transport
+  ansible.builtin.set_fact:
+    ard_libvirt_guest_ssh_common_args: >-
+      {{ '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+         if ard_libvirt_execution_host_resolved.ansible_connection == 'local'
+         else '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand='
+              ~ (((ard_libvirt_proxy_path | quote) ~ ' %h %p') | quote) }}
+
+- name: Initialize planned libvirt ownership
+  ansible.builtin.set_fact:
+    ard_libvirt_planned_domain_names: []
+    ard_libvirt_planned_network_names: []
+  when: ard_libvirt_execution_persist_state | default(true) | bool
+
+- name: Build planned libvirt domain ownership
+  ansible.builtin.set_fact:
+    ard_libvirt_planned_domain_names: >-
+      {{ ard_libvirt_planned_domain_names
+         + [item.provider_resource_name | default('ard-' + ard_deployment_name + '-' + item.name)] }}
+  loop: "{{ ard_nodes | default([]) }}"
+  when: ard_libvirt_execution_persist_state | default(true) | bool
+
+- name: Build planned libvirt network ownership
+  ansible.builtin.set_fact:
+    ard_libvirt_planned_network_names: >-
+      {{ ard_libvirt_planned_network_names + [item.value.provider.libvirt.name] }}
+  loop: "{{ ard_networks | default({}) | dict2items }}"
+  when: ard_libvirt_execution_persist_state | default(true) | bool
+
+- name: Reject topology changes that would orphan owned resources
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_libvirt_existing_state.domains | default([]) | length == 0
+        or (ard_libvirt_existing_state.domains | map(attribute='name') | sort | list)
+           == (ard_libvirt_planned_domain_names | sort)
+      - >-
+        ard_libvirt_existing_state.networks | default([]) | length == 0
+        or (ard_libvirt_existing_state.networks | map(attribute='libvirt_name') | sort | list)
+           == (ard_libvirt_planned_network_names | sort)
+    fail_msg: >-
+      The rendered libvirt topology differs from provider-state.yaml. Destroy
+      the existing deployment before adding, removing, or renaming resources.
+  when:
+    - ard_libvirt_execution_persist_state | default(true) | bool
+    - ard_libvirt_execution_state_file.stat.exists
+
+- name: Persist exact libvirt execution plan before resource creation
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: |
+      ---
+      ard_provider: libvirt
+      ard_deployment_name: {{ ard_deployment_name }}
+      ard_libvirt_uri: {{ ard_libvirt_uri }}
+      ard_libvirt_execution_host: {{ ard_libvirt_execution_host_resolved | to_json }}
+      ard_libvirt_image_dir_root: {{ ard_libvirt_image_dir_resolved }}
+      ard_libvirt_image_dir: {{ ard_libvirt_deployment_image_dir_resolved }}
+      ard_libvirt_image_cache_dir: {{ ard_libvirt_cache_dir_resolved }}
+      ard_libvirt_phase: planned
+      {% if ard_networks | length == 0 %}
+      networks: []
+      {% else %}
+      networks:
+      {% for network_name, network in ard_networks.items() %}
+        - name: {{ network_name }}
+          libvirt_name: {{ network.provider.libvirt.name }}
+      {% endfor %}
+      {% endif %}
+      {% if ard_nodes | length == 0 %}
+      domains: []
+      {% else %}
+      domains:
+      {% for node in ard_nodes %}
+        - inventory_name: {{ node.name }}
+          name: {{ node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + node.name) }}
+          overlay: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}.qcow2
+          seed: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-seed.iso
+          console_log: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-console.log
+      {% endfor %}
+      {% endif %}
+  when: ard_libvirt_execution_persist_state | default(true) | bool
