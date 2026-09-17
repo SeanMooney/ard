@@ -1,14 +1,14 @@
 # Remote-libvirt MicroShift with two EDPM computes
 
 This example runs the existing MicroShift and two-EDPM OKO topology on a
-remote libvirt execution host. It intentionally reuses the base workload render
-intent unchanged:
-
-[`../microshift-two-edpm-compute/render.yaml`](../microshift-two-edpm-compute/render.yaml)
-
-Only provider execution changes. Deployment state and rendered manifests remain
-on the Ansible controller, while libvirt operations, VM disks, seed media, and
-console logs live on the execution host. Workload preparation and Kubernetes
+remote libvirt execution host. Its
+[`render.yaml`](render.yaml) uses the same workload topology as the base
+[`microshift-two-edpm-compute`](../microshift-two-edpm-compute/) example; only
+provider execution changes. Native Ansible SSH delegation runs libvirt
+operations against execution-host-local `qemu:///system`; this does not use a
+`qemu+ssh` URI. Deployment state and rendered manifests remain on the Ansible
+controller, while VM disks, seed media, and console logs live on the execution
+host. Workload preparation and Kubernetes
 operations run on the created VMs, never on the execution host.
 
 ## Prerequisites
@@ -26,35 +26,21 @@ uv run ansible-playbook \
 
 ## Render and configure
 
-Choose an unused management CIDR:
+Change the example management CIDR in `render.yaml` if it overlaps a network
+on the execution host, then render the deployment:
 
 ```bash
 make render \
   ARD_DEPLOYMENT=remote-libvirt-oko \
-  ARD_RENDER_FILE=examples/oko/microshift-two-edpm-compute/render.yaml \
-  ARD_NETWORK_CIDR=192.168.119.0/24
+  ARD_RENDER_FILE=examples/oko/remote-libvirt-microshift-two-edpm-compute/render.yaml
 ```
 
-The command-line CIDR applies to that render invocation. Persist it before
-later plain `make render` calls by setting it in the copied deployment intent:
-
-```yaml
-# deployments/remote-libvirt-oko/render.yaml
-ard_libvirt_network_cidr: 192.168.119.0/24
-```
-
-Create `deployments/remote-libvirt-oko/local-vars.yaml` with site-local
-execution details. Do not put host aliases or credentials in the reusable
-example:
-
-```yaml
----
-ard_libvirt_execution_host:
-  name: virt-host
-  ansible_become: true
-ard_libvirt_execution_image_dir: /var/lib/libvirt/images/ard
-ard_libvirt_execution_image_cache_dir: /var/lib/libvirt/images/ard/cache
-```
+Rendering copies `local-vars.yaml.example` to deployment-local
+`local-vars.yaml` without overwriting an existing file. Uncomment the execution
+host settings there and replace `virt-host` with the required OpenSSH alias
+before running `make apply`. Leaving the block commented selects local libvirt.
+Keep credentials and private-key contents out of reusable example and
+deployment variable files.
 
 ## Deploy and validate
 

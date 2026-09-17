@@ -1,0 +1,8 @@
+---
+ard_render_schema_version: 1
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_topology: oko-microshift-two-compute
+ard_service_profiles: []
+# Change this if the example CIDR overlaps a network on the execution host.
+ard_libvirt_network_cidr: 192.168.119.0/24

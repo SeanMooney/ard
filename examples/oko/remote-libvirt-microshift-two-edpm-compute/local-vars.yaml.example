@@ -1,0 +1,8 @@
+---
+# Set the execution host's OpenSSH alias before running make apply.
+# Keep credentials and private-key contents outside this file.
+# ard_libvirt_execution_host:
+#   name: virt-host
+#   ansible_become: true
+# ard_libvirt_execution_image_dir: /var/lib/libvirt/images/ard
+# ard_libvirt_execution_image_cache_dir: /var/lib/libvirt/images/ard/cache
