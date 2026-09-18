@@ -6,6 +6,10 @@
   roles:
     - ard_provider_common
   tasks:
+    - name: Load ARD deployment variables
+      ansible.builtin.include_vars:
+        file: "{{ ard_deployment_dir }}/deployment.yaml"
+
     - name: Require ARD deployment directory
       ansible.builtin.assert:
         that:
@@ -24,16 +28,22 @@
           - ard_verify_inventory.stat.exists
         fail_msg: "{{ ard_deployment_dir }}/inventory.yaml does not exist; run ard-apply first."
 
-    - name: Ping all ARD nodes
+    - name: Ping mutable ARD nodes
       ansible.builtin.command:
         argv:
           - ansible
           - -i
           - "{{ ard_deployment_dir }}/inventory.yaml"
-          - all
+          - ard_mutable_nodes
           - -m
           - ansible.builtin.ping
       changed_when: false
+      when: ard_workload != 'sno'
+
+    - name: Verify standalone SNO
+      ansible.builtin.include_role:
+        name: ard_sno_verify
+      when: ard_workload == 'sno'
 
     - name: Check if controller group exists in inventory
       ansible.builtin.command:
@@ -59,7 +69,9 @@
           - -a
           - test -d /opt/repos/devstack
       changed_when: false
-      when: ard_verify_controller_group.rc == 0
+      when:
+        - ard_workload == 'devstack'
+        - ard_verify_controller_group.rc == 0
 
     - name: Run Tempest smoke when requested
       ansible.builtin.command:
@@ -74,5 +86,6 @@
           - cd /opt/stack/tempest && .tox/tempest/bin/tempest run --smoke
       changed_when: false
       when:
+        - ard_workload == 'devstack'
         - ard_verify_tempest_smoke | default(false) | bool
         - ard_verify_controller_group.rc == 0

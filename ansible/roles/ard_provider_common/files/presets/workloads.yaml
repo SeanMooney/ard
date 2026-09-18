@@ -2,6 +2,7 @@
 ard_render_workload_presets:
   microshift:
     image: centos-stream-10
+  sno: {}
   oko:
     microshift_image: centos-stream-10
     edpm_image: centos-stream-9

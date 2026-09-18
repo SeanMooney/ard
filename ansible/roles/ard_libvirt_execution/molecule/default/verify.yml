@@ -9,6 +9,13 @@
     _test_root: /tmp/ard-libvirt-execution-molecule
     _repo_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/../../.."
   tasks:
+    - name: Test structured libvirt domain identity policies
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ _repo_root }}/ansible/roles/ard_libvirt_execution/molecule/default/test_domain_identity.py"
+      changed_when: false
+
     - name: Load explicit-local provider state
       ansible.builtin.include_vars:
         file: "{{ _test_root }}/local-state/provider-state.yaml"

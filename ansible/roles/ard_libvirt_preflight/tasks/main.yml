@@ -22,6 +22,17 @@
   failed_when: ard_libvirt_command_checks.rc != 0
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
+- name: Check standalone SNO execution-host commands
+  ansible.builtin.shell: "command -v {{ item }}"
+  changed_when: false
+  loop:
+    - nmstatectl
+    - tar
+    - sha256sum
+    - resolvectl
+  when: ard_workload | default('') == 'sno'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
 - name: Select libvirt QEMU service account
   ansible.builtin.shell: |
     if getent passwd libvirt-qemu >/dev/null 2>&1; then
@@ -62,6 +73,12 @@
   ansible.builtin.set_fact:
     ard_libvirt_emulator: "{{ ard_libvirt_emulator_check.stdout | trim }}"
 
+- name: Resolve cloud-image provider nodes
+  ansible.builtin.set_fact:
+    ard_libvirt_cloud_image_nodes: "{{ (ard_libvirt_cloud_image_nodes | default([])) + [item] }}"
+  loop: "{{ ard_nodes }}"
+  when: (item.provisioning | default({})).get('method', 'cloud-image') == 'cloud-image'
+
 - name: Select cloud-init seed image tool on execution host
   ansible.builtin.shell: |
     if command -v cloud-localds >/dev/null 2>&1; then
@@ -77,10 +94,12 @@
   register: ard_libvirt_seed_tool_check
   changed_when: false
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Record cloud-init seed image tool
   ansible.builtin.set_fact:
     ard_libvirt_seed_tool: "{{ ard_libvirt_seed_tool_check.stdout | trim }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Check required controller commands
   ansible.builtin.shell: "command -v {{ item }}"

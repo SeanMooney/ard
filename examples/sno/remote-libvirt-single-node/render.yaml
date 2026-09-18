@@ -1,0 +1,9 @@
+---
+ard_provider: libvirt
+ard_provider_profile: local-libvirt
+ard_workload: sno
+ard_workload_topology: single-node
+ard_service_profiles: []
+ard_libvirt_network_cidr: 192.168.130.0/24
+ard_openshift_version: stable-4.20
+ard_openshift_base_domain: ard.test

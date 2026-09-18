@@ -1,0 +1,24 @@
+---
+- name: Load ARD deployment variables
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Load ARD node variables
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+
+- name: Load ARD provider state
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_provider_action_state
+
+- name: Restore libvirt execution host for node action
+  ansible.builtin.include_role:
+    name: ard_libvirt_execution
+  vars:
+    ard_libvirt_execution_persist_state: false
+  when: ard_provider == 'libvirt'
+
+- name: Run provider node action
+  ansible.builtin.include_role:
+    name: "ard_{{ ard_provider }}_node_action"

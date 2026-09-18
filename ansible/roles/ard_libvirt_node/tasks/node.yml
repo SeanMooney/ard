@@ -4,6 +4,8 @@
     ard_node_name: "{{ ard_node.name }}"
     ard_node_resource_name: "{{ ard_node.provider_resource_name | default('ard-' + ard_deployment_name + '-' + ard_node.name) }}"
     ard_node_flavor: "{{ ard_flavors[ard_node.flavor].provider.libvirt }}"
+    ard_node_provisioning_method: "{{ (ard_node.provisioning | default({})).get('method', 'cloud-image') }}"
+    ard_node_start_phase: "{{ (ard_node.lifecycle | default({})).get('start_phase', 'apply') }}"
     ard_node_image_name: "{{ ard_node.image | default(ard_default_image) }}"
     ard_node_image: "{{ ard_images[ard_node.image | default(ard_default_image)].provider.libvirt }}"
     ard_node_root_disk_gb: "{{ ard_flavors[ard_node.flavor].root_disk_gb | default(80) }}"
@@ -15,6 +17,7 @@
     ard_node_remote_render_dir: "{{ ard_libvirt_remote_render_dir }}/{{ ard_node.name }}"
     ard_node_overlay: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}.qcow2"
     ard_node_seed: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}-seed.iso"
+    ard_node_install_media: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}-install.iso"
     ard_node_console_log: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_node.name }}-console.log"
 
 - name: Ensure rendered node directory exists
@@ -27,7 +30,7 @@
   ansible.builtin.file:
     path: "{{ ard_node_remote_render_dir }}"
     state: directory
-    mode: "0755"
+    mode: "0750"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Render cloud-init user-data
@@ -35,6 +38,7 @@
     src: user-data.yml.j2
     dest: "{{ ard_node_render_dir }}/user-data"
     mode: "0644"
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Render cloud-init meta-data
   copy:
@@ -43,6 +47,7 @@
     content: |
       instance-id: {{ ard_node_resource_name }}
       local-hostname: {{ ard_node.hostname | default(ard_node.name) }}
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Render cloud-init network-config
   copy:
@@ -74,19 +79,24 @@
               - 1.1.1.1
       {% endif %}
       {% endfor %}
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Create cloud-init seed media
   ansible.builtin.include_tasks: seed.yml
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Set per-node cached base image path
   set_fact:
     ard_node_cached_base_image: "{{ ard_image_cache_dir_resolved + '/' + (ard_node_image.cache_filename | default(ard_node_image.url | basename)) }}"
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Check pre-existing per-node cached image
   ansible.builtin.stat:
     path: "{{ ard_node_cached_base_image }}"
   register: ard_node_cached_base_image_pre_download_stat
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Download per-node base cloud image when missing
   ansible.builtin.get_url:
@@ -95,21 +105,26 @@
     mode: "0644"
     checksum: "{{ ard_node_image.checksum | default(omit) }}"
   when:
+    - ard_node_provisioning_method == 'cloud-image'
     - ard_image_download | default(true) | bool
     - not ard_node_cached_base_image_pre_download_stat.stat.exists
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Ensure per-node cached base image exists
   ansible.builtin.stat:
     path: "{{ ard_node_cached_base_image }}"
   register: ard_node_cached_base_image_stat
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Fail when per-node cached base image is unavailable
   assert:
     that:
       - ard_node_cached_base_image_stat.stat.exists
     fail_msg: "Cached image {{ ard_node_cached_base_image }} for node {{ ard_node_name }} is missing and ard_image_download is disabled or failed."
+  when: ard_node_provisioning_method == 'cloud-image'
 
 - name: Prepare node qcow2 disk
   ansible.builtin.include_tasks: disk.yml
@@ -118,7 +133,9 @@
   ansible.builtin.file:
     path: "{{ ard_node_console_log }}"
     state: touch
-    mode: "0664"
+    mode: "0660"
+  when: ard_node_provisioning_method != 'install-media'
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Grant libvirt-qemu write access to node disk
@@ -126,13 +143,26 @@
   register: ard_node_disk_acl
   changed_when: false
   failed_when: false
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Grant libvirt-qemu read access to node seed
-  ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:r {{ ard_node_seed }}"
+- name: Grant libvirt-qemu write access to node console log
+  ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:rw {{ ard_node_console_log }}"
+  register: ard_node_console_acl
+  changed_when: false
+  failed_when: false
+  when: ard_node_provisioning_method != 'install-media'
+  become: "{{ ard_libvirt_storage_become | bool }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Grant libvirt-qemu read access to node boot media
+  ansible.builtin.command: >-
+    setfacl -m u:{{ ard_libvirt_qemu_user }}:r
+    {{ ard_node_seed if ard_node_provisioning_method == 'cloud-image' else ard_node_install_media }}
   register: ard_node_seed_acl
   changed_when: false
   failed_when: false
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Fall back to QEMU-owned node disk when file ACLs are unsupported
@@ -141,14 +171,27 @@
     owner: "{{ ard_libvirt_qemu_user }}"
     mode: "0600"
   when: ard_node_disk_acl.rc != 0
+  become: true
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Fall back to QEMU-owned node seed when file ACLs are unsupported
+- name: Fall back to QEMU-owned node boot media when file ACLs are unsupported
   ansible.builtin.file:
-    path: "{{ ard_node_seed }}"
+    path: "{{ ard_node_seed if ard_node_provisioning_method == 'cloud-image' else ard_node_install_media }}"
     owner: "{{ ard_libvirt_qemu_user }}"
     mode: "0400"
   when: ard_node_seed_acl.rc != 0
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Fall back to QEMU-owned console log when file ACLs are unsupported
+  ansible.builtin.file:
+    path: "{{ ard_node_console_log }}"
+    owner: "{{ ard_libvirt_qemu_user }}"
+    mode: "0660"
+  when:
+    - ard_node_provisioning_method != 'install-media'
+    - ard_node_console_acl.rc != 0
+  become: true
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Check whether SELinux is enabled on execution host
@@ -156,6 +199,36 @@
   register: ard_node_selinux_enabled
   changed_when: false
   failed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read node runtime image SELinux contexts
+  ansible.builtin.command:
+    argv:
+      - stat
+      - -c
+      - '%C'
+      - "{{ item }}"
+  loop:
+    - "{{ ard_node_overlay }}"
+    - "{{ ard_node_seed if ard_node_provisioning_method == 'cloud-image' else ard_node_install_media }}"
+  register: ard_node_image_selinux_contexts
+  changed_when: false
+  when: ard_node_selinux_enabled.rc == 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Label node runtime images for libvirt
+  ansible.builtin.command:
+    argv:
+      - chcon
+      - -t
+      - virt_image_t
+      - "{{ item.item }}"
+  loop: "{{ ard_node_image_selinux_contexts.results | default([]) }}"
+  when:
+    - ard_node_selinux_enabled.rc == 0
+    - not (item.skipped | default(false))
+    - "'virt_image_t' not in item.stdout"
+  become: true
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Read node console log SELinux context
@@ -167,7 +240,9 @@
       - "{{ ard_node_console_log }}"
   register: ard_node_console_selinux_context
   changed_when: false
-  when: ard_node_selinux_enabled.rc == 0
+  when:
+    - ard_node_selinux_enabled.rc == 0
+    - ard_node_provisioning_method != 'install-media'
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Label node console log for virtlogd
@@ -179,7 +254,9 @@
       - "{{ ard_node_console_log }}"
   when:
     - ard_node_selinux_enabled.rc == 0
+    - ard_node_provisioning_method != 'install-media'
     - "'virt_log_t' not in ard_node_console_selinux_context.stdout"
+  become: true
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Render libvirt domain XML
@@ -192,7 +269,7 @@
   ansible.builtin.copy:
     src: "{{ ard_node_render_dir }}/domain.xml"
     dest: "{{ ard_node_remote_render_dir }}/domain.xml"
-    mode: "0644"
+    mode: "0640"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Define libvirt domain from rendered XML
@@ -206,9 +283,10 @@
   when: ard_libvirt_domain_info.rc != 0
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
-- name: Start libvirt domain
+- name: Start apply-phase libvirt domain
   command: "virsh --connect {{ ard_libvirt_uri }} start {{ ard_node_resource_name }}"
   register: ard_libvirt_domain_start
   changed_when: ard_libvirt_domain_start.rc == 0
   failed_when: ard_libvirt_domain_start.rc != 0 and ('already active' not in (ard_libvirt_domain_start.stderr | default('')))
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_node_start_phase == 'apply'

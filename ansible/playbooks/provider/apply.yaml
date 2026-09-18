@@ -6,13 +6,15 @@
   roles:
     - ard_provider_common
     - ard_provider_preflight
+    - role: ard_sno_prepare
+      when: ard_workload == 'sno'
     - ard_provider_image
     - ard_provider_network
     - ard_provider_node
     - ard_provider_inventory
 
-- name: Wait for ARD provider nodes to be ready
-  hosts: ard_provider_nodes
+- name: Wait for mutable ARD provider nodes to be ready
+  hosts: ard_mutable_nodes
   gather_facts: false
   roles:
     - ard_provider_common
@@ -47,8 +49,8 @@
           Check cloud-init logs on {{ inventory_hostname }}.
       when: "'status: error' in (ard_cloud_init_status.stdout | default(''))"
 
-- name: Install base packages on ARD provider nodes
-  hosts: ard_provider_nodes
+- name: Install base packages on mutable ARD provider nodes
+  hosts: ard_mutable_nodes
   gather_facts: true
   roles:
     - ard_base_packages
@@ -87,8 +89,8 @@
         name: ard_static_inventory
       when: ard_provider == 'static'
 
-- name: Configure datacenter interface on ARD provider nodes
-  hosts: ard_provider_nodes
+- name: Configure datacenter interface on mutable ARD provider nodes
+  hosts: ard_mutable_nodes
   gather_facts: false
   roles:
     - ard_configure_datacenter_iface

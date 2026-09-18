@@ -87,6 +87,25 @@
     ard_workload: "{{ ard_workload_effective }}"
     ard_workload_topology: "{{ ard_workload_topology_effective }}"
 
+- name: Resolve OpenShift cluster identity
+  ansible.builtin.set_fact:
+    ard_openshift_cluster_name_effective: "{{ ard_openshift_cluster_name | default(ard_deployment_name, true) }}"
+    ard_openshift_base_domain_effective: "{{ ard_openshift_base_domain | default('ard.test', true) }}"
+  when: ard_workload == 'sno'
+
+- name: Validate standalone SNO render inputs
+  ansible.builtin.assert:
+    that:
+      - ard_provider == 'libvirt'
+      - ard_openshift_cluster_name_effective is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ard_openshift_cluster_name_effective | length <= 63
+      - ard_openshift_base_domain_effective is match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$')
+      - ard_openshift_version | string | length > 0
+    fail_msg: >-
+      Standalone SNO requires libvirt and a DNS-safe cluster identity.
+      The default cluster domain is <deployment-name>.ard.test.
+  when: ard_workload == 'sno'
+
 - name: Normalize ARD render service profile list
   ansible.builtin.set_fact:
     ard_render_service_profile_list: >-
@@ -298,7 +317,7 @@
 - name: Validate workload image resolution
   ansible.builtin.assert:
     that:
-      - ard_render_nodes | selectattr('image', 'equalto', '__ARD_IMAGE_CONFLICT__') | list | length == 0
+      - ard_render_nodes | selectattr('image', 'defined') | selectattr('image', 'equalto', '__ARD_IMAGE_CONFLICT__') | list | length == 0
     fail_msg: >-
       One or more node pools resolve to conflicting workload image defaults.
       Set an explicit pool/node image to disambiguate pools with multiple
@@ -459,6 +478,12 @@
       ard_microshift_image: {{ ard_microshift_image_effective }}
       ard_edpm_image: {{ ard_edpm_image_effective }}
       ard_render_image: {{ ard_render_default_image }}
+      {% if ard_workload == 'sno' %}
+      ard_openshift_version: {{ ard_openshift_version }}
+      ard_openshift_cluster_name: {{ ard_openshift_cluster_name_effective }}
+      ard_openshift_base_domain: {{ ard_openshift_base_domain_effective }}
+      ard_openshift_cluster_domain: {{ ard_openshift_cluster_name_effective }}.{{ ard_openshift_base_domain_effective }}
+      {% endif %}
       ard_default_image: {{ ard_render_default_image }}
       ard_default_controller_flavor: {{ ard_render_controller_flavor }}
       ard_default_compute_flavor: {{ ard_render_compute_flavor }}

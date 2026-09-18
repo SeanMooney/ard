@@ -1,0 +1,18 @@
+---
+- name: Load current provider state for SNO phase update
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_phase_provider_state
+
+- name: Persist SNO lifecycle phase
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: >-
+      {{ ard_sno_phase_provider_state |
+         combine({'sno': ard_sno_phase_provider_state.sno |
+                  combine({'phase': ard_sno_phase,
+                           'requires_clean': false} |
+                          combine(ard_sno_phase_details | default({})), recursive=True)},
+                 recursive=True) |
+         to_nice_yaml(indent=2, sort_keys=False) }}

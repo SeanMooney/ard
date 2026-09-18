@@ -27,6 +27,7 @@
     - "{{ ard_deployment_dir }}/inventory.yaml"
     - "{{ ard_deployment_dir }}/provider-state.yaml"
     - "{{ ard_deployment_dir }}/rendered"
+    - "{{ ard_deployment_dir }}/sno"
   when: ard_destroy_cleanup_generated | default(false) | bool
 
 - name: Remove ARD deployment logs

@@ -1,133 +1,182 @@
 ---
-- name: Wait for MicroShift API before Local Path Provisioner
-  become: true
+- name: Resolve Local Path Provisioner client arguments
+  ansible.builtin.set_fact:
+    local_path_cli_argv: >-
+      {{ [local_path_cli, '--kubeconfig', local_path_kubeconfig] +
+         (['--cache-dir', local_path_cache_dir] if local_path_cache_dir | length > 0 else []) }}
+    local_path_admin_cli_argv: >-
+      {{ [local_path_admin_cli, '--kubeconfig', local_path_kubeconfig] +
+         (['--cache-dir', local_path_cache_dir] if local_path_cache_dir | length > 0 else []) }}
+    local_path_config: >-
+      {{ {'nodePathMap': [
+           {'node': 'DEFAULT_PATH_FOR_NON_LISTED_NODES',
+            'paths': [local_path_host_dir]}]} }}
+  when: local_path_enabled | bool
+
+- name: Wait for Kubernetes API before Local Path Provisioner
+  become: "{{ local_path_become | bool }}"
   ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - get
-      - nodes
-  register: microshift_local_path_api_ready
+    argv: "{{ local_path_cli_argv + ['get', 'nodes'] }}"
+  environment: "{{ local_path_environment }}"
+  register: local_path_api_ready
   changed_when: false
-  until: microshift_local_path_api_ready.rc == 0
+  until: local_path_api_ready.rc == 0
   retries: 60
   delay: 10
-  when: microshift_install_local_path_provisioner | bool
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"
 
 - name: Validate default storage class selection
   ansible.builtin.assert:
     that:
-      - microshift_default_storage_class in microshift_storage_class_names
-    fail_msg: "microshift_default_storage_class must be one of {{ microshift_storage_class_names.keys() | list }}."
-  when: microshift_install_local_path_provisioner | bool
+      - local_path_default_storage_class in local_path_storage_class_names
+    fail_msg: >-
+      local_path_default_storage_class must be one of
+      {{ local_path_storage_class_names.keys() | list }}.
+  when: local_path_enabled | bool
 
 - name: Prepare Local Path Provisioner host directory
-  become: true
+  become: "{{ local_path_host_become | bool }}"
   ansible.builtin.shell: |
     set -euo pipefail
-    mkdir -p /opt/local-path-provisioner
-    chmod 0777 /opt/local-path-provisioner
-    if command -v chcon >/dev/null 2>&1; then
-      chcon -Rt container_file_t /opt/local-path-provisioner || true
+    install -d -m {{ local_path_host_dir_mode | quote }} {{ local_path_host_dir | quote }}
+    if command -v semanage >/dev/null 2>&1 && command -v restorecon >/dev/null 2>&1; then
+      semanage fcontext -a -t container_file_t {{ (local_path_host_dir + '(/.*)?') | quote }} 2>/dev/null ||
+        semanage fcontext -m -t container_file_t {{ (local_path_host_dir + '(/.*)?') | quote }}
+      restorecon -RF {{ local_path_host_dir | quote }}
+    elif command -v chcon >/dev/null 2>&1; then
+      chcon -Rt container_file_t {{ local_path_host_dir | quote }}
     fi
   args:
     executable: /bin/bash
   changed_when: false
-  when: microshift_install_local_path_provisioner | bool
+  when:
+    - local_path_enabled | bool
+    - local_path_prepare_host_dir | bool
+  delegate_to: "{{ local_path_host_delegate_to }}"
+
+- name: Render Local Path Provisioner manifest
+  become: "{{ local_path_become | bool }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ (local_path_cli_argv +
+        ['create', '--dry-run=client', '-f', local_path_manifest_url, '-o', 'json']) |
+       map('quote') | join(' ') }} |
+      jq -s '{apiVersion: "v1", kind: "List", items: .}'
+  args:
+    executable: /bin/bash
+  environment: "{{ local_path_environment }}"
+  register: local_path_manifest_json
+  changed_when: false
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"
+
+- name: Initialize rendered Local Path Provisioner resources
+  ansible.builtin.set_fact:
+    local_path_rendered_resources: []
+  when: local_path_enabled | bool
+
+- name: Configure host path in rendered Local Path Provisioner manifest
+  ansible.builtin.set_fact:
+    local_path_rendered_resources: >-
+      {{ local_path_rendered_resources +
+         [item |
+          combine({'data': item.get('data', {}) |
+                   combine({'config.json': local_path_config | to_json})})
+          if item.kind == 'ConfigMap' and item.metadata.name == 'local-path-config'
+          else item] }}
+  loop: "{{ (local_path_manifest_json.stdout | from_json)['items'] }}"
+  when: local_path_enabled | bool
 
 - name: Install Rancher Labs Local Path Provisioner
-  become: true
+  become: "{{ local_path_become | bool }}"
   ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - apply
-      - -f
-      - "{{ microshift_local_path_manifest_url }}"
-  register: microshift_local_path_apply
-  changed_when: "'created' in microshift_local_path_apply.stdout or 'configured' in microshift_local_path_apply.stdout"
-  when: microshift_install_local_path_provisioner | bool
-
-- name: Wait for Local Path Provisioner rollout
-  become: true
-  ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - -n
-      - local-path-storage
-      - rollout
-      - status
-      - deployment/local-path-provisioner
-      - --timeout=300s
-  changed_when: false
-  when: microshift_install_local_path_provisioner | bool
+    argv: "{{ local_path_cli_argv + ['apply', '-f', '-'] }}"
+    stdin: >-
+      {{ (local_path_manifest_json.stdout | from_json) |
+         combine({'items': local_path_rendered_resources}) | to_json }}
+  environment: "{{ local_path_environment }}"
+  register: local_path_apply
+  changed_when: "'created' in local_path_apply.stdout or 'configured' in local_path_apply.stdout"
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"
 
 - name: Allow Local Path Provisioner helper pods to use hostPath storage
-  become: true
+  become: "{{ local_path_become | bool }}"
   ansible.builtin.command:
-    argv:
-      - oc
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - adm
-      - policy
-      - add-scc-to-user
-      - privileged
-      - -z
-      - local-path-provisioner-service-account
-      - -n
-      - local-path-storage
-  register: microshift_local_path_scc
-  changed_when: "'added' in microshift_local_path_scc.stdout"
-  when: microshift_install_local_path_provisioner | bool
-
-- name: Collect storage classes
-  become: true
-  ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - get
-      - storageclass
-      - -o
-      - name
-  register: microshift_storage_classes
-  changed_when: false
-  when: microshift_install_local_path_provisioner | bool
-
-- name: Remove default annotation from non-selected storage classes
-  become: true
-  ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - annotate
-      - "{{ item }}"
-      - storageclass.kubernetes.io/is-default-class-
-      - --overwrite
-  loop: "{{ microshift_storage_classes.stdout_lines | default([]) }}"
+    argv: >-
+      {{ local_path_admin_cli_argv +
+         ['adm', 'policy', 'add-scc-to-user', local_path_scc,
+          '-z', local_path_service_account, '-n', local_path_namespace] }}
+  environment: "{{ local_path_environment }}"
+  register: local_path_scc_result
   changed_when: false
   when:
-    - microshift_install_local_path_provisioner | bool
-    - item != 'storageclass.storage.k8s.io/' ~ microshift_storage_class_names[microshift_default_storage_class]
+    - local_path_enabled | bool
+    - local_path_scc | default('') | length > 0
+  delegate_to: "{{ local_path_delegate_to }}"
 
-- name: Mark configured MicroShift default storage class
-  become: true
+- name: Restart Local Path Provisioner after host-path change
+  become: "{{ local_path_become | bool }}"
   ansible.builtin.command:
-    argv:
-      - kubectl
-      - --kubeconfig
-      - "{{ microshift_kubeconfig }}"
-      - annotate
-      - storageclass
-      - "{{ microshift_storage_class_names[microshift_default_storage_class] }}"
-      - storageclass.kubernetes.io/is-default-class=true
-      - --overwrite
+    argv: >-
+      {{ local_path_cli_argv +
+         ['-n', local_path_namespace, 'rollout', 'restart',
+          'deployment/local-path-provisioner'] }}
+  environment: "{{ local_path_environment }}"
+  register: local_path_restart
+  when:
+    - local_path_enabled | bool
+    - >-
+      local_path_apply.stdout is regex(
+        'configmap/local-path-config\\s+(created|configured)')
+  delegate_to: "{{ local_path_delegate_to }}"
+
+- name: Wait for Local Path Provisioner rollout
+  become: "{{ local_path_become | bool }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ local_path_cli_argv +
+         ['-n', local_path_namespace, 'rollout', 'status',
+          'deployment/local-path-provisioner', '--timeout=300s'] }}
+  environment: "{{ local_path_environment }}"
   changed_when: false
-  when: microshift_install_local_path_provisioner | bool
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"
+
+- name: Collect storage classes
+  become: "{{ local_path_become | bool }}"
+  ansible.builtin.command:
+    argv: "{{ local_path_cli_argv + ['get', 'storageclass', '-o', 'name'] }}"
+  environment: "{{ local_path_environment }}"
+  register: local_path_storage_classes
+  changed_when: false
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"
+
+- name: Remove default annotation from non-selected storage classes
+  become: "{{ local_path_become | bool }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ local_path_cli_argv +
+         ['annotate', item, 'storageclass.kubernetes.io/is-default-class-', '--overwrite'] }}
+  environment: "{{ local_path_environment }}"
+  loop: "{{ local_path_storage_classes.stdout_lines | default([]) }}"
+  changed_when: false
+  when:
+    - local_path_enabled | bool
+    - item != 'storageclass.storage.k8s.io/' ~ local_path_storage_class_names[local_path_default_storage_class]
+  delegate_to: "{{ local_path_delegate_to }}"
+
+- name: Mark configured default storage class
+  become: "{{ local_path_become | bool }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ local_path_cli_argv +
+         ['annotate', 'storageclass',
+          local_path_storage_class_names[local_path_default_storage_class],
+          'storageclass.kubernetes.io/is-default-class=true', '--overwrite'] }}
+  environment: "{{ local_path_environment }}"
+  changed_when: false
+  when: local_path_enabled | bool
+  delegate_to: "{{ local_path_delegate_to }}"

@@ -81,6 +81,7 @@ ard_nodes:
 {% set resolved_image = ard_render_provider_defaults.image | default(ard_render_default_image, true) %}
 {% endif %}
 {% endif %}
+{% set provisioning_method = (node.provisioning | default({})).get('method', 'cloud-image') %}
 {% set resolved_preference = node.preference | default('', true) %}
 {% if resolved_preference == '' %}
 {% if ard_render_workload_default_vm_preference | default('', true) != '' %}
@@ -107,8 +108,17 @@ ard_nodes:
       - {{ workload_role }}
 {% endfor %}
 {% endif %}
+{% if provisioning_method != 'install-media' %}
     image: {{ resolved_image }}
+{% endif %}
     flavor: {{ resolved_flavor }}
+    provisioning:
+      method: {{ provisioning_method }}
+    lifecycle:
+      start_phase: {{ (node.lifecycle | default({})).get('start_phase', 'apply') }}
+    management:
+      mode: {{ (node.management | default({})).get('mode', 'mutable') }}
+      ansible_user: {{ (node.management | default({})).get('ansible_user', 'stack') }}
     preference: {{ resolved_preference }}
     networks:
 {% set node_network_overrides = node_override.networks | default({}) if node_override.networks is mapping else {} %}

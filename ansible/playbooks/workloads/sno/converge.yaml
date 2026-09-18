@@ -1,0 +1,10 @@
+---
+- name: Deploy standalone SNO
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "{{ lookup('ansible.builtin.first_found', {'files': [ard_local_vars_file | default(ard_deployment_dir | default('') ~ '/local-vars.yaml', true), '/dev/null'], 'skip': true}) }}"
+  roles:
+    - ard_provider_common
+    - ard_sno_deploy

@@ -45,10 +45,35 @@
           - _oko.ard_nodes | length == 3
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).workload_roles == ['microshift_node']
           - (_oko.ard_nodes | selectattr('name', 'equalto', 'microshift') | first).groups | sort == ['microshift', 'switch']
-          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).workload_roles == ['edpm_compute']
-          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).groups | sort == ['compute', 'peers', 'subnode']
-          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-compute-1') | first).image == 'centos-stream-9'
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-1') | first).workload_roles == ['edpm_compute']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-1') | first).groups | sort == ['compute', 'peers', 'subnode']
+          - (_oko.ard_nodes | selectattr('name', 'equalto', 'edpm-1') | first).image == 'centos-stream-9'
         fail_msg: "OKO workload roles did not render expected EDPM groups or image"
+
+    - name: Load rendered standalone SNO deployment
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/remote-libvirt-sno/deployment.yaml"
+        name: _sno_deployment
+
+    - name: Load rendered standalone SNO nodes
+      ansible.builtin.include_vars:
+        file: "{{ _render_base_dir }}/remote-libvirt-sno/nodes.yaml"
+        name: _sno
+
+    - name: Verify standalone SNO provisioning and identity
+      ansible.builtin.assert:
+        that:
+          - _sno_deployment.ard_workload == 'sno'
+          - _sno_deployment.ard_openshift_cluster_domain == 'remote-libvirt-sno.ard.test'
+          - _sno.ard_nodes | length == 1
+          - _sno.ard_nodes[0].groups | sort == ['cluster', 'sno']
+          - _sno.ard_nodes[0].flavor == 'sno-node'
+          - _sno.ard_nodes[0].provisioning.method == 'install-media'
+          - _sno.ard_nodes[0].lifecycle.start_phase == 'deploy'
+          - _sno.ard_nodes[0].management.mode == 'externally-managed'
+          - _sno.ard_nodes[0].management.ansible_user == 'core'
+          - _sno.ard_nodes[0].image is not defined
+        fail_msg: "Standalone SNO render contract is incorrect"
 
     - name: Load rendered legacy alias nodes
       ansible.builtin.include_vars:
@@ -104,7 +129,7 @@
           - _kubevirt_deployment.ard_provider_resource_prefix == 'molecule-user-ardtest-aio'
           - _kubevirt_deployment.ard_resource_name_prefix == 'molecule-user-ardtest-aio'
           - _kubevirt_nodes.ard_nodes | length == 2
-          - (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).provider_resource_name == 'molecule-user-ardtest-aio-controller'
+          - (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).provider_resource_name == 'molecule-user-4630e9b7-controlle'
           - (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).flavor == 'devstack-control'
           - "'mac' not in ((_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first).networks[0])"
           - "'profiles' not in (_kubevirt_nodes.ard_nodes | selectattr('name', 'equalto', 'controller') | first)"

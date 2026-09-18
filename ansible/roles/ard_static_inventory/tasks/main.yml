@@ -157,6 +157,11 @@
       {% for node in ard_static_node_list %}
               {{ node.name }}:
       {% endfor %}
+          ard_mutable_nodes:
+            hosts:
+      {% for node in ard_static_node_list %}
+              {{ node.name }}:
+      {% endfor %}
       {% set group_names = [] %}
       {% for node in ard_static_node_list %}
       {% for group in node.groups %}
@@ -184,7 +189,7 @@
 - name: Add ARD static nodes to active inventory
   ansible.builtin.add_host:
     name: "{{ item.name }}"
-    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    groups: "{{ ['ard_provider_nodes', 'ard_mutable_nodes'] + item.groups }}"
     ansible_host: "{{ item.ansible_host }}"
     ansible_user: "{{ item.ansible_user }}"
     ansible_port: "{{ item.ansible_port }}"

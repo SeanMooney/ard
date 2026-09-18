@@ -1,0 +1,299 @@
+---
+- name: Load standalone SNO deployment variables
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/deployment.yaml"
+
+- name: Load standalone SNO node variables
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/nodes.yaml"
+
+- name: Select standalone SNO node for deployment
+  ansible.builtin.set_fact:
+    ard_sno_nodes: >-
+      {{ ard_nodes |
+         selectattr('provisioning.method', 'defined') |
+         selectattr('provisioning.method', 'equalto', 'install-media') | list }}
+
+- name: Require exactly one standalone SNO node for deployment
+  ansible.builtin.assert:
+    that:
+      - ard_sno_nodes | length == 1
+    fail_msg: Standalone SNO deploy requires exactly one install-media node.
+
+- name: Load standalone SNO provider state
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_deploy_provider_state
+
+- name: Require prepared standalone SNO state
+  ansible.builtin.assert:
+    that:
+      - ard_sno_deploy_provider_state.ard_provider == 'libvirt'
+      - ard_sno_deploy_provider_state.sno is defined
+      - not (ard_sno_deploy_provider_state.sno.requires_clean | default(false) | bool)
+      - ard_sno_deploy_provider_state.sno.phase != 'destroyed'
+    fail_msg: Run a successful standalone SNO apply before deploy.
+
+- name: Set standalone SNO deployment state
+  ansible.builtin.set_fact:
+    ard_sno_state: "{{ ard_sno_deploy_provider_state.sno }}"
+
+- name: Restore libvirt execution host
+  ansible.builtin.include_role:
+    name: ard_libvirt_execution
+  vars:
+    ard_libvirt_execution_persist_state: false
+
+- name: Create deployment-local SNO command state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ ard_sno_state.remote_state_dir | dirname }}/tmp"
+      mode: "0700"
+    - path: "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      mode: "0700"
+    - path: "{{ ard_sno_state.remote_state_dir | dirname }}/async"
+      mode: "0700"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Resolve deployment-local SNO command environment
+  ansible.builtin.set_fact:
+    ard_sno_command_environment:
+      TMPDIR: "{{ ard_sno_state.remote_state_dir | dirname }}/tmp"
+      XDG_CACHE_HOME: "{{ ard_sno_state.remote_state_dir | dirname }}/cache"
+
+- name: Select recorded and rendered SNO domain identity
+  ansible.builtin.set_fact:
+    ard_sno_domain_state: >-
+      {{ ard_sno_deploy_provider_state.domains |
+         selectattr('inventory_name', 'equalto', ard_sno_nodes[0].name) | first }}
+    ard_sno_rendered_node: "{{ ard_sno_nodes[0] }}"
+
+- name: Validate resumable SNO lifecycle phase
+  ansible.builtin.assert:
+    that:
+      - ard_sno_state.phase in ['prepared', 'installing', 'installed', 'media_detached', 'disk_boot_validated']
+      - ard_sno_domain_state.provisioning_method == 'install-media'
+      - ard_sno_domain_state.start_phase == 'deploy'
+    fail_msg: Refusing to resume SNO from unrecognized provider state.
+
+- name: Inspect preserved and runtime Agent ISO files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ ard_sno_state.remote_iso }}"
+    - "{{ ard_sno_state.runtime_iso }}"
+  register: ard_sno_iso_identity
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Inspect recorded SNO root disk
+  ansible.builtin.stat:
+    path: "{{ ard_sno_domain_state.overlay }}"
+  register: ard_sno_disk_identity
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read recorded SNO disk metadata
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - info
+      - --force-share
+      - --output=json
+      - "{{ ard_sno_domain_state.overlay }}"
+  register: ard_sno_disk_info_raw
+  changed_when: false
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Resolve structured SNO domain identity policy
+  ansible.builtin.set_fact:
+    ard_sno_root_disk_bus: >-
+      {{ ard_flavors[ard_sno_rendered_node.flavor].provider.libvirt.disk_bus | default('virtio') }}
+    ard_sno_media_policy: >-
+      {{ 'required' if ard_sno_state.phase in ['prepared', 'installing']
+         else ('optional' if ard_sno_state.phase == 'installed' else 'absent') }}
+
+- name: Build structured SNO domain identity command
+  ansible.builtin.set_fact:
+    ard_sno_domain_identity_argv:
+      - "{{ ard_libvirt_domain_identity_helper }}"
+      - --uri
+      - "{{ ard_libvirt_uri }}"
+      - --domain
+      - "{{ ard_sno_domain_state.name }}"
+      - --root-source
+      - "{{ ard_sno_domain_state.overlay }}"
+      - --root-target
+      - "{{ 'sda' if ard_sno_root_disk_bus == 'scsi' else 'vda' }}"
+      - --root-bus
+      - "{{ ard_sno_root_disk_bus }}"
+      - --media-source
+      - "{{ ard_sno_domain_state.install_media }}"
+      - --media-target
+      - "{{ ard_sno_domain_state.install_media_target }}"
+      - --media-policy
+      - "{{ ard_sno_media_policy }}"
+
+- name: Add expected SNO interfaces to identity command
+  ansible.builtin.set_fact:
+    ard_sno_domain_identity_argv: >-
+      {{ ard_sno_domain_identity_argv +
+         ['--interface', item.mac + '=' + ard_networks[item.name].provider.libvirt.name] }}
+  loop: "{{ ard_sno_rendered_node.networks }}"
+
+- name: Validate preserved SNO media and disk files
+  ansible.builtin.assert:
+    that:
+      - ard_sno_iso_identity.results[0].stat.exists
+      - ard_sno_iso_identity.results[1].stat.exists
+      - ard_sno_iso_identity.results[0].stat.checksum == ard_sno_state.iso_sha256
+      - ard_sno_iso_identity.results[1].stat.checksum == ard_sno_state.iso_sha256
+      - ard_sno_disk_identity.stat.exists
+      - (ard_sno_disk_info_raw.stdout | from_json)['virtual-size'] == (ard_flavors[ard_sno_rendered_node.flavor].root_disk_gb | int * 1073741824)
+    fail_msg: Refusing to resume SNO because recorded media or disk identity drifted.
+
+- name: Validate persistent and live SNO domain XML structurally
+  ansible.builtin.command:
+    argv: "{{ ard_sno_domain_identity_argv }}"
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Start the deploy-phase SNO node
+  ansible.builtin.include_role:
+    name: ard_provider_node_action
+  vars:
+    ard_provider_node_action: start
+    ard_provider_node_action_node: sno
+  when: ard_sno_state.phase not in ['disk_boot_validated']
+
+- name: Record installing phase
+  ansible.builtin.include_tasks: state.yml
+  vars:
+    ard_sno_phase: installing
+  when: ard_sno_state.phase in ['prepared', 'installing']
+
+- name: Wait for installed standalone SNO readiness
+  ansible.builtin.include_tasks: validate.yml
+  when: ard_sno_state.phase in ['prepared', 'installing']
+
+- name: Record installed phase
+  ansible.builtin.include_tasks: state.yml
+  vars:
+    ard_sno_phase: installed
+  when: ard_sno_state.phase in ['prepared', 'installing']
+
+- name: Reload provider state after installation
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_installed_provider_state
+
+- name: Refresh standalone SNO state
+  ansible.builtin.set_fact:
+    ard_sno_state: "{{ ard_sno_installed_provider_state.sno }}"
+
+- name: Validate resumed standalone SNO
+  ansible.builtin.include_tasks: validate.yml
+  when: ard_sno_deploy_provider_state.sno.phase not in ['prepared', 'installing']
+
+- name: Install and validate default local-path storage
+  ansible.builtin.include_tasks: storage.yml
+
+- name: Detach Agent installation media
+  ansible.builtin.include_role:
+    name: ard_provider_node_action
+  vars:
+    ard_provider_node_action: detach-install-media
+    ard_provider_node_action_node: sno
+  when: ard_sno_state.phase not in ['media_detached', 'disk_boot_validated']
+
+- name: Validate Agent installation media is ejected
+  ansible.builtin.command:
+    argv: >-
+      {{ ard_sno_domain_identity_argv |
+         map('regex_replace', '^(required|optional)$', 'absent') | list }}
+  changed_when: false
+  when: ard_sno_state.phase not in ['media_detached', 'disk_boot_validated']
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record media-detached phase
+  ansible.builtin.include_tasks: state.yml
+  vars:
+    ard_sno_phase: media_detached
+  when: ard_sno_state.phase not in ['media_detached', 'disk_boot_validated']
+
+- name: Read SNO boot ID before disk-only reboot
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - get
+      - nodes
+      - -o
+      - 'jsonpath={.items[0].status.nodeInfo.bootID}'
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_boot_id_before_reboot
+  changed_when: false
+  when: ard_sno_state.phase != 'disk_boot_validated'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Reboot SNO from its installed disk
+  ansible.builtin.include_role:
+    name: ard_provider_node_action
+  vars:
+    ard_provider_node_action: reboot
+    ard_provider_node_action_node: sno
+  when: ard_sno_state.phase != 'disk_boot_validated'
+
+- name: Wait for SNO boot ID to change after disk-only reboot
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - get
+      - nodes
+      - -o
+      - 'jsonpath={.items[0].status.nodeInfo.bootID}'
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_boot_id_after_reboot
+  changed_when: false
+  failed_when: false
+  until:
+    - ard_sno_boot_id_after_reboot.rc == 0
+    - ard_sno_boot_id_after_reboot.stdout | length > 0
+    - ard_sno_boot_id_after_reboot.stdout != ard_sno_boot_id_before_reboot.stdout
+  retries: 60
+  delay: 10
+  when: ard_sno_state.phase != 'disk_boot_validated'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Revalidate SNO after disk-only reboot
+  ansible.builtin.include_tasks: validate.yml
+  when: ard_sno_state.phase != 'disk_boot_validated'
+
+- name: Verify SNO completed a disk-only reboot
+  ansible.builtin.assert:
+    that:
+      - ard_sno_boot_id_before_reboot.stdout | length > 0
+      - ard_sno_boot_id_after_reboot.stdout | length > 0
+      - ard_sno_boot_id_after_reboot.stdout != ard_sno_boot_id_before_reboot.stdout
+    fail_msg: SNO did not report a changed boot ID after installation-media detach.
+  when: ard_sno_state.phase != 'disk_boot_validated'
+
+- name: Record disk-boot validation
+  ansible.builtin.include_tasks: state.yml
+  vars:
+    ard_sno_phase: disk_boot_validated
+    ard_sno_phase_details:
+      boot_id_before_reboot: "{{ ard_sno_boot_id_before_reboot.stdout }}"
+      boot_id_after_reboot: "{{ ard_sno_boot_id_after_reboot.stdout }}"
+  when: ard_sno_state.phase != 'disk_boot_validated'

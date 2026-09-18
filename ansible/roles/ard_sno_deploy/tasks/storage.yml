@@ -1,0 +1,261 @@
+---
+- name: Install shared Local Path Provisioner configuration
+  ansible.builtin.include_role:
+    name: microshift_install_local_path
+  vars:
+    local_path_enabled: true
+    local_path_cli: "{{ ard_sno_state.remote_oc }}"
+    local_path_admin_cli: "{{ ard_sno_state.remote_oc }}"
+    local_path_kubeconfig: "{{ ard_sno_state.remote_kubeconfig }}"
+    local_path_cache_dir: "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+    local_path_environment: "{{ ard_sno_command_environment }}"
+    local_path_manifest_url: "{{ ard_sno_local_path_manifest_url }}"
+    local_path_default_storage_class: local-path
+    local_path_storage_class_names:
+      local-path: local-path
+    local_path_namespace: "{{ ard_sno_local_path_namespace }}"
+    local_path_service_account: "{{ ard_sno_local_path_service_account }}"
+    local_path_scc: hostmount-anyuid
+    local_path_host_dir_mode: "0755"
+    local_path_prepare_host_dir: true
+    local_path_delegate_to: "{{ ard_libvirt_execution_host_name }}"
+    local_path_become: false
+    local_path_host_delegate_to: sno
+    local_path_host_become: true
+
+- name: Create SNO storage smoke namespace
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - create
+      - namespace
+      - "{{ ard_sno_smoke_namespace }}"
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_smoke_namespace_create
+  changed_when: "'created' in ard_sno_smoke_namespace_create.stdout"
+  failed_when: >-
+    ard_sno_smoke_namespace_create.rc != 0 and
+    'AlreadyExists' not in ard_sno_smoke_namespace_create.stderr
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Remove prior SNO storage smoke Job
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - delete
+      - job
+      - smoke-write
+      - --ignore-not-found=true
+      - --wait=true
+  environment: "{{ ard_sno_command_environment }}"
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Inspect prior SNO storage smoke PVC
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - get
+      - pvc/smoke-pvc
+      - -o
+      - name
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_prior_smoke_pvc
+  changed_when: false
+  failed_when: >-
+    ard_sno_prior_smoke_pvc.rc != 0 and
+    'NotFound' not in ard_sno_prior_smoke_pvc.stderr
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Clear prior SNO storage-write validation
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - annotate
+      - pvc/smoke-pvc
+      - ard.test/write-validated-
+      - ard.test/write-pvc-uid-
+      - ard.test/write-job-uid-
+      - --overwrite
+  environment: "{{ ard_sno_command_environment }}"
+  changed_when: false
+  when: ard_sno_prior_smoke_pvc.rc == 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Apply default-StorageClass PVC smoke test
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ ard_sno_state.remote_oc | quote }} --kubeconfig {{ ard_sno_state.remote_kubeconfig | quote }} \
+      --cache-dir {{ (ard_sno_state.remote_state_dir + '/cache/kube') | quote }} \
+      -n {{ ard_sno_smoke_namespace | quote }} apply -f - <<'EOF'
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: smoke-pvc
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 128Mi
+    ---
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: smoke-write
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: busybox
+              image: {{ ard_sno_smoke_image }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+              command: ["/bin/sh", "-c"]
+              args:
+                - echo ard-sno-storage-ok > /data/result && cat /data/result
+              volumeMounts:
+                - name: smoke-storage
+                  mountPath: /data
+          volumes:
+            - name: smoke-storage
+              persistentVolumeClaim:
+                claimName: smoke-pvc
+    EOF
+  args:
+    executable: /bin/bash
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_smoke_apply
+  changed_when: "'created' in ard_sno_smoke_apply.stdout or 'configured' in ard_sno_smoke_apply.stdout"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Wait for storage smoke PVC to bind
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - wait
+      - --for=jsonpath={.status.phase}=Bound
+      - pvc/smoke-pvc
+      - --timeout=300s
+  environment: "{{ ard_sno_command_environment }}"
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Wait for storage smoke Job completion
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - wait
+      - --for=condition=Complete
+      - job/smoke-write
+      - --timeout=300s
+  environment: "{{ ard_sno_command_environment }}"
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read storage smoke output
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - logs
+      - job/smoke-write
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_smoke_logs
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Verify default StorageClass PVC write
+  ansible.builtin.assert:
+    that:
+      - "'ard-sno-storage-ok' in ard_sno_smoke_logs.stdout"
+    fail_msg: The SNO local-path PVC smoke test did not write expected data.
+
+- name: Read successful SNO storage smoke resources
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - get
+      - "{{ item }}"
+      - -o
+      - json
+  loop:
+    - pvc/smoke-pvc
+    - job/smoke-write
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_smoke_resources
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Persist successful SNO storage-write validation
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - -n
+      - "{{ ard_sno_smoke_namespace }}"
+      - annotate
+      - pvc/smoke-pvc
+      - ard.test/write-validated=true
+      - "ard.test/write-pvc-uid={{ (ard_sno_smoke_resources.results[0].stdout | from_json).metadata.uid }}"
+      - "ard.test/write-job-uid={{ (ard_sno_smoke_resources.results[1].stdout | from_json).metadata.uid }}"
+      - --overwrite
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_smoke_annotation
+  changed_when: "'annotated' in ard_sno_smoke_annotation.stdout"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

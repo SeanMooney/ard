@@ -4,6 +4,7 @@
     ard_selected_image_name: "{{ ard_default_image }}"
     ard_selected_image: "{{ ard_images[ard_default_image] }}"
     ard_selected_libvirt_image: "{{ ard_images[ard_default_image].provider.libvirt }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Validate libvirt image URL is configured
   assert:
@@ -12,6 +13,7 @@
       - ard_selected_libvirt_image.url | length > 0
       - ard_selected_libvirt_image.url != None
     fail_msg: "No libvirt image URL configured for {{ ard_selected_image_name }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Set libvirt image cache directory
   ansible.builtin.set_fact:
@@ -22,17 +24,21 @@
     path: "{{ ard_image_cache_dir_resolved }}"
     state: directory
     mode: "0755"
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Set cached base image path
   set_fact:
     ard_cached_base_image: "{{ ard_image_cache_dir_resolved + '/' + (ard_selected_libvirt_image.cache_filename | default(ard_selected_libvirt_image.url | basename)) }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Check pre-existing cached image
   ansible.builtin.stat:
     path: "{{ ard_cached_base_image }}"
   register: ard_cached_base_image_pre_download_stat
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Download base cloud image when missing
   ansible.builtin.get_url:
@@ -41,39 +47,56 @@
     mode: "0644"
     checksum: "{{ ard_selected_libvirt_image.checksum | default(omit) }}"
   when:
+    - ard_libvirt_cloud_image_nodes | default([]) | length > 0
     - ard_image_download | default(true) | bool
     - not ard_cached_base_image_pre_download_stat.stat.exists
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Ensure cached base image exists
   ansible.builtin.stat:
     path: "{{ ard_cached_base_image }}"
   register: ard_cached_base_image_stat
+  become: "{{ ard_libvirt_cache_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
 - name: Fail when cached base image is unavailable
   assert:
     that:
       - ard_cached_base_image_stat.stat.exists
     fail_msg: "Cached image {{ ard_cached_base_image }} is missing and ard_image_download is disabled or failed."
+  when: ard_libvirt_cloud_image_nodes | default([]) | length > 0
 
-- name: Ensure libvirt image directories exist on execution host
+- name: Ensure stack-owned deployment directory exists
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ ard_libvirt_remote_deployment_dir }}"
     state: directory
-    mode: "0755"
-  loop:
-    - "{{ ard_libvirt_deployment_image_dir_resolved }}"
-    - "{{ ard_libvirt_remote_render_dir }}"
+    mode: "0750"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Ensure libvirt runtime image directory exists on execution host
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_deployment_image_dir_resolved }}"
+    state: directory
+    mode: "0750"
+  become: "{{ ard_libvirt_storage_become | bool }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Ensure stack-owned libvirt render directory exists
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_remote_render_dir }}"
+    state: directory
+    mode: "0750"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Grant libvirt-qemu traverse access to execution host state parents
   ansible.builtin.command: "setfacl -m u:{{ ard_libvirt_qemu_user }}:x {{ item }}"
   changed_when: false
-  failed_when: false
   loop:
     - "{{ ard_libvirt_execution_home }}"
-    - "{{ ard_libvirt_execution_home }}/.local"
-    - "{{ ard_libvirt_execution_home }}/.local/state"
-  when: ard_libvirt_image_dir_resolved is search(ard_libvirt_execution_home)
+    - "{{ ard_libvirt_execution_home }}/ard"
+    - "{{ ard_libvirt_execution_home }}/ard/{{ ard_deployment_name }}"
+    - "{{ ard_libvirt_deployment_image_dir_resolved }}"
+  when: ard_libvirt_deployment_image_dir_resolved.startswith(ard_libvirt_execution_home + '/')
   delegate_to: "{{ ard_libvirt_execution_host_name }}"

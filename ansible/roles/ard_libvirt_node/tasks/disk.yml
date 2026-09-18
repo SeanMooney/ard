@@ -29,6 +29,7 @@
   ansible.builtin.stat:
     path: "{{ ard_node_overlay }}"
   register: ard_node_overlay_stat
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Require recorded storage for an existing domain
@@ -49,14 +50,38 @@
   args:
     executable: /bin/sh
     creates: "{{ ard_node_overlay }}"
-  register: ard_node_disk_create
+  register: ard_node_cloud_disk_create
+  when: ard_node_provisioning_method | default('cloud-image') == 'cloud-image'
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Create blank node qcow2 disk atomically
+  ansible.builtin.shell: |
+    set -eu
+    disk_tmp={{ (ard_node_overlay + '.tmp') | quote }}
+    rm -f "$disk_tmp"
+    qemu-img create -f qcow2 "$disk_tmp" {{ ard_node_root_disk_gb }}G
+    mv "$disk_tmp" {{ ard_node_overlay | quote }}
+  args:
+    executable: /bin/sh
+    creates: "{{ ard_node_overlay }}"
+  register: ard_node_blank_disk_create
+  when: ard_node_provisioning_method | default('cloud-image') == 'install-media'
+  become: "{{ ard_libvirt_storage_become | bool }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record node disk creation
+  ansible.builtin.set_fact:
+    ard_node_disk_create_changed: >-
+      {{ (ard_node_cloud_disk_create.changed | default(false)) or
+         (ard_node_blank_disk_create.changed | default(false)) }}
 
 - name: Ensure new node qcow2 disk is writable before resize
   ansible.builtin.file:
     path: "{{ ard_node_overlay }}"
-    mode: "0644"
-  when: ard_node_disk_create.changed
+    mode: "0640"
+  when: ard_node_disk_create_changed | bool
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Read undefined node disk capacity
@@ -69,6 +94,7 @@
   register: ard_node_qemu_img_info
   changed_when: false
   when: ard_libvirt_domain_info.rc != 0
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Read defined node disk capacity
@@ -166,4 +192,5 @@
       - "{{ ard_node_overlay }}"
       - "{{ ard_node_root_disk_gb }}G"
   when: ard_node_disk_capacity_bytes | int < ard_node_requested_capacity_bytes | int
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"

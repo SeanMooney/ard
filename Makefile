@@ -27,9 +27,9 @@ ARD_RENDERED_PROVIDER = $(shell awk -F': *' '/^ard_provider:/ {print $$2; exit}'
 ARD_WORKLOAD ?= $(or $(ARD_RENDERED_WORKLOAD),devstack)
 ARD_EFFECTIVE_PROVIDER = $(or $(ARD_RENDERED_PROVIDER),$(ARD_PROVIDER))
 ARD_DEVSTACK_SERVICES = devstack,ovn,tempest
-ARD_TOPOLOGY ?= $(if $(filter microshift,$(ARD_WORKLOAD)),microshift-single-node,one-controller-one-compute)
+ARD_TOPOLOGY ?= $(if $(filter microshift,$(ARD_WORKLOAD)),microshift-single-node,$(if $(filter sno,$(ARD_WORKLOAD)),sno-single-node,one-controller-one-compute))
 ARD_TARGET_BRANCH ?= master
-ARD_SERVICES ?= $(if $(filter microshift,$(ARD_WORKLOAD)),,$(ARD_DEVSTACK_SERVICES))
+ARD_SERVICES ?= $(if $(filter microshift sno,$(ARD_WORKLOAD)),,$(ARD_DEVSTACK_SERVICES))
 ARD_PROVIDER_PROFILE ?= local-libvirt
 ARD_IMAGE ?= $(if $(filter microshift,$(ARD_WORKLOAD)),centos-stream-10,)
 ARD_NETWORK_CIDR ?= 192.168.96.0/24
@@ -45,8 +45,8 @@ ARD_RENDER_FILE_ARG = $(if $(ARD_EFFECTIVE_RENDER_FILE),-e @$(ARD_EFFECTIVE_REND
 ARD_RENDER_PROVIDER_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER)),ard_provider=$(ARD_PROVIDER),)
 ARD_RENDER_PROVIDER_PROFILE_VAR = $(if $(filter command line environment override,$(origin ARD_PROVIDER_PROFILE)),ard_provider_profile=$(ARD_PROVIDER_PROFILE),)
 ARD_RENDER_TARGET_BRANCH_VAR = $(if $(filter command line environment override,$(origin ARD_TARGET_BRANCH)),ard_target_branch=$(ARD_TARGET_BRANCH),)
-ARD_RENDER_TOPOLOGY_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_topology=$(ARD_TOPOLOGY),$(if $(filter command line environment override,$(origin ARD_TOPOLOGY)),ard_topology=$(ARD_TOPOLOGY),))
-ARD_RENDER_SERVICES_VAR = $(if $(filter microshift,$(ARD_WORKLOAD)),ard_service_profiles=,$(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),))
+ARD_RENDER_TOPOLOGY_VAR = $(if $(filter microshift sno,$(ARD_WORKLOAD)),ard_topology=$(ARD_TOPOLOGY),$(if $(filter command line environment override,$(origin ARD_TOPOLOGY)),ard_topology=$(ARD_TOPOLOGY),))
+ARD_RENDER_SERVICES_VAR = $(if $(filter microshift sno,$(ARD_WORKLOAD)),ard_service_profiles=,$(if $(filter command line environment override,$(origin ARD_SERVICES)),ard_service_profiles=$(ARD_SERVICES),))
 ARD_RENDER_IMAGE_VAR = $(if $(ARD_IMAGE),ard_render_image=$(ARD_IMAGE),)
 ARD_RENDER_NETWORK_VAR = $(if $(filter command line environment override,$(origin ARD_NETWORK_CIDR)),ard_libvirt_network_cidr=$(ARD_NETWORK_CIDR),)
 ARD_RENDER_SOURCE_VAR = $(if $(ARD_EFFECTIVE_RENDER_FILE),ard_render_file=$(ARD_EFFECTIVE_RENDER_FILE),)
@@ -80,6 +80,7 @@ ARD_DEPLOYMENT_EXTRA_ARGS = \
 ARD_DEPLOY_PLAYBOOK_devstack = $(or $(ARD_DEPLOY_PLAYBOOK_devstack_$(ARD_EFFECTIVE_PROVIDER)),ansible/playbooks/workloads/devstack/converge.yaml)
 ARD_DEPLOY_PLAYBOOK_devstack_kubevirt = ansible/playbooks/workloads/devstack/converge-kubevirt.yaml
 ARD_DEPLOY_PLAYBOOK_microshift = ansible/playbooks/workloads/microshift/converge.yaml
+ARD_DEPLOY_PLAYBOOK_sno = ansible/playbooks/workloads/sno/converge.yaml
 ARD_DEPLOY_PLAYBOOK_oko = $(or $(ARD_DEPLOY_PLAYBOOK_oko_$(ARD_EFFECTIVE_PROVIDER)),ansible/playbooks/workloads/oko/converge.yaml)
 ARD_DEPLOY_PLAYBOOK_oko_kubevirt = ansible/playbooks/workloads/oko/converge-kubevirt.yaml
 ARD_DEPLOY_PLAYBOOK = $(ARD_DEPLOY_PLAYBOOK_$(ARD_WORKLOAD))
@@ -89,7 +90,6 @@ default:
 	-$(MAKE) cleanup
 	$(MAKE) render
 	$(MAKE) apply
-	$(MAKE) ping
 	$(MAKE) deploy
 	$(MAKE) verify
 
@@ -136,6 +136,8 @@ destroy-clean-generated:
 		-e "$(ARD_DEPLOYMENT_EXTRA_VARS) ard_destroy_cleanup_generated=true"
 
 clean-generated:
+	@test "$(ARD_RENDERED_WORKLOAD)" != sno || \
+		(echo "Use destroy-clean-generated for SNO protected state" >&2; exit 1)
 	rm -rf $(ARD_DEPLOYMENT_DIR)/inventory.yaml \
 		$(ARD_DEPLOYMENT_DIR)/provider-state.yaml \
 		$(ARD_DEPLOYMENT_DIR)/rendered

@@ -1,10 +1,25 @@
-<network>
+<network{% if ard_workload | default('') == 'sno' and ard_libvirt_render_network_name == ard_management_network %} xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'{% endif %}>
   <name>{{ ard_libvirt_render_network.provider.libvirt.name }}</name>
 {% if ard_libvirt_render_network.provider.libvirt.bridge_name is defined %}
   <bridge name='{{ ard_libvirt_render_network.provider.libvirt.bridge_name }}' stp='on' delay='0'/>
 {% endif %}
 {% if ard_libvirt_render_network.mode | default('nat') == 'nat' %}
   <forward mode='nat'/>
+{% if ard_workload | default('') == 'sno' and ard_libvirt_render_network_name == ard_management_network %}
+  {% set sno_node = ard_nodes | selectattr('groups', 'contains', 'sno') | list | first %}
+  {% set sno_network = sno_node.networks | selectattr('name', 'equalto', ard_management_network) | list | first %}
+  <dns>
+    <host ip='{{ sno_network.ip }}'>
+      <hostname>api.{{ ard_openshift_cluster_domain }}</hostname>
+      <hostname>api-int.{{ ard_openshift_cluster_domain }}</hostname>
+      <hostname>{{ sno_node.hostname }}.{{ ard_openshift_cluster_domain }}</hostname>
+    </host>
+  </dns>
+  <dnsmasq:options>
+    <dnsmasq:option value='local=/{{ ard_openshift_cluster_domain }}/'/>
+    <dnsmasq:option value='address=/apps.{{ ard_openshift_cluster_domain }}/{{ sno_network.ip }}'/>
+  </dnsmasq:options>
+{% endif %}
   <ip address='{{ ard_libvirt_render_network.gateway }}' netmask='255.255.255.0'>
     <dhcp>
 {% for node in ard_nodes %}

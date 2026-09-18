@@ -12,8 +12,9 @@
       {% set management_network = (node.networks | selectattr('name', 'equalto', ard_management_network) | list | first) %}
       {% set bridge_offset = bridge_address_offset | int if 'switch' in node.groups else (bridge_address_offset | int + 1 + peer_names.index(node.name)) if 'peers' in node.groups else none %}
           {{ node.name }}:
+            ansible_connection: ssh
             ansible_host: {{ management_network.ip }}
-            ansible_user: stack
+            ansible_user: {{ (node.management | default({})).get('ansible_user', 'stack') }}
             ansible_private_key_file: {{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack
             ansible_ssh_common_args: {{ ard_libvirt_guest_ssh_common_args | to_json }}
             ard_deployment_name: {{ ard_deployment_name }}
@@ -36,6 +37,16 @@
       {% for node in ard_nodes %}
               {{ node.name }}:
       {% endfor %}
+          ard_mutable_nodes:
+            hosts:
+      {% for node in ard_nodes if (node.management | default({})).get('mode', 'mutable') == 'mutable' %}
+              {{ node.name }}:
+      {% endfor %}
+          ard_externally_managed_nodes:
+            hosts:
+      {% for node in ard_nodes if (node.management | default({})).get('mode', 'mutable') != 'mutable' %}
+              {{ node.name }}:
+      {% endfor %}
       {% set group_names = [] %}
       {% for node in ard_nodes %}
       {% for group in node.groups %}
@@ -55,9 +66,14 @@
 - name: Add ARD nodes to active inventory
   ansible.builtin.add_host:
     name: "{{ item.name }}"
-    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    groups: >-
+      {{ ['ard_provider_nodes',
+          ('ard_mutable_nodes'
+           if (item.management | default({})).get('mode', 'mutable') == 'mutable'
+           else 'ard_externally_managed_nodes')] + item.groups }}
+    ansible_connection: ssh
     ansible_host: "{{ ard_inventory_management_network.ip }}"
-    ansible_user: stack
+    ansible_user: "{{ (item.management | default({})).get('ansible_user', 'stack') }}"
     ansible_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack"
     ansible_ssh_common_args: "{{ ard_libvirt_guest_ssh_common_args }}"
     ard_deployment_name: "{{ ard_deployment_name }}"
@@ -94,6 +110,7 @@
       ard_libvirt_image_dir_root: {{ ard_libvirt_image_dir_resolved }}
       ard_libvirt_image_dir: {{ ard_libvirt_deployment_image_dir_resolved }}
       ard_libvirt_image_cache_dir: {{ ard_libvirt_cache_dir_resolved }}
+      ard_libvirt_render_dir: {{ ard_libvirt_remote_render_dir }}
       ard_libvirt_phase: resources_created
       ard_cached_base_image: {{ ard_cached_base_image | default('') }}
       ard_libvirt_base_image: {{ ard_libvirt_base_image | default('') }}
@@ -131,9 +148,24 @@
       {% endif %}
               mac: {{ node_network.mac }}
       {% endfor %}
+          provisioning_method: {{ (node.provisioning | default({})).get('method', 'cloud-image') }}
+          start_phase: {{ (node.lifecycle | default({})).get('start_phase', 'apply') }}
           overlay: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}.qcow2
+      {% if (node.provisioning | default({})).get('method', 'cloud-image') == 'install-media' %}
+          install_media: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-install.iso
+          install_media_target: {{ 'sdb' if ard_flavors[node.flavor].provider.libvirt.disk_bus | default('virtio') == 'scsi' else 'sda' }}
+      {% else %}
           seed: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-seed.iso
+      {% endif %}
           console_log: {{ ard_libvirt_deployment_image_dir_resolved }}/{{ node.name }}-console.log
       {% endfor %}
+      {% endif %}
+      {% if ard_sno_state is defined or ard_libvirt_existing_state.sno is defined %}
+      sno:
+      {{ ((ard_sno_state | default(ard_libvirt_existing_state.sno)) |
+          combine({'resolver': ard_sno_resolver}, recursive=True)
+          if ard_sno_resolver is defined
+          else (ard_sno_state | default(ard_libvirt_existing_state.sno))) |
+         to_nice_yaml(indent=2, sort_keys=False) | indent(2, first=True) }}
       {% endif %}
   when: ard_provider_inventory_write_state | default(true) | bool

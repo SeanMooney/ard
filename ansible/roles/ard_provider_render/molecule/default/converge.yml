@@ -59,6 +59,10 @@
           workload: oko
           topology: microshift-two-edpm-compute
           cidr: 192.168.122.0/24
+        - name: remote-libvirt-sno
+          workload: sno
+          topology: single-node
+          cidr: 192.168.129.0/24
       loop_control:
         loop_var: render_case
 

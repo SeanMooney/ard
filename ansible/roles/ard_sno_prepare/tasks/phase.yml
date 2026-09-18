@@ -1,0 +1,8 @@
+---
+- name: Preserve resumable SNO lifecycle phase
+  ansible.builtin.set_fact:
+    ard_sno_prepared_phase: >-
+      {{ ard_libvirt_existing_state.get('sno', {}).get('phase')
+         if (ard_sno_remote_metadata_stat.stat.exists and
+             ard_libvirt_existing_state.get('sno', {}).get('phase', '') not in ['', 'preparing'])
+         else 'prepared' }}

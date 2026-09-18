@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Validate a recorded libvirt domain identity using structured XML."""
+
+import argparse
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+
+def dump_xml(uri: str, domain: str, inactive: bool) -> ET.Element:
+    command = ["virsh", "--connect", uri, "dumpxml", domain]
+    if inactive:
+        command.append("--inactive")
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return ET.fromstring(result.stdout)
+
+
+def matching_disks(root: ET.Element, device: str, target: str):
+    return [
+        disk
+        for disk in root.findall("./devices/disk")
+        if disk.get("device") == device
+        and (disk.find("target") is not None)
+        and disk.find("target").get("dev") == target
+    ]
+
+
+def validate(args: argparse.Namespace, root: ET.Element, label: str) -> None:
+    errors = []
+    if root.findtext("name") != args.domain:
+        errors.append(f"{label}: domain name mismatch")
+
+    disks = [
+        disk
+        for disk in root.findall("./devices/disk")
+        if disk.get("device") == "disk"
+    ]
+    roots = matching_disks(root, "disk", args.root_target)
+    if len(disks) != 1 or len(roots) != 1:
+        errors.append(f"{label}: expected exactly one root disk at {args.root_target}")
+    else:
+        source = roots[0].find("source")
+        target = roots[0].find("target")
+        if source is None or source.get("file") != args.root_source:
+            errors.append(f"{label}: root disk source mismatch")
+        if target is None or target.get("bus") != args.root_bus:
+            errors.append(f"{label}: root disk bus mismatch")
+
+    media = [
+        disk
+        for disk in root.findall("./devices/disk")
+        if disk.get("device") == "cdrom"
+    ]
+    expected_drive = (
+        len(media) == 1
+        and media[0].find("target") is not None
+        and media[0].find("target").get("dev") == args.media_target
+    )
+    valid_media = (
+        expected_drive
+        and media[0].find("source") is not None
+        and media[0].find("source").get("file") == args.media_source
+    )
+    media_source = media[0].find("source") if expected_drive else None
+    empty_drive = expected_drive and (
+        media_source is None
+        or (
+            set(media_source.attrib) <= {"index"}
+            and len(media_source) == 0
+            and not (media_source.text or "").strip()
+        )
+    )
+    if args.media_policy == "required" and not valid_media:
+        errors.append(f"{label}: recorded installation media is not attached")
+    elif args.media_policy == "absent" and media and not empty_drive:
+        errors.append(f"{label}: installation media is still attached")
+    elif args.media_policy == "optional" and media and not (valid_media or empty_drive):
+        errors.append(f"{label}: unexpected installation media is attached")
+
+    expected_interfaces = sorted(
+        (mac.lower(), network)
+        for mac, network in (identity.split("=", 1) for identity in args.interface)
+    )
+    actual_interfaces = []
+    for interface in root.findall("./devices/interface"):
+        mac_node = interface.find("mac")
+        source = interface.find("source")
+        actual_interfaces.append(
+            (
+                mac_node.get("address", "").lower() if mac_node is not None else "",
+                source.get("network", "") if source is not None else "",
+            )
+        )
+    if sorted(actual_interfaces) != expected_interfaces:
+        errors.append(f"{label}: interface set does not match recorded identity")
+
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--uri", required=True)
+    parser.add_argument("--domain", required=True)
+    parser.add_argument("--root-source", required=True)
+    parser.add_argument("--root-target", required=True)
+    parser.add_argument("--root-bus", required=True)
+    parser.add_argument("--media-source", required=True)
+    parser.add_argument("--media-target", required=True)
+    parser.add_argument("--media-policy", choices=("required", "optional", "absent"), required=True)
+    parser.add_argument("--interface", action="append", default=[])
+    args = parser.parse_args()
+
+    try:
+        inactive = dump_xml(args.uri, args.domain, True)
+        validate(args, inactive, "inactive")
+        state = subprocess.run(
+            ["virsh", "--connect", args.uri, "domstate", args.domain],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if state == "running":
+            validate(args, dump_xml(args.uri, args.domain, False), "live")
+    except (OSError, subprocess.CalledProcessError, ET.ParseError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

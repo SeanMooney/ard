@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+baseDomain: {{ ard_openshift_base_domain }}
+compute:
+  - architecture: amd64
+    hyperthreading: Enabled
+    name: worker
+    replicas: 0
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  replicas: 1
+metadata:
+  name: {{ ard_openshift_cluster_name }}
+networking:
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  machineNetwork:
+    - cidr: {{ ard_networks[ard_management_network].cidr }}
+  networkType: OVNKubernetes
+  serviceNetwork:
+    - 172.30.0.0/16
+platform:
+  none: {}
+pullSecret: |-
+  {{ ard_sno_pull_secret | to_json }}
+sshKey: |-
+  {{ ard_sno_ssh_public_key }}

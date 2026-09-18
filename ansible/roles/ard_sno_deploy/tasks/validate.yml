@@ -1,0 +1,89 @@
+---
+- name: Wait for expected SNO ClusterVersion
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - --request-timeout=15s
+      - get
+      - clusterversion
+      - version
+      - -o
+      - json
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_cluster_version
+  changed_when: false
+  retries: "{{ [1, (ard_sno_install_timeout | int // 10)] | max }}"
+  delay: 10
+  until:
+    - ard_sno_cluster_version.rc == 0
+    - >-
+      (ard_sno_cluster_version.stdout | default('{}', true) | from_json).get(
+        'status', {}).get('desired', {}).get('version', '') == ard_sno_state.exact_version
+    - >-
+      ((ard_sno_cluster_version.stdout | default('{}', true) | from_json).get(
+        'status', {}).get('conditions', []) |
+       selectattr('type', 'equalto', 'Available') |
+       selectattr('status', 'equalto', 'True') | list | length) == 1
+    - >-
+      ((ard_sno_cluster_version.stdout | default('{}', true) | from_json).get(
+        'status', {}).get('conditions', []) |
+       selectattr('type', 'equalto', 'Progressing') |
+       selectattr('status', 'equalto', 'False') | list | length) == 1
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Wait for the single SNO node to be Ready
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_state.remote_oc }}"
+      - --kubeconfig
+      - "{{ ard_sno_state.remote_kubeconfig }}"
+      - --cache-dir
+      - "{{ ard_sno_state.remote_state_dir }}/cache/kube"
+      - --request-timeout=15s
+      - get
+      - nodes
+      - -o
+      - json
+  environment: "{{ ard_sno_command_environment }}"
+  register: ard_sno_nodes_json
+  changed_when: false
+  retries: "{{ [1, (ard_sno_install_timeout | int // 10)] | max }}"
+  delay: 10
+  until:
+    - ard_sno_nodes_json.rc == 0
+    - (ard_sno_nodes_json.stdout | default('{}', true) | from_json).get('items', []) | length == 1
+    - >-
+      (((ard_sno_nodes_json.stdout | default('{}', true) | from_json).get(
+        'items', [{}])[0].get('status', {}).get('conditions', []) |
+        selectattr('type', 'equalto', 'Ready') |
+        selectattr('status', 'equalto', 'True') | list | length) == 1)
+    - >-
+      not ((ard_sno_nodes_json.stdout | default('{}', true) | from_json).get(
+           'items', [{}])[0].get('spec', {}).get('unschedulable', false) | bool)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Validate SNO cluster and node readiness
+  ansible.builtin.assert:
+    that:
+      - (ard_sno_cluster_version.stdout | from_json).status.desired.version == ard_sno_state.exact_version
+      - >-
+        ((ard_sno_cluster_version.stdout | from_json).status.conditions |
+         selectattr('type', 'equalto', 'Available') |
+         selectattr('status', 'equalto', 'True') | list | length) == 1
+      - >-
+        ((ard_sno_cluster_version.stdout | from_json).status.conditions |
+         selectattr('type', 'equalto', 'Progressing') |
+         selectattr('status', 'equalto', 'False') | list | length) == 1
+      - (ard_sno_nodes_json.stdout | from_json)['items'] | length == 1
+      - >-
+        ((((ard_sno_nodes_json.stdout | from_json)['items'])[0].status.conditions |
+          selectattr('type', 'equalto', 'Ready') |
+          selectattr('status', 'equalto', 'True') | list | length) == 1)
+      - >-
+        not ((((ard_sno_nodes_json.stdout | from_json)['items'])[0].spec.unschedulable |
+             default(false) | bool))
+    fail_msg: Standalone SNO did not reach the expected version and single-node Ready state.

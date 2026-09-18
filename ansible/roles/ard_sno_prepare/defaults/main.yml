@@ -1,0 +1,10 @@
+---
+ard_openshift_version: stable-4.20
+ard_openshift_base_domain: ard.test
+ard_openshift_cluster_name: "{{ ard_deployment_name }}"
+ard_openshift_pull_secret_file: "{{ ard_deployment_dir }}/pull-secret"
+ard_openshift_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_stack.pub"
+ard_openshift_client_base_url: https://mirror.openshift.com/pub/openshift-v4/clients/ocp
+ard_sno_interface_name: enp1s0
+ard_sno_remote_state_root: ""
+ard_sno_install_timeout: 7200

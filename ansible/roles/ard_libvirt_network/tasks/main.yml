@@ -19,7 +19,7 @@
   ansible.builtin.file:
     path: "{{ ard_libvirt_remote_render_dir }}/networks"
     state: directory
-    mode: "0755"
+    mode: "0750"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Copy rendered libvirt network XML to execution host
@@ -63,3 +63,56 @@
   changed_when: false
   loop: "{{ ard_networks | dict2items }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Discover SNO management bridge
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - net-info
+      - "{{ ard_networks[ard_management_network].provider.libvirt.name }}"
+  environment:
+    LC_ALL: C
+  register: ard_sno_network_info
+  changed_when: false
+  when: ard_workload | default('') == 'sno'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require a discoverable SNO management bridge
+  ansible.builtin.assert:
+    that:
+      - ard_sno_network_info.stdout_lines | select('match', '^Bridge:') | list | length == 1
+    fail_msg: The SNO management libvirt network did not report exactly one bridge.
+  when: ard_workload | default('') == 'sno'
+
+- name: Resolve SNO management bridge
+  ansible.builtin.set_fact:
+    ard_sno_resolver_bridge: >-
+      {{ ((ard_sno_network_info.stdout_lines | select('match', '^Bridge:') | first).split() | last) }}
+  when: ard_workload | default('') == 'sno'
+
+- name: Require systemd-resolved for scoped SNO DNS
+  ansible.builtin.command: systemctl is-active systemd-resolved
+  changed_when: false
+  when: ard_workload | default('') == 'sno'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Route the SNO cluster domain to libvirt DNS
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - [resolvectl, dns, "{{ ard_sno_resolver_bridge }}", "{{ ard_networks[ard_management_network].gateway }}"]
+    - [resolvectl, domain, "{{ ard_sno_resolver_bridge }}", "~{{ ard_openshift_cluster_domain }}"]
+  changed_when: false
+  when: ard_workload | default('') == 'sno'
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record SNO resolver ownership
+  ansible.builtin.set_fact:
+    ard_sno_resolver:
+      bridge: "{{ ard_sno_resolver_bridge }}"
+      domain: "{{ ard_openshift_cluster_domain }}"
+      dns: "{{ ard_networks[ard_management_network].gateway }}"
+  when: ard_workload | default('') == 'sno'

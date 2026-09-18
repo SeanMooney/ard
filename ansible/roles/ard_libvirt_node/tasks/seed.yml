@@ -25,6 +25,7 @@
     executable: /bin/sh
     creates: "{{ ard_node_seed }}"
   when: ard_libvirt_seed_tool == 'cloud-localds'
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Create cloud-init seed ISO with genisoimage
@@ -45,4 +46,12 @@
     executable: /bin/sh
     creates: "{{ ard_node_seed }}"
   when: ard_libvirt_seed_tool == 'genisoimage'
+  become: "{{ ard_libvirt_storage_become | bool }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Restrict cloud-init seed media permissions
+  ansible.builtin.file:
+    path: "{{ ard_node_seed }}"
+    mode: "0640"
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"

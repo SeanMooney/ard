@@ -1,0 +1,7 @@
+---
+ard_sno_install_timeout: 7200
+ard_sno_local_path_manifest_url: https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.32/deploy/local-path-storage.yaml
+ard_sno_local_path_namespace: local-path-storage
+ard_sno_local_path_service_account: local-path-provisioner-service-account
+ard_sno_smoke_namespace: ard-smoke
+ard_sno_smoke_image: quay.io/quay/busybox:latest

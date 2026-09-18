@@ -1,0 +1,7 @@
+---
+ard_libvirt_execution_host:
+  name: dev-host
+
+# Defaults to <deployment-directory>/pull-secret.
+# ard_openshift_pull_secret_file: /secure/path/pull-secret
+# ard_openshift_ssh_public_key_file: ~/.ssh/id_ed25519_stack.pub

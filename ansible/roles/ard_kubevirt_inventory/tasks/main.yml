@@ -174,7 +174,7 @@
 - name: Add nodes to active inventory
   ansible.builtin.add_host:
     name: "{{ item.name }}"
-    groups: "{{ ['ard_provider_nodes'] + item.groups }}"
+    groups: "{{ ['ard_provider_nodes', 'ard_mutable_nodes'] + item.groups }}"
     ansible_host: >-
       {{ (item.provider_resource_name | default((ard_provider_resource_prefix | default(ard_deployment_name, true)) ~ '-' ~ item.name)) if ard_kubevirt_ssh_access == 'virtctl'
          else (_controller_lb_ip if item.name == _controller_node.name else (_node_ips[item.name] | default(''))) }}

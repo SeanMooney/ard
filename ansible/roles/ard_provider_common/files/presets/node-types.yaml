@@ -38,6 +38,14 @@ ard_render_workload_roles:
         - nested_virt
       image_var: ard_microshift_image_effective
 
+  sno:
+    sno_node:
+      groups:
+        - sno
+        - cluster
+      profiles:
+        - ssh
+
   oko:
     microshift_node:
       groups:
@@ -88,3 +96,19 @@ ard_render_node_types:
       - nested_virt
     flavor: microshift-node
     image_var: ard_microshift_image_effective
+
+  sno:
+    class: medium
+    groups:
+      - sno
+      - cluster
+    profiles:
+      - ssh
+    flavor: sno-node
+    provisioning:
+      method: install-media
+    lifecycle:
+      start_phase: deploy
+    management:
+      mode: externally-managed
+      ansible_user: core

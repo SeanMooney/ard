@@ -1,0 +1,147 @@
+---
+- name: Select recorded node action target
+  ansible.builtin.set_fact:
+    ard_provider_action_domains: >-
+      {{ ard_provider_action_state.domains |
+         selectattr('inventory_name', 'equalto', ard_provider_node_action_node) | list }}
+
+- name: Require exactly one recorded node action target
+  ansible.builtin.assert:
+    that:
+      - ard_provider_action_domains | length == 1
+      - ard_provider_node_action in ['start', 'detach-install-media', 'reboot']
+    fail_msg: Provider node action requires one recorded node and a supported action.
+
+- name: Resolve recorded node action target
+  ansible.builtin.set_fact:
+    ard_provider_action_domain: "{{ ard_provider_action_domains[0] }}"
+
+- name: Read node domain state
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - domstate
+      - "{{ ard_provider_action_domain.name }}"
+  register: ard_provider_action_domstate
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Start deploy-phase node
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - start
+      - "{{ ard_provider_action_domain.name }}"
+  when:
+    - ard_provider_node_action == 'start'
+    - ard_provider_action_domstate.stdout | trim == 'shut off'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read live node block devices before media detach
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - domblklist
+      - "{{ ard_provider_action_domain.name }}"
+      - --details
+  register: ard_provider_action_live_blocks
+  changed_when: false
+  when:
+    - ard_provider_node_action == 'detach-install-media'
+    - ard_provider_action_domstate.stdout | trim == 'running'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read persistent node block devices before media detach
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - domblklist
+      - "{{ ard_provider_action_domain.name }}"
+      - --inactive
+      - --details
+  register: ard_provider_action_config_blocks
+  changed_when: false
+  when: ard_provider_node_action == 'detach-install-media'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Resolve exact installation-media block-list patterns
+  ansible.builtin.set_fact:
+    ard_provider_action_media_pattern: >-
+      (?m)^\s*file\s+cdrom\s+{{ ard_provider_action_domain.install_media_target | regex_escape }}\s+{{ ard_provider_action_domain.install_media | regex_escape }}\s*$
+    ard_provider_action_empty_media_pattern: >-
+      (?m)^\s*file\s+cdrom\s+{{ ard_provider_action_domain.install_media_target | regex_escape }}\s+-\s*$
+    ard_provider_action_target_pattern: >-
+      (?m)^\s*\S+\s+\S+\s+{{ ard_provider_action_domain.install_media_target | regex_escape }}\s+\S+\s*$
+  when: ard_provider_node_action == 'detach-install-media'
+
+- name: Reject installation-media target drift
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ard_provider_action_live_blocks.stdout | default('') |
+         regex_search(ard_provider_action_target_pattern)) is none or
+        (ard_provider_action_live_blocks.stdout | default('') |
+         regex_search(ard_provider_action_media_pattern)) is not none or
+        (ard_provider_action_live_blocks.stdout | default('') |
+         regex_search(ard_provider_action_empty_media_pattern)) is not none
+      - >-
+        (ard_provider_action_config_blocks.stdout |
+         regex_search(ard_provider_action_target_pattern)) is none or
+        (ard_provider_action_config_blocks.stdout |
+         regex_search(ard_provider_action_media_pattern)) is not none or
+        (ard_provider_action_config_blocks.stdout |
+         regex_search(ard_provider_action_empty_media_pattern)) is not none
+    fail_msg: The recorded installation-media target is attached to unexpected media.
+  when: ard_provider_node_action == 'detach-install-media'
+
+- name: Eject installation media from live domain
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - change-media
+      - "{{ ard_provider_action_domain.name }}"
+      - "{{ ard_provider_action_domain.install_media_target }}"
+      - --eject
+      - --live
+  when:
+    - ard_provider_node_action == 'detach-install-media'
+    - ard_provider_action_domstate.stdout | trim == 'running'
+    - (ard_provider_action_live_blocks.stdout | regex_search(ard_provider_action_media_pattern)) is not none
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Eject installation media from persistent domain
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - change-media
+      - "{{ ard_provider_action_domain.name }}"
+      - "{{ ard_provider_action_domain.install_media_target }}"
+      - --eject
+      - --config
+  when:
+    - ard_provider_node_action == 'detach-install-media'
+    - (ard_provider_action_config_blocks.stdout | regex_search(ard_provider_action_media_pattern)) is not none
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Reboot node from installed disk
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - --connect
+      - "{{ ard_libvirt_uri }}"
+      - reboot
+      - "{{ ard_provider_action_domain.name }}"
+  when: ard_provider_node_action == 'reboot'
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"

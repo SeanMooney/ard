@@ -5,6 +5,7 @@
 {% set ard_node_root_disk_bus = ard_node_flavor.disk_bus | default('virtio') %}
 {% set ard_node_root_disk_dev = 'sda' if ard_node_root_disk_bus == 'scsi' else 'vda' %}
 {% set ard_node_seed_disk_dev = 'sdb' if ard_node_root_disk_bus == 'scsi' else 'sda' %}
+{% set ard_node_is_install_media = ard_node_provisioning_method == 'install-media' %}
 <domain type='kvm'>
   <name>{{ ard_node_resource_name }}</name>
   <memory unit='KiB'>{{ ard_node_flavor.memory_mb | int * 1024 }}</memory>
@@ -22,7 +23,9 @@
     </firmware>
     <loader secure='{{ "yes" if ard_libvirt_secure_boot | default(false) | bool else "no" }}'/>
 {% endif %}
+{% if not ard_node_is_install_media %}
     <boot dev='hd'/>
+{% endif %}
   </os>
   <features>
     <acpi/>
@@ -51,11 +54,17 @@
       <driver name='qemu' type='qcow2' cache='{{ ard_node_flavor.disk_cache | default("none") }}' discard='unmap'/>
       <source file='{{ ard_node_overlay }}'/>
       <target dev='{{ ard_node_root_disk_dev }}' bus='{{ ard_node_root_disk_bus }}'/>
+{% if ard_node_is_install_media %}
+      <boot order='1'/>
+{% endif %}
     </disk>
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
-      <source file='{{ ard_node_seed }}'/>
+      <source file='{{ ard_node_install_media if ard_node_is_install_media else ard_node_seed }}'/>
       <target dev='{{ ard_node_seed_disk_dev }}' bus='sata'/>
+{% if ard_node_is_install_media %}
+      <boot order='2'/>
+{% endif %}
       <readonly/>
     </disk>
 {% for node_network in ard_node_networks %}
@@ -66,7 +75,9 @@
     </interface>
 {% endfor %}
     <serial type='pty'>
+{% if ard_node_provisioning_method != 'install-media' %}
       <log file='{{ ard_node_console_log }}' append='on'/>
+{% endif %}
       <target type='isa-serial' port='0'/>
     </serial>
     <console type='pty'>

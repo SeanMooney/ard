@@ -81,6 +81,21 @@ ard_render_workload_topologies:
             - name: ard-mgmt
               ip_start: 2
 
+  sno:
+    single-node:
+      controller_runs_compute: false
+      node_pools:
+        - type: sno
+          name: sno
+          class: medium
+          count: 1
+          hostname: sno
+          workload_roles:
+            - sno_node
+          networks:
+            - name: ard-mgmt
+              ip_start: 2
+
   oko:
     microshift-two-edpm-compute:
       controller_runs_compute: false
@@ -124,6 +139,9 @@ ard_render_topology_aliases:
     topology: one-controller-two-compute
   microshift-single-node:
     workload: microshift
+    topology: single-node
+  sno-single-node:
+    workload: sno
     topology: single-node
   oko-microshift-two-compute:
     workload: oko

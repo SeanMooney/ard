@@ -5,6 +5,9 @@
   gather_facts: true
   vars:
     ard_libvirt_bootstrap_user: ""
+    ard_libvirt_bootstrap_sno: false
+    ard_libvirt_bootstrap_scoped_dns: false
+    ard_libvirt_bootstrap_dns_probe: mirror.openshift.com
     ard_libvirt_bootstrap_packages_by_os_family:
       Debian:
         - acl
@@ -42,6 +45,77 @@
       ansible.builtin.package:
         name: "{{ ard_libvirt_bootstrap_packages_by_os_family[ansible_os_family] }}"
         state: present
+
+    - name: Install standalone SNO execution-host tools
+      ansible.builtin.package:
+        name:
+          - jq
+          - nmstate
+          - tar
+        state: present
+      when:
+        - ard_libvirt_bootstrap_sno | bool
+        - ansible_os_family == 'RedHat'
+
+    - name: Check ordinary DNS before resolver bootstrap
+      ansible.builtin.command:
+        argv:
+          - getent
+          - ahostsv4
+          - "{{ ard_libvirt_bootstrap_dns_probe }}"
+      register: ard_libvirt_dns_before
+      changed_when: false
+      when: ard_libvirt_bootstrap_scoped_dns | bool
+
+    - name: Install systemd-resolved for scoped deployment DNS
+      ansible.builtin.package:
+        name: systemd-resolved
+        state: present
+      when: ard_libvirt_bootstrap_scoped_dns | bool
+
+    - name: Configure NetworkManager to use systemd-resolved
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/conf.d/90-ard-systemd-resolved.conf
+        mode: "0644"
+        content: |
+          # Managed by ARD libvirt execution-host bootstrap.
+          [main]
+          dns=systemd-resolved
+      register: ard_libvirt_nm_resolved_config
+      when: ard_libvirt_bootstrap_scoped_dns | bool
+
+    - name: Enable systemd-resolved
+      ansible.builtin.systemd_service:
+        name: systemd-resolved.service
+        enabled: true
+        state: started
+      when: ard_libvirt_bootstrap_scoped_dns | bool
+
+    - name: Use the systemd-resolved stub resolver
+      ansible.builtin.file:
+        src: /run/systemd/resolve/stub-resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: true
+      register: ard_libvirt_resolv_conf
+      when: ard_libvirt_bootstrap_scoped_dns | bool
+
+    - name: Restart NetworkManager after resolver integration change
+      ansible.builtin.systemd_service:
+        name: NetworkManager.service
+        state: restarted
+      when:
+        - ard_libvirt_bootstrap_scoped_dns | bool
+        - ard_libvirt_nm_resolved_config.changed or ard_libvirt_resolv_conf.changed
+
+    - name: Verify ordinary DNS after resolver bootstrap
+      ansible.builtin.command:
+        argv:
+          - getent
+          - ahostsv4
+          - "{{ ard_libvirt_bootstrap_dns_probe }}"
+      changed_when: false
+      when: ard_libvirt_bootstrap_scoped_dns | bool
 
     - name: Enable modular libvirt sockets
       ansible.builtin.systemd_service:

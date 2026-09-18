@@ -19,6 +19,11 @@ ard_devstack_image: ""
 ard_microshift_image: ""
 ard_edpm_image: ""
 ard_render_image: ""
+ard_openshift_version: stable-4.20
+ard_openshift_base_domain: ard.test
+ard_openshift_cluster_name: "{{ ard_deployment_name | default('sno') }}"
+ard_openshift_pull_secret_file: "{{ ard_deployment_dir | default('deployments/sno') }}/pull-secret"
+ard_openshift_ssh_public_key_file: "{{ lookup('env', 'HOME') + '/.ssh/id_ed25519_stack.pub' }}"
 ard_service_profiles:
   - devstack
   - ovn
@@ -247,6 +252,17 @@ ard_flavors:
         vcpus: 8
         memory_mb: 8192
         cpu_mode: host-passthrough
+  sno-node:
+    vcpus: 8
+    memory: 16Gi
+    root_disk_gb: 120
+    nested_virt: false
+    provider:
+      libvirt:
+        vcpus: 8
+        memory_mb: 16384
+        cpu_mode: host-passthrough
+        disk_bus: scsi
   oko-microshift-node:
     vcpus: 12
     memory: 16Gi

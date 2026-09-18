@@ -315,6 +315,10 @@
               for arg in "$@"; do output=$arg; done
               printf converted > "$output"
               ;;
+            create)
+              output=$4
+              printf blank > "$output"
+              ;;
             info)
               printf '%s\n' '{"virtual-size": 1073741824}'
               ;;
@@ -400,6 +404,29 @@
           - _atomic_disk_outputs.results[0].stat.exists
           - not _atomic_disk_outputs.results[1].stat.exists
 
+    - name: Remove disk to exercise atomic blank creation
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ ard_node_overlay }}"
+        - "{{ ard_node_overlay }}.tmp"
+
+    - name: Create and resize blank install-media disk atomically
+      ansible.builtin.include_tasks: ../../../ard_libvirt_node/tasks/disk.yml
+      vars:
+        ard_node_provisioning_method: install-media
+
+    - name: Read blank disk fixture
+      ansible.builtin.slurp:
+        src: "{{ ard_node_overlay }}"
+      register: _blank_disk_fixture
+
+    - name: Verify atomic blank disk creation
+      ansible.builtin.assert:
+        that:
+          - (_blank_disk_fixture.content | b64decode) == 'blank'
+
     - name: Select running-domain reapply scenario
       ansible.builtin.copy:
         dest: /tmp/ard-libvirt-execution-molecule/disk-mode
@@ -419,7 +446,7 @@
     - name: Verify running-domain reapply did not resize
       ansible.builtin.assert:
         that:
-          - (_running_reapply_log.content | b64decode).splitlines() | length == 2
+          - (_running_reapply_log.content | b64decode).splitlines() | length == 3
 
     - name: Exercise rejected disk lifecycle scenarios
       ansible.builtin.include_tasks: disk-failure.yml

@@ -46,6 +46,7 @@
     ard_destroy_domain.rc != 0
     and 'domain is not running' not in (ard_destroy_domain.stderr | lower)
     and 'no domain with matching name' not in (ard_destroy_domain.stderr | lower)
+    and ("failed to get domain '" + (item.name | lower) + "'") not in (ard_destroy_domain.stderr | lower)
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Undefine libvirt domains
@@ -63,6 +64,36 @@
   failed_when: >-
     ard_undefine_domain.rc != 0
     and 'no domain with matching name' not in (ard_undefine_domain.stderr | lower)
+    and ("failed to get domain '" + (item.name | lower) + "'") not in (ard_undefine_domain.stderr | lower)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Remove exact daemon-managed libvirt domain logs
+  ansible.builtin.file:
+    path: "/var/log/libvirt/qemu/{{ item.name }}.log"
+    state: absent
+  loop: "{{ ard_destroy_domains }}"
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Check scoped resolver service for SNO cleanup
+  ansible.builtin.command: systemctl is-active systemd-resolved
+  register: ard_destroy_resolved_active
+  changed_when: false
+  failed_when: false
+  when: (ard_state | default({})).get('sno', {}).get('resolver', {}).get('bridge', '') | length > 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Remove recorded SNO resolver route
+  ansible.builtin.command:
+    argv:
+      - resolvectl
+      - revert
+      - "{{ ard_state.sno.resolver.bridge }}"
+  changed_when: false
+  when:
+    - (ard_state | default({})).get('sno', {}).get('resolver', {}).get('bridge', '') | length > 0
+    - ard_destroy_resolved_active.rc == 0
+  become: true
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Initialize exact destroy network list
@@ -97,6 +128,7 @@
     ard_net_destroy.rc != 0
     and 'network is not active' not in (ard_net_destroy.stderr | lower)
     and 'no network with matching name' not in (ard_net_destroy.stderr | lower)
+    and ("failed to get network '" + (item.libvirt_name | lower) + "'") not in (ard_net_destroy.stderr | lower)
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Undefine libvirt networks
@@ -107,10 +139,90 @@
   failed_when: >-
     ard_net_undefine.rc != 0
     and 'no network with matching name' not in (ard_net_undefine.stderr | lower)
+    and ("failed to get network '" + (item.libvirt_name | lower) + "'") not in (ard_net_undefine.stderr | lower)
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
 
 - name: Remove libvirt deployment image directory from execution host
   ansible.builtin.file:
     path: "{{ ard_libvirt_deployment_image_dir_resolved }}"
     state: absent
+  become: "{{ ard_libvirt_storage_become | bool }}"
   delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Remove stack-owned libvirt render directory
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_remote_render_dir }}"
+    state: absent
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Validate exact SNO domain registry path before release
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_state.sno.domain_registry_file ==
+        ard_libvirt_remote_deployment_dir + '/domain-ownership.json'
+    fail_msg: Refusing to release an unexpected SNO domain registry path.
+  when: (ard_state | default({})).get('sno', {}).get('domain_registry_file', '') | length > 0
+
+- name: Release owned SNO cluster domain atomically
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_domain_registry_helper }}"
+      - release
+      - --root
+      - "{{ ard_libvirt_execution_home }}/ard"
+      - --domain
+      - "{{ ard_state.sno.cluster_domain }}"
+      - --deployment
+      - "{{ ard_state.ard_deployment_name }}"
+      - --remote-state-dir
+      - "{{ ard_state.sno.remote_state_dir }}"
+  changed_when: false
+  when: (ard_state | default({})).get('sno', {}).get('domain_registry_file', '') | length > 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Validate protected SNO state path before clean removal
+  ansible.builtin.assert:
+    that:
+      - >-
+        ard_state.sno.remote_state_dir ==
+        ard_libvirt_execution_home + '/ard/' + ard_deployment_name + '/sno'
+    fail_msg: Refusing to remove an unexpected protected SNO state path.
+  when:
+    - ard_destroy_cleanup_generated | default(false) | bool
+    - ard_state.sno.remote_state_dir | default('') | length > 0
+
+- name: Remove protected remote SNO state when explicitly cleaning
+  ansible.builtin.file:
+    path: "{{ ard_state.sno.remote_state_dir }}"
+    state: absent
+  when:
+    - ard_destroy_cleanup_generated | default(false) | bool
+    - ard_state.sno.remote_state_dir | default('') | length > 0
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Remove empty stack-owned deployment directory when explicitly cleaning
+  ansible.builtin.file:
+    path: "{{ ard_libvirt_remote_deployment_dir }}"
+    state: absent
+  when: >-
+    (ard_destroy_cleanup_generated | default(false) | bool) or
+    ((ard_state | default({})).get('sno', {}) | length == 0)
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Preserve SNO state and require clean before recreation
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: >-
+      {{ ard_state |
+         combine({'sno': ard_state.sno |
+                  combine({'phase': 'destroyed',
+                           'requires_clean': true,
+                           'resolver': {},
+                           'domain_registry_file': '',
+                           'domain_registry_claimed': false}, recursive=True)}, recursive=True) |
+         to_nice_yaml(indent=2, sort_keys=False) }}
+  when:
+    - not (ard_destroy_cleanup_generated | default(false) | bool)
+    - ard_state.sno is defined

@@ -1,0 +1,37 @@
+---
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: {{ ard_openshift_cluster_name }}
+rendezvousIP: {{ ard_sno_management_network.ip }}
+hosts:
+  - hostname: {{ ard_sno_node.hostname }}
+    interfaces:
+      - name: {{ ard_sno_interface_name }}
+        macAddress: "{{ ard_sno_management_network.mac }}"
+    rootDeviceHints:
+      deviceName: /dev/sda
+    networkConfig:
+      interfaces:
+        - name: {{ ard_sno_interface_name }}
+          type: ethernet
+          state: up
+          mac-address: "{{ ard_sno_management_network.mac }}"
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ ard_sno_management_network.ip }}
+                prefix-length: {{ ard_networks[ard_management_network].cidr.split('/')[1] }}
+          ipv6:
+            enabled: false
+      dns-resolver:
+        config:
+          server:
+            - {{ ard_networks[ard_management_network].gateway }}
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: {{ ard_networks[ard_management_network].gateway }}
+            next-hop-interface: {{ ard_sno_interface_name }}
+            table-id: 254

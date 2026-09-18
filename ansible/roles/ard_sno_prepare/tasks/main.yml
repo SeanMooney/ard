@@ -1,0 +1,493 @@
+---
+- name: Reject unsupported standalone SNO site inputs
+  ansible.builtin.assert:
+    that:
+      - >-
+        [ard_http_proxy | default(''),
+         ard_https_proxy | default(''),
+         ard_no_proxy | default(''),
+         ard_openshift_additional_trust_bundle | default(''),
+         ard_openshift_image_content_sources | default([]),
+         ard_openshift_ntp_sources | default([])] |
+        reject('equalto', '') | reject('equalto', []) | list | length == 0
+    fail_msg: >-
+      Standalone SNO does not yet support non-empty proxy, mirror, additional
+      trust, or NTP inputs. Refusing to ignore configured site requirements.
+
+- name: Select the standalone SNO node
+  ansible.builtin.set_fact:
+    ard_sno_nodes: "{{ ard_nodes | selectattr('groups', 'contains', 'sno') | list }}"
+
+- name: Require exactly one install-media SNO node
+  ansible.builtin.assert:
+    that:
+      - ard_sno_nodes | length == 1
+      - (ard_sno_nodes[0].provisioning | default({})).get('method') == 'install-media'
+      - (ard_sno_nodes[0].lifecycle | default({})).get('start_phase') == 'deploy'
+    fail_msg: Standalone SNO requires exactly one deploy-phase install-media node.
+
+- name: Resolve SNO node and protected paths
+  ansible.builtin.set_fact:
+    ard_sno_node: "{{ ard_sno_nodes[0] }}"
+    ard_sno_management_network: >-
+      {{ ard_sno_nodes[0].networks | selectattr('name', 'equalto', ard_management_network) | list | first }}
+    ard_sno_local_input_dir: "{{ ard_deployment_dir }}/sno/inputs"
+    ard_sno_remote_root: >-
+      {{ ard_libvirt_existing_state.get('sno', {}).get('remote_state_dir',
+         ard_sno_remote_state_root | default('', true) |
+         default(ard_libvirt_execution_home + '/ard/' + ard_deployment_name + '/sno', true)) }}
+    ard_sno_runtime_iso: "{{ ard_libvirt_deployment_image_dir_resolved }}/{{ ard_sno_nodes[0].name }}-install.iso"
+    ard_sno_domain_registry_dir: "{{ ard_libvirt_execution_home }}/ard"
+    ard_sno_domain_registry_file: >-
+      {{ ard_libvirt_remote_deployment_dir }}/domain-ownership.json
+
+- name: Refuse recreation of preserved SNO installer state
+  ansible.builtin.assert:
+    that:
+      - not (ard_libvirt_existing_state.get('sno', {}).get('requires_clean', false) | bool)
+    fail_msg: >-
+      This SNO deployment was normally destroyed with protected installer state
+      preserved. Run destroy-clean-generated before recreating it.
+
+- name: Require the controller-side pull secret
+  ansible.builtin.stat:
+    path: "{{ ard_openshift_pull_secret_file }}"
+  register: ard_sno_pull_secret_stat
+
+- name: Require pull-secret and SSH public-key files
+  ansible.builtin.assert:
+    that:
+      - ard_sno_pull_secret_stat.stat.exists
+      - ard_sno_pull_secret_stat.stat.isreg
+      - ard_openshift_ssh_public_key_file | length > 0
+    fail_msg: >-
+      Put the pull secret at {{ ard_openshift_pull_secret_file }} and configure
+      ard_openshift_ssh_public_key_file before apply.
+
+- name: Restrict pull-secret permissions
+  ansible.builtin.file:
+    path: "{{ ard_openshift_pull_secret_file }}"
+    mode: "0600"
+
+- name: Read protected SNO inputs
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ ard_openshift_pull_secret_file }}"
+    - "{{ ard_openshift_ssh_public_key_file }}"
+  register: ard_sno_protected_input_slurp
+  no_log: true
+
+- name: Decode protected SNO inputs
+  ansible.builtin.set_fact:
+    ard_sno_pull_secret: >-
+      {{ ard_sno_protected_input_slurp.results[0].content | b64decode | trim | from_json }}
+    ard_sno_ssh_public_key: "{{ ard_sno_protected_input_slurp.results[1].content | b64decode | trim }}"
+  no_log: true
+
+- name: Create protected local SNO input directory
+  ansible.builtin.file:
+    path: "{{ ard_sno_local_input_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Render protected install-config
+  ansible.builtin.template:
+    src: install-config.yaml.j2
+    dest: "{{ ard_sno_local_input_dir }}/install-config.yaml"
+    mode: "0600"
+  no_log: true
+
+- name: Render protected agent-config
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ ard_sno_local_input_dir }}/agent-config.yaml"
+    mode: "0600"
+
+- name: Hash rendered SNO inputs
+  ansible.builtin.stat:
+    path: "{{ ard_sno_local_input_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
+  register: ard_sno_input_stats
+  no_log: true
+
+- name: Detect execution-host architecture
+  ansible.builtin.command: uname -m
+  register: ard_sno_uname
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require supported initial SNO architecture
+  ansible.builtin.assert:
+    that:
+      - ard_sno_uname.stdout | trim == 'x86_64'
+    fail_msg: Initial standalone SNO support requires an x86_64 execution host.
+
+- name: Select pinned or requested OpenShift release
+  ansible.builtin.set_fact:
+    ard_sno_release_selector: >-
+      {{ ard_libvirt_existing_state.get('sno', {}).get('exact_version', ard_openshift_version) }}
+
+- name: Read selected OpenShift release metadata
+  ansible.builtin.uri:
+    url: "{{ ard_openshift_client_base_url }}/{{ ard_sno_release_selector }}/release.txt"
+    return_content: true
+  register: ard_sno_release_metadata
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Read selected OpenShift client checksums
+  ansible.builtin.uri:
+    url: "{{ ard_openshift_client_base_url }}/{{ ard_sno_release_selector }}/sha256sum.txt"
+    return_content: true
+  register: ard_sno_checksum_metadata
+  changed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Resolve exact OpenShift release and checksums
+  ansible.builtin.set_fact:
+    ard_sno_exact_version: "{{ (ard_sno_release_metadata.content | regex_findall('(?m)^Name:\\s+([0-9]+\\.[0-9]+\\.[0-9]+)\\s*$') | first) }}"
+    ard_sno_installer_checksum: "{{ (ard_sno_checksum_metadata.content | regex_findall('(?m)^([0-9a-f]{64})  openshift-install-linux\\.tar\\.gz$') | first) }}"
+    ard_sno_client_checksum: "{{ (ard_sno_checksum_metadata.content | regex_findall('(?m)^([0-9a-f]{64})  openshift-client-linux\\.tar\\.gz$') | first) }}"
+
+- name: Require parseable OpenShift release metadata
+  ansible.builtin.assert:
+    that:
+      - ard_sno_exact_version is match('^4\\.20\\.[0-9]+$')
+      - ard_sno_installer_checksum is match('^[0-9a-f]{64}$')
+      - ard_sno_client_checksum is match('^[0-9a-f]{64}$')
+    fail_msg: Could not resolve a verified OpenShift 4.20 client release.
+
+- name: Resolve remote SNO cache and installer paths
+  ansible.builtin.set_fact:
+    ard_sno_cache_dir: "{{ ard_libvirt_remote_deployment_dir }}/cache/openshift/{{ ard_sno_exact_version }}/x86_64"
+    ard_sno_remote_bin_dir: "{{ ard_sno_remote_root }}/bin"
+    ard_sno_remote_install_dir: "{{ ard_sno_remote_root }}/installer"
+    ard_sno_remote_iso: "{{ ard_sno_remote_root }}/agent.iso"
+    ard_sno_remote_metadata: "{{ ard_sno_remote_root }}/ard-inputs.json"
+
+- name: Load provider state before remote SNO preparation
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_provider_state_before_remote_prepare
+
+- name: Record remote SNO preparation ownership before mutation
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: >-
+      {{ ard_sno_provider_state_before_remote_prepare |
+         combine({'sno': {'requested_version': ard_openshift_version,
+                          'exact_version': ard_sno_exact_version,
+                          'cluster_name': ard_openshift_cluster_name,
+                          'base_domain': ard_openshift_base_domain,
+                          'cluster_domain': ard_openshift_cluster_name + '.' + ard_openshift_base_domain,
+                          'remote_state_dir': ard_sno_remote_root,
+                          'remote_install_dir': ard_sno_remote_install_dir,
+                          'remote_iso': ard_sno_remote_iso,
+                          'runtime_iso': ard_sno_runtime_iso,
+                          'remote_installer': ard_sno_remote_bin_dir + '/openshift-install',
+                          'remote_oc': ard_sno_remote_bin_dir + '/oc',
+                          'remote_kubeconfig': ard_sno_remote_install_dir + '/auth/kubeconfig',
+                          'domain_registry_file': ard_sno_domain_registry_file,
+                          'domain_registry_claimed': ard_libvirt_existing_state.get('sno', {}).get('domain_registry_claimed', false),
+                          'phase': ard_libvirt_existing_state.get('sno', {}).get('phase', 'preparing'),
+                          'requires_clean': false}}, recursive=True) |
+         to_nice_yaml(indent=2, sort_keys=False) }}
+
+- name: Claim unique SNO cluster domain atomically
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_domain_registry_helper }}"
+      - claim
+      - --root
+      - "{{ ard_sno_domain_registry_dir }}"
+      - --domain
+      - "{{ ard_openshift_cluster_name }}.{{ ard_openshift_base_domain }}"
+      - --deployment
+      - "{{ ard_deployment_name }}"
+      - --remote-state-dir
+      - "{{ ard_sno_remote_root }}"
+  register: ard_sno_domain_registry_claim
+  changed_when: false
+  failed_when: false
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require unique SNO cluster domain ownership
+  ansible.builtin.assert:
+    that:
+      - ard_sno_domain_registry_claim.rc == 0
+    fail_msg: >-
+      {{ ard_openshift_cluster_name }}.{{ ard_openshift_base_domain }} is already
+      owned by another SNO deployment on this execution host, or its registry
+      entry is invalid: {{ ard_sno_domain_registry_claim.stderr }}
+
+- name: Load provider state after claiming SNO cluster domain
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_provider_state_after_domain_claim
+
+- name: Record SNO cluster domain ownership
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: >-
+      {{ ard_sno_provider_state_after_domain_claim |
+         combine({'sno': ard_sno_provider_state_after_domain_claim.sno |
+                  combine({'domain_registry_claimed': true}, recursive=True)}, recursive=True) |
+         to_nice_yaml(indent=2, sort_keys=False) }}
+
+- name: Create protected remote SNO directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ ard_sno_cache_dir }}"
+      mode: "0755"
+    - path: "{{ ard_libvirt_remote_deployment_dir }}/tmp"
+      mode: "0700"
+    - path: "{{ ard_sno_runtime_iso | dirname }}"
+      mode: "0750"
+    - path: "{{ ard_sno_remote_root }}"
+      mode: "0700"
+    - path: "{{ ard_sno_remote_bin_dir }}"
+      mode: "0700"
+    - path: "{{ ard_sno_remote_install_dir }}"
+      mode: "0700"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Download verified OpenShift tool archives
+  ansible.builtin.get_url:
+    url: "{{ ard_openshift_client_base_url }}/{{ ard_sno_release_selector }}/{{ item.name }}"
+    dest: "{{ ard_sno_cache_dir }}/{{ item.name }}"
+    mode: "0644"
+    checksum: "sha256:{{ item.checksum }}"
+  loop:
+    - name: openshift-install-linux.tar.gz
+      checksum: "{{ ard_sno_installer_checksum }}"
+    - name: openshift-client-linux.tar.gz
+      checksum: "{{ ard_sno_client_checksum }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Extract cached OpenShift tools
+  ansible.builtin.unarchive:
+    src: "{{ ard_sno_cache_dir }}/{{ item.archive }}"
+    dest: "{{ ard_sno_cache_dir }}"
+    remote_src: true
+    include:
+      - "{{ item.binary }}"
+    creates: "{{ ard_sno_cache_dir }}/{{ item.binary }}"
+    mode: "0755"
+  loop:
+    - archive: openshift-install-linux.tar.gz
+      binary: openshift-install
+    - archive: openshift-client-linux.tar.gz
+      binary: oc
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Link deployment-specific OpenShift tools
+  ansible.builtin.file:
+    src: "{{ ard_sno_cache_dir }}/{{ item }}"
+    dest: "{{ ard_sno_remote_bin_dir }}/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - openshift-install
+    - oc
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Check protected SNO metadata
+  ansible.builtin.stat:
+    path: "{{ ard_sno_remote_metadata }}"
+  register: ard_sno_remote_metadata_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Inspect protected installer directory
+  ansible.builtin.find:
+    paths: "{{ ard_sno_remote_install_dir }}"
+    recurse: false
+    hidden: true
+  register: ard_sno_remote_install_contents
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Refuse unrecorded protected installer state
+  ansible.builtin.assert:
+    that:
+      - ard_sno_remote_metadata_stat.stat.exists or ard_sno_remote_install_contents.matched == 0
+    fail_msg: >-
+      The protected installer directory contains unrecorded state. Run
+      destroy-clean-generated before retrying preparation.
+
+- name: Read existing protected SNO metadata
+  ansible.builtin.slurp:
+    src: "{{ ard_sno_remote_metadata }}"
+  register: ard_sno_remote_metadata_slurp
+  when: ard_sno_remote_metadata_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Decode existing protected SNO metadata
+  ansible.builtin.set_fact:
+    ard_sno_existing_metadata: "{{ ard_sno_remote_metadata_slurp.content | b64decode | from_json }}"
+  when: ard_sno_remote_metadata_stat.stat.exists
+
+- name: Require preserved installer inputs to match
+  ansible.builtin.assert:
+    that:
+      - ard_sno_existing_metadata.install_config_sha256 == ard_sno_input_stats.results[0].stat.checksum
+      - ard_sno_existing_metadata.agent_config_sha256 == ard_sno_input_stats.results[1].stat.checksum
+      - ard_sno_existing_metadata.exact_version == ard_sno_exact_version
+    fail_msg: Preserved SNO installer state does not match current inputs; clean it before rebuilding.
+  when: ard_sno_remote_metadata_stat.stat.exists
+
+- name: Synchronize protected installer inputs
+  ansible.builtin.copy:
+    src: "{{ ard_sno_local_input_dir }}/{{ item }}"
+    dest: "{{ ard_sno_remote_install_dir }}/{{ item }}"
+    mode: "0600"
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
+  when: not ard_sno_remote_metadata_stat.stat.exists
+  no_log: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Generate Agent installation media
+  ansible.builtin.command:
+    argv:
+      - "{{ ard_sno_remote_bin_dir }}/openshift-install"
+      - agent
+      - create
+      - image
+      - --dir
+      - "{{ ard_sno_remote_install_dir }}"
+  args:
+    chdir: "{{ ard_sno_remote_install_dir }}"
+  environment:
+    PATH: "{{ ard_sno_remote_bin_dir }}:/usr/local/bin:/usr/bin:/bin"
+    TMPDIR: "{{ ard_libvirt_remote_deployment_dir }}/tmp"
+    XDG_CACHE_HOME: "{{ ard_libvirt_remote_deployment_dir }}/cache"
+  when: not ard_sno_remote_metadata_stat.stat.exists
+  no_log: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Find generated Agent ISO
+  ansible.builtin.find:
+    paths: "{{ ard_sno_remote_install_dir }}"
+    patterns: "agent*.iso"
+    file_type: file
+  register: ard_sno_generated_iso
+  when: not ard_sno_remote_metadata_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require exactly one generated Agent ISO
+  ansible.builtin.assert:
+    that:
+      - ard_sno_generated_iso.matched == 1
+    fail_msg: openshift-install did not create exactly one Agent ISO.
+  when: not ard_sno_remote_metadata_stat.stat.exists
+
+- name: Preserve a stable protected Agent ISO path
+  ansible.builtin.copy:
+    src: "{{ ard_sno_generated_iso.files[0].path }}"
+    dest: "{{ ard_sno_remote_iso }}"
+    remote_src: true
+    mode: "0600"
+  when: not ard_sno_remote_metadata_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Record non-secret protected SNO metadata
+  ansible.builtin.copy:
+    dest: "{{ ard_sno_remote_metadata }}"
+    mode: "0600"
+    content: >-
+      {{ {'install_config_sha256': ard_sno_input_stats.results[0].stat.checksum,
+          'agent_config_sha256': ard_sno_input_stats.results[1].stat.checksum,
+          'requested_version': ard_openshift_version,
+          'exact_version': ard_sno_exact_version} | to_nice_json }}
+  when: not ard_sno_remote_metadata_stat.stat.exists
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Check protected Agent ISO
+  ansible.builtin.stat:
+    path: "{{ ard_sno_remote_iso }}"
+    checksum_algorithm: sha256
+  register: ard_sno_protected_iso_stat
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require protected Agent ISO
+  ansible.builtin.assert:
+    that:
+      - ard_sno_protected_iso_stat.stat.exists
+      - ard_sno_protected_iso_stat.stat.size | int > 0
+    fail_msg: Protected Agent ISO is missing; clean the preserved state before rebuilding.
+
+- name: Check provider-owned runtime Agent ISO
+  ansible.builtin.stat:
+    path: "{{ ard_sno_runtime_iso }}"
+    checksum_algorithm: sha256
+  register: ard_sno_runtime_iso_stat
+  become: true
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Require an existing runtime ISO to match protected media
+  ansible.builtin.assert:
+    that:
+      - not ard_sno_runtime_iso_stat.stat.exists or ard_sno_runtime_iso_stat.stat.checksum == ard_sno_protected_iso_stat.stat.checksum
+    fail_msg: Existing provider runtime ISO differs from the protected Agent ISO.
+
+- name: Copy Agent ISO into provider runtime atomically
+  ansible.builtin.shell: |
+    set -eu
+    iso_tmp={{ (ard_sno_runtime_iso + '.tmp') | quote }}
+    rm -f "$iso_tmp"
+    cp --reflink=auto {{ ard_sno_remote_iso | quote }} "$iso_tmp"
+    chmod 0640 "$iso_tmp"
+    mv "$iso_tmp" {{ ard_sno_runtime_iso | quote }}
+  args:
+    executable: /bin/sh
+  when: not ard_sno_runtime_iso_stat.stat.exists
+  become: "{{ ard_libvirt_storage_become | bool }}"
+  delegate_to: "{{ ard_libvirt_execution_host_name }}"
+
+- name: Resolve prepared SNO lifecycle phase
+  ansible.builtin.include_tasks: phase.yml
+
+- name: Record prepared SNO state
+  ansible.builtin.set_fact:
+    ard_sno_state:
+      requested_version: "{{ ard_openshift_version }}"
+      exact_version: "{{ ard_sno_exact_version }}"
+      cluster_name: "{{ ard_openshift_cluster_name }}"
+      base_domain: "{{ ard_openshift_base_domain }}"
+      cluster_domain: "{{ ard_openshift_cluster_name }}.{{ ard_openshift_base_domain }}"
+      remote_state_dir: "{{ ard_sno_remote_root }}"
+      remote_install_dir: "{{ ard_sno_remote_install_dir }}"
+      remote_iso: "{{ ard_sno_remote_iso }}"
+      runtime_iso: "{{ ard_sno_runtime_iso }}"
+      remote_installer: "{{ ard_sno_remote_bin_dir }}/openshift-install"
+      remote_oc: "{{ ard_sno_remote_bin_dir }}/oc"
+      remote_kubeconfig: "{{ ard_sno_remote_install_dir }}/auth/kubeconfig"
+      install_config_sha256: "{{ ard_sno_input_stats.results[0].stat.checksum }}"
+      agent_config_sha256: "{{ ard_sno_input_stats.results[1].stat.checksum }}"
+      iso_sha256: "{{ ard_sno_protected_iso_stat.stat.checksum }}"
+      domain_registry_file: "{{ ard_sno_domain_registry_file }}"
+      domain_registry_claimed: true
+      phase: "{{ ard_sno_prepared_phase }}"
+      requires_clean: false
+
+- name: Reload current provider state before SNO merge
+  ansible.builtin.include_vars:
+    file: "{{ ard_deployment_dir }}/provider-state.yaml"
+    name: ard_sno_provider_state_before_prepare
+
+- name: Persist prepared SNO state without secrets
+  ansible.builtin.copy:
+    dest: "{{ ard_deployment_dir }}/provider-state.yaml"
+    mode: "0644"
+    content: >-
+      {{ ard_sno_provider_state_before_prepare | combine({'sno': ard_sno_state}, recursive=True) |
+         to_nice_yaml(indent=2, sort_keys=False) }}
